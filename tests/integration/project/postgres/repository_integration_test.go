@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -128,12 +129,31 @@ func waitForPostgres(t *testing.T, pool *pgxpool.Pool) {
 
 func applyProjectsMigration(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
-	migration, err := os.ReadFile("migrations/000001_create_projects.up.sql")
+	migration, err := os.ReadFile(filepath.Join(moduleRoot(t), "internal", "project", "infrastructure", "postgres", "migrations", "000001_create_projects.up.sql"))
 	if err != nil {
 		t.Fatalf("read projects migration: %v", err)
 	}
 	if _, err := pool.Exec(context.Background(), string(migration)); err != nil {
 		t.Fatalf("apply projects migration: %v", err)
+	}
+}
+
+func moduleRoot(t *testing.T) string {
+	t.Helper()
+	directory, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get test package directory: %v", err)
+	}
+
+	for {
+		if _, err := os.Stat(filepath.Join(directory, "go.mod")); err == nil {
+			return directory
+		}
+		parent := filepath.Dir(directory)
+		if parent == directory {
+			t.Fatal("locate module root: go.mod not found")
+		}
+		directory = parent
 	}
 }
 
