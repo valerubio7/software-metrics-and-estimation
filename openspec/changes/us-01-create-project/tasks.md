@@ -2,9 +2,9 @@
 
 ## 0. Decisiones y preparación mínima
 
-- [ ] Decidir y documentar el conjunto mínimo de dependencias y enfoques: usar `net/http` o un router para `POST /projects`; seleccionar el generador de UUID; seleccionar el driver PostgreSQL; y definir el enfoque de migraciones SQL versionadas y quién las ejecuta. No incorporar dependencias no justificadas.
+- [x] Decidir y documentar el conjunto mínimo de dependencias y enfoques: `net/http` para `POST /projects`, `github.com/google/uuid` para UUID, `pgx/v5` para PostgreSQL y migraciones SQL versionadas. La migración la ejecuta explícitamente el entorno local o de despliegue mediante la CLI `golang-migrate`; no se ejecuta automáticamente al iniciar la API ni se instala una herramienta de migración en el repositorio.
 - [x] Agregar únicamente las dependencias aprobadas al módulo Go y comprobar que el proyecto continúa compilando con `go test ./...`.
-- [ ] Definir el contrato de composición en `cmd/api`: configuración de conexión, construcción de `PostgresProjectRepository`, construcción del caso de uso y registro de `POST /projects`, sin reglas de negocio ni SQL en el proceso HTTP.
+- [x] Definir el contrato de composición en `cmd/api`: `DATABASE_URL` obligatorio, `HTTP_ADDR` opcional con valor predeterminado `:8080`, construcción de `pgxpool.Pool` y `PostgresProjectRepository`, generador UUID, construcción del caso de uso y registro de `POST /projects`, sin reglas de negocio ni SQL en el proceso HTTP.
 
 ## 1. Dominio y caso de uso (TDD)
 
@@ -32,7 +32,7 @@
 - [x] **RED:** preparar la estrategia acordada de prueba de integración PostgreSQL (entorno existente o `testcontainers-go`) y añadir una prueba que espere que `PostgresProjectRepository.Create` inserte `id`, `name`, `start_date` y `planned_finish_date`.
 - [x] **RED:** añadir una prueba de integración que demuestre que la restricción de base de datos rechaza `planned_finish_date` anterior a `start_date`; conservar la validación de aplicación como barrera primaria.
 - [x] **GREEN:** agregar la migración versionada que cree `projects` con `id UUID PRIMARY KEY`, `name TEXT NOT NULL`, `start_date DATE NOT NULL`, `planned_finish_date DATE NOT NULL` y `CHECK (planned_finish_date >= start_date)`; no agregar columnas de estado ni miembros.
-- [ ] **GREEN:** implementar `PostgresProjectRepository` con `INSERT` parametrizado y la configuración/conexión mínima necesaria para que la API use PostgreSQL. El repositorio está implementado; la composición de runtime sigue diferida porque no se definió configuración de conexión ni generador de UUID.
+- [x] **GREEN:** implementar `PostgresProjectRepository` con `INSERT` parametrizado y la configuración/conexión mínima necesaria para que la API use PostgreSQL. `cmd/api` exige `DATABASE_URL`, crea y verifica un `pgxpool.Pool`, compone el repositorio y el caso de uso, genera UUID y registra `POST /projects`. La aplicación no ejecuta migraciones: aplicar las SQL versionadas con la CLI `golang-migrate` es un prerrequisito explícito.
 - [x] **TRIANGULATE:** ejecutar las pruebas de integración contra PostgreSQL real y verificar que las fechas de calendario se persisten y recuperan sin componente horario ni desplazamiento de zona. Docker ya está accesible; `go test -count=1 -v ./internal/project/infrastructure/postgres` pasó con ambas pruebas ejecutadas contra contenedores PostgreSQL reales.
 - [x] **REFACTOR:** mantener SQL, detalles del driver y migraciones en infraestructura; confirmar que el dominio y el caso de uso no importan paquetes PostgreSQL.
 - [x] Ejecutar `go test ./...` con el entorno de integración acordado y registrar la evidencia RED/GREEN/TRIANGULATE/REFACTOR. La cobertura de persistencia real quedó ejecutada: `go test -count=1 -v ./internal/project/infrastructure/postgres` pasó con PostgreSQL en contenedores, y `go test ./...` pasó.
@@ -40,8 +40,8 @@
 ## 4. Verificación de alcance y cierre
 
 - [x] Ejecutar `go test ./...` desde la raíz del módulo como verificación final y registrar el resultado.
-- [ ] Revisar el diff contra propuesta, especificación y diseño: confirmar que solo existe creación mediante `POST /projects` y que no se introdujeron `status`, miembros, actualización ni consulta de estado.
-- [ ] Verificar que las respuestas de éxito contienen únicamente `id`, `name`, `start_date` y `planned_finish_date`, y que los errores no exponen detalles internos de PostgreSQL.
+- [x] Revisar el diff contra propuesta, especificación y diseño: confirmar que solo existe creación mediante `POST /projects` y que no se introdujeron `status`, miembros, actualización ni consulta de estado.
+- [x] Verificar que las respuestas de éxito contienen únicamente `id`, `name`, `start_date` y `planned_finish_date`, y que los errores no exponen detalles internos de PostgreSQL.
 
 ## Review Workload Forecast
 

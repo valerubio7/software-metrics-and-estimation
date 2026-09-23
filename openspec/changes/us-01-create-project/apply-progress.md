@@ -1,63 +1,53 @@
-# Progreso de aplicación: US-01 — Corte 2 (PostgreSQL)
+# Progreso de aplicación: US-01 — Composición de runtime y documentación
 
 ## Resumen
 
-Se añadió el corte de infraestructura para persistir proyectos en PostgreSQL: migraciones SQL versionadas, repositorio basado en `pgx` y andamiaje de integración con `testcontainers-go`. La composición de runtime en `cmd/api` no se modificó: todavía no existe una decisión de configuración de conexión ni de generación de UUID que permita conectarla sin inventar complejidad fuera de este corte.
+US-01 queda compuesta para ejecutarse contra PostgreSQL y documentada para uso local. `cmd/api` construye el repositorio PostgreSQL, el caso de uso y el handler de `POST /projects`; requiere `DATABASE_URL`, acepta `HTTP_ADDR` opcional y genera UUID. La migración sigue siendo un prerrequisito explícito: la API no la ejecuta automáticamente y el repositorio no instala una herramienta de migración.
 
 ## Implementado
 
-- Migración ascendente `000001_create_projects.up.sql` para `projects` con `id UUID PRIMARY KEY`, `name TEXT NOT NULL`, fechas `DATE NOT NULL` y la restricción `CHECK (planned_finish_date >= start_date)`.
-- Migración descendente que elimina `projects`.
-- `PostgresProjectRepository`, que satisface `application.ProjectRepository` y usa un `INSERT` parametrizado mediante `pgxpool.Pool`.
-- Pruebas de integración que levantan PostgreSQL real con `testcontainers-go`, aplican la migración y verifican:
-  - persistencia de `id`, `name` y ambas fechas de calendario;
-  - rechazo de la restricción de base de datos para una fecha final anterior a la inicial (`23514`).
-- Dependencias directas: `pgx/v5` y el módulo PostgreSQL de `testcontainers-go`; sus dependencias transitivas quedan registradas en `go.sum`.
-- El dominio y la aplicación continúan sin importar paquetes de PostgreSQL o del driver.
+- Composición de runtime en `cmd/api`:
+  - `DATABASE_URL` obligatorio para la conexión PostgreSQL;
+  - `HTTP_ADDR` opcional, con valor predeterminado `:8080`;
+  - creación y verificación de `pgxpool.Pool`;
+  - construcción de `PostgresProjectRepository`, `CreateProjectUseCase` y el handler de `POST /projects`;
+  - generación de identificadores con `github.com/google/uuid`.
+- Documentación de ejecución local en `README.md`, incluida la preparación de PostgreSQL, las variables de entorno, la aplicación manual de migraciones y un ejemplo `curl` de `POST /projects`.
+- Migraciones SQL versionadas en `internal/project/infrastructure/postgres/migrations/`. Deben aplicarse antes de iniciar la API con una CLI `golang-migrate` instalada externamente:
 
-## Archivos modificados
+  ```sh
+  migrate -path internal/project/infrastructure/postgres/migrations -database "$DATABASE_URL" up
+  ```
 
-- `go.mod`
-- `go.sum`
-- `internal/project/infrastructure/postgres/repository.go`
-- `internal/project/infrastructure/postgres/repository_integration_test.go`
-- `internal/project/infrastructure/postgres/migrations/000001_create_projects.up.sql`
-- `internal/project/infrastructure/postgres/migrations/000001_create_projects.down.sql`
-- `openspec/changes/us-01-create-project/tasks.md`
-- `openspec/changes/us-01-create-project/apply-progress.md`
+  No existe integración automática de migraciones en el proceso de la API ni se afirma que la CLI esté instalada.
 
-## Evidencia TDD
+## Evidencia TDD de la composición de runtime
 
-- **RED:** al añadir las pruebas de integración, `go test ./...` falló porque `pgx` todavía no era una dependencia declarada (`no required module provides package github.com/jackc/pgx/v5/pgconn`).
-- **GREEN:** tras declarar las dependencias, implementar la migración y el repositorio, `go test ./...` pasó.
-- **TRIANGULATE:** `go test -count=1 -v ./internal/project/infrastructure/postgres` ejecutó ambas pruebas contra contenedores PostgreSQL reales y pasó; verificó la recuperación de fechas de calendario y la violación `23514`.
-- **REFACTOR:** los detalles SQL, `pgx` y las migraciones se mantienen en `internal/project/infrastructure/postgres`; no se modificaron los paquetes de dominio ni aplicación.
+- **RED — commit `e26b574` (`test(api): define runtime composition expectations`):** se añadieron pruebas para `DATABASE_URL` obligatorio, dirección HTTP predeterminada y configurable, generación de UUID y registro de `POST /projects`. El commit registra que `go test ./cmd/api` fallaba porque `loadConfig`, `newProjectID` y `newHTTPHandler` aún no existían.
+- **GREEN — commit `a505396` (`feat(api): wire project creation to PostgreSQL`):** se implementó la composición de runtime. El commit registra que `go test -count=1 ./cmd/api` y `go test -count=1 ./...` pasaron, incluidas las pruebas con contenedores PostgreSQL reales.
+- **TRIANGULATE:** las pruebas de integración de PostgreSQL verifican persistencia y recuperación de fechas de calendario y el rechazo de la restricción `CHECK` para una fecha final anterior a la inicial.
+- **REFACTOR:** la composición permanece en `cmd/api`; el SQL, el driver y las migraciones permanecen en infraestructura, sin introducir PostgreSQL en dominio o aplicación.
+
+## Verificación final de alcance
+
+- La ruta de US-01 es únicamente `POST /projects`; no se agregaron operaciones de actualización, miembros, consulta de estado ni un campo `status`.
+- La respuesta exitosa serializa solo `id`, `name`, `start_date` y `planned_finish_date`.
+- Los fallos inesperados de infraestructura se convierten en `500 Internal Server Error` con el mensaje genérico `an unexpected error occurred`; no se exponen detalles internos de PostgreSQL.
 
 ## Pruebas ejecutadas
 
 ```text
-go test -count=1 -v ./internal/project/infrastructure/postgres
+go test -count=1 ./...
 ```
 
-Resultado: exitoso. Ambas pruebas se ejecutaron contra contenedores PostgreSQL reales; se verificaron la persistencia y recuperación de fechas de calendario y el rechazo de la restricción `CHECK` (`23514`).
-
-```text
-go test ./...
-```
-
-Resultado: exitoso.
+Resultado: exitoso. Pasaron los paquetes `cmd/api`, aplicación, dominio, transporte HTTP e infraestructura PostgreSQL; las pruebas de integración usaron Testcontainers con PostgreSQL real.
 
 ```text
 git diff --check
 ```
 
-Resultado: exitoso, sin errores de espacios en el diff.
+Resultado: exitoso, sin errores de espacios en el diff después de la actualización documental.
 
-## Resolución de integración PostgreSQL
+## Estado
 
-Docker ya es accesible para el usuario actual y Testcontainers pudo crear contenedores PostgreSQL reales. En la primera ejecución con Docker disponible, las pruebas fallaron con un reinicio de conexión inmediatamente después de iniciar el contenedor. Tras añadir una espera explícita mediante `ping` de PostgreSQL antes de aplicar las migraciones, las pruebas de integración pasaron.
-
-## Pendiente
-
-- Definir la configuración de conexión PostgreSQL y el generador de UUID antes de componer el repositorio en `cmd/api`.
-- Completar la verificación final de alcance de US-01.
+Las tareas de US-01 están completadas. El uso de una CLI de migraciones es documentación de un prerrequisito operativo, no una integración de migración automática en la aplicación.
