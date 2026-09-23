@@ -8,8 +8,8 @@ import (
 	"os"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/valerubio7/software-metrics-estimation/internal/api"
-	"github.com/valerubio7/software-metrics-estimation/internal/project/infrastructure/postgres"
+	"github.com/valerubio7/software-metrics-and-estimation/internal/api"
+	"github.com/valerubio7/software-metrics-and-estimation/internal/project/infrastructure/postgres"
 )
 
 func main() {

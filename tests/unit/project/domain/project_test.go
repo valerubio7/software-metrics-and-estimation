@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/valerubio7/software-metrics-estimation/internal/project/domain"
+	"github.com/valerubio7/software-metrics-and-estimation/internal/project/domain"
 )
 
 func TestNewProjectAcceptsEqualDates(t *testing.T) {

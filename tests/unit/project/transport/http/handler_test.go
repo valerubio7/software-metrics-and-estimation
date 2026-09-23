@@ -9,9 +9,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/valerubio7/software-metrics-estimation/internal/project/application"
-	"github.com/valerubio7/software-metrics-estimation/internal/project/domain"
-	transporthttp "github.com/valerubio7/software-metrics-estimation/internal/project/transport/http"
+	"github.com/valerubio7/software-metrics-and-estimation/internal/project/application"
+	"github.com/valerubio7/software-metrics-and-estimation/internal/project/domain"
+	transporthttp "github.com/valerubio7/software-metrics-and-estimation/internal/project/transport/http"
 )
 
 type fakeRepository struct {

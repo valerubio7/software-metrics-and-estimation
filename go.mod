@@ -1,4 +1,4 @@
-module github.com/valerubio7/software-metrics-estimation
+module github.com/valerubio7/software-metrics-and-estimation
 
 go 1.27.0
 

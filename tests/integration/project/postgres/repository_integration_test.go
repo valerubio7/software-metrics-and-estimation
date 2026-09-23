@@ -12,8 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/valerubio7/software-metrics-estimation/internal/project/domain"
-	projectpostgres "github.com/valerubio7/software-metrics-estimation/internal/project/infrastructure/postgres"
+	"github.com/valerubio7/software-metrics-and-estimation/internal/project/domain"
+	projectpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/project/infrastructure/postgres"
 )
 
 func TestPostgresProjectRepositoryCreatePersistsProject(t *testing.T) {

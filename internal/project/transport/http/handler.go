@@ -6,8 +6,8 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/valerubio7/software-metrics-estimation/internal/project/application"
-	"github.com/valerubio7/software-metrics-estimation/internal/project/domain"
+	"github.com/valerubio7/software-metrics-and-estimation/internal/project/application"
+	"github.com/valerubio7/software-metrics-and-estimation/internal/project/domain"
 )
 
 // CreateProjectHandler handles create-project HTTP requests.

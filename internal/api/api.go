@@ -6,8 +6,8 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/valerubio7/software-metrics-estimation/internal/project/application"
-	transporthttp "github.com/valerubio7/software-metrics-estimation/internal/project/transport/http"
+	"github.com/valerubio7/software-metrics-and-estimation/internal/project/application"
+	transporthttp "github.com/valerubio7/software-metrics-and-estimation/internal/project/transport/http"
 )
 
 // Config contains the API runtime configuration.

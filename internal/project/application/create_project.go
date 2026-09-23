@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/valerubio7/software-metrics-estimation/internal/project/domain"
+	"github.com/valerubio7/software-metrics-and-estimation/internal/project/domain"
 )
 
 const dateLayout = "2006-01-02"

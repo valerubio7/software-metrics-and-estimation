@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/valerubio7/software-metrics-estimation/internal/api"
-	"github.com/valerubio7/software-metrics-estimation/internal/project/domain"
+	"github.com/valerubio7/software-metrics-and-estimation/internal/api"
+	"github.com/valerubio7/software-metrics-and-estimation/internal/project/domain"
 )
 
 type fakeProjectRepository struct {
