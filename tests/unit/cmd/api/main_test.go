@@ -1,4 +1,4 @@
-package main
+package api_test
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/valerubio7/software-metrics-estimation/internal/api"
 	"github.com/valerubio7/software-metrics-estimation/internal/project/domain"
 )
 
@@ -21,7 +22,7 @@ func (r *fakeProjectRepository) Create(_ context.Context, project domain.Project
 }
 
 func TestLoadConfigRequiresDatabaseURL(t *testing.T) {
-	_, err := loadConfig(func(string) string { return "" })
+	_, err := api.LoadConfig(func(string) string { return "" })
 
 	if err == nil {
 		t.Fatal("loadConfig() error = nil, want missing DATABASE_URL error")
@@ -29,7 +30,7 @@ func TestLoadConfigRequiresDatabaseURL(t *testing.T) {
 }
 
 func TestLoadConfigUsesDatabaseURLAndDefaultAddress(t *testing.T) {
-	config, err := loadConfig(func(key string) string {
+	config, err := api.LoadConfig(func(key string) string {
 		if key == "DATABASE_URL" {
 			return "postgres://postgres:postgres@localhost:5432/projects?sslmode=disable"
 		}
@@ -48,7 +49,7 @@ func TestLoadConfigUsesDatabaseURLAndDefaultAddress(t *testing.T) {
 }
 
 func TestLoadConfigUsesConfiguredAddress(t *testing.T) {
-	config, err := loadConfig(func(key string) string {
+	config, err := api.LoadConfig(func(key string) string {
 		switch key {
 		case "DATABASE_URL":
 			return "postgres://postgres:postgres@localhost:5432/projects?sslmode=disable"
@@ -68,7 +69,7 @@ func TestLoadConfigUsesConfiguredAddress(t *testing.T) {
 }
 
 func TestNewProjectIDReturnsUUID(t *testing.T) {
-	id := newProjectID()
+	id := api.NewProjectID()
 
 	if len(id) != 36 {
 		t.Fatalf("newProjectID() = %q, want UUID string", id)
@@ -77,7 +78,7 @@ func TestNewProjectIDReturnsUUID(t *testing.T) {
 
 func TestNewHTTPHandlerRegistersCreateProjectRoute(t *testing.T) {
 	repository := &fakeProjectRepository{}
-	handler := newHTTPHandler(repository, func() string { return "5c21cbd4-d9a7-42df-9c3a-c0866f058746" })
+	handler := api.NewHTTPHandler(repository, func() string { return "5c21cbd4-d9a7-42df-9c3a-c0866f058746" })
 	request := httptest.NewRequest(http.MethodPost, "/projects", strings.NewReader(`{
 		"name":"Metrics portal",
 		"start_date":"2026-03-01",
