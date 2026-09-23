@@ -106,7 +106,24 @@ func newPostgresPool(t *testing.T) *pgxpool.Pool {
 		t.Fatalf("connect to PostgreSQL test container: %v", err)
 	}
 	t.Cleanup(pool.Close)
+	waitForPostgres(t, pool)
 	return pool
+}
+
+func waitForPostgres(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		lastErr = pool.Ping(ctx)
+		cancel()
+		if lastErr == nil {
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Fatalf("wait for PostgreSQL test container: %v", lastErr)
 }
 
 func applyProjectsMigration(t *testing.T, pool *pgxpool.Pool) {

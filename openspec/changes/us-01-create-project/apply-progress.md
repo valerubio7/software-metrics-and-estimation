@@ -30,29 +30,34 @@ Se añadió el corte de infraestructura para persistir proyectos en PostgreSQL: 
 
 - **RED:** al añadir las pruebas de integración, `go test ./...` falló porque `pgx` todavía no era una dependencia declarada (`no required module provides package github.com/jackc/pgx/v5/pgconn`).
 - **GREEN:** tras declarar las dependencias, implementar la migración y el repositorio, `go test ./...` pasó.
-- **TRIANGULATE:** las pruebas contienen las verificaciones de recuperación de fechas de calendario y de la violación `23514`, pero su ejecución real contra PostgreSQL quedó bloqueada por Docker.
+- **TRIANGULATE:** `go test -count=1 -v ./internal/project/infrastructure/postgres` ejecutó ambas pruebas contra contenedores PostgreSQL reales y pasó; verificó la recuperación de fechas de calendario y la violación `23514`.
 - **REFACTOR:** los detalles SQL, `pgx` y las migraciones se mantienen en `internal/project/infrastructure/postgres`; no se modificaron los paquetes de dominio ni aplicación.
 
 ## Pruebas ejecutadas
 
 ```text
+go test -count=1 -v ./internal/project/infrastructure/postgres
+```
+
+Resultado: exitoso. Ambas pruebas se ejecutaron contra contenedores PostgreSQL reales; se verificaron la persistencia y recuperación de fechas de calendario y el rechazo de la restricción `CHECK` (`23514`).
+
+```text
 go test ./...
 ```
 
-Resultado: exitoso. El paquete `internal/project/infrastructure/postgres` compila y pasa, con las pruebas de integración omitidas cuando Docker no está disponible.
+Resultado: exitoso.
 
 ```text
-go test -v ./internal/project/infrastructure/postgres
+git diff --check
 ```
 
-Resultado: exitoso con ambas pruebas omitidas explícitamente. La salida observada fue `permission denied while trying to connect to the docker API at unix:///var/run/docker.sock`.
+Resultado: exitoso, sin errores de espacios en el diff.
 
-## Bloqueo de integración PostgreSQL
+## Resolución de integración PostgreSQL
 
-Docker no es accesible para el usuario actual: Testcontainers no puede ejecutar `docker info` contra `/var/run/docker.sock` por permiso denegado. Por ello no se declara completa la ejecución de integración contra PostgreSQL real. Las pruebas no simulan PostgreSQL: se omiten con un mensaje explícito hasta que Docker sea accesible (por ejemplo, mediante pertenencia al grupo `docker` o un daemon autorizado).
+Docker ya es accesible para el usuario actual y Testcontainers pudo crear contenedores PostgreSQL reales. En la primera ejecución con Docker disponible, las pruebas fallaron con un reinicio de conexión inmediatamente después de iniciar el contenedor. Tras añadir una espera explícita mediante `ping` de PostgreSQL antes de aplicar las migraciones, las pruebas de integración pasaron.
 
 ## Pendiente
 
-- Ejecutar las pruebas de integración contra PostgreSQL real cuando Docker esté disponible y registrar los resultados de inserción, fechas y restricción `CHECK`.
 - Definir la configuración de conexión PostgreSQL y el generador de UUID antes de componer el repositorio en `cmd/api`.
-- Completar la verificación final de alcance de US-01 una vez resuelto el bloqueo de integración.
+- Completar la verificación final de alcance de US-01.

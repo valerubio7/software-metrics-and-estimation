@@ -33,9 +33,9 @@
 - [x] **RED:** añadir una prueba de integración que demuestre que la restricción de base de datos rechaza `planned_finish_date` anterior a `start_date`; conservar la validación de aplicación como barrera primaria.
 - [x] **GREEN:** agregar la migración versionada que cree `projects` con `id UUID PRIMARY KEY`, `name TEXT NOT NULL`, `start_date DATE NOT NULL`, `planned_finish_date DATE NOT NULL` y `CHECK (planned_finish_date >= start_date)`; no agregar columnas de estado ni miembros.
 - [ ] **GREEN:** implementar `PostgresProjectRepository` con `INSERT` parametrizado y la configuración/conexión mínima necesaria para que la API use PostgreSQL. El repositorio está implementado; la composición de runtime sigue diferida porque no se definió configuración de conexión ni generador de UUID.
-- [ ] **TRIANGULATE:** ejecutar las pruebas de integración contra PostgreSQL real y verificar que las fechas de calendario se persisten y recuperan sin componente horario ni desplazamiento de zona. Bloqueado: Docker devuelve `permission denied` para `/var/run/docker.sock`.
+- [x] **TRIANGULATE:** ejecutar las pruebas de integración contra PostgreSQL real y verificar que las fechas de calendario se persisten y recuperan sin componente horario ni desplazamiento de zona. Docker ya está accesible; `go test -count=1 -v ./internal/project/infrastructure/postgres` pasó con ambas pruebas ejecutadas contra contenedores PostgreSQL reales.
 - [x] **REFACTOR:** mantener SQL, detalles del driver y migraciones en infraestructura; confirmar que el dominio y el caso de uso no importan paquetes PostgreSQL.
-- [ ] Ejecutar `go test ./...` con el entorno de integración acordado y registrar la evidencia RED/GREEN/TRIANGULATE/REFACTOR. Si el entorno PostgreSQL no está disponible, no declarar completa la cobertura de persistencia real: registrar el bloqueo y la capacidad faltante. `go test ./...` pasa, pero la ejecución contra PostgreSQL real permanece bloqueada por Docker.
+- [x] Ejecutar `go test ./...` con el entorno de integración acordado y registrar la evidencia RED/GREEN/TRIANGULATE/REFACTOR. La cobertura de persistencia real quedó ejecutada: `go test -count=1 -v ./internal/project/infrastructure/postgres` pasó con PostgreSQL en contenedores, y `go test ./...` pasó.
 
 ## 4. Verificación de alcance y cierre
 
