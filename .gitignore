@@ -1,3 +1,4 @@
 # Local Pi runtime state
 .atl/
 .codegraph/
+.pi/gentle-ai/sdd-preflight.json

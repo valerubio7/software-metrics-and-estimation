@@ -77,3 +77,7 @@ go test -count=1 -v ./tests/integration/...
 ```
 
 Las pruebas de integración usan Testcontainers y requieren que Docker esté disponible.
+
+## Exportación de memoria
+
+`docs/memory/engram-export.json` contiene la exportación de Engram de este proyecto: 30 observaciones, 25 sesiones y 49 prompts. La exportación se limitó a este proyecto; no incluye otros proyectos. Se decidió explícitamente incluir el archivo en el repositorio para el push: si el repositorio se publica, su contenido será público. Revisá el archivo antes de publicar.
