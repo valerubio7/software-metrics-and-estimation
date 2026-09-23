@@ -58,10 +58,22 @@ A valid request returns `201 Created` with `id`, `name`, `start_date`, and `plan
 
 ## Test
 
-Run the test suite from the repository root:
+All tests live under `tests/unit/` and `tests/integration/`. Run them from the repository root:
 
 ```sh
 go test -count=1 ./...
 ```
 
-The PostgreSQL integration tests use Testcontainers and require Docker to be available.
+To run only the unit tests:
+
+```sh
+go test -count=1 ./tests/unit/...
+```
+
+To run the PostgreSQL integration tests with verbose output:
+
+```sh
+go test -count=1 -v ./tests/integration/...
+```
+
+The integration tests use Testcontainers and require Docker to be available.
