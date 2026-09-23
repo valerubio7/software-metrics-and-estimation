@@ -1,13 +1,13 @@
-# Centralize Go tests
+# Centralizar las pruebas de Go
 
-## Objective
-Move every Go test into `tests/unit/` or `tests/integration/`, preserving behavior, `go test ./...`, and prior TDD history.
+## Objetivo
+Mover todas las pruebas de Go a `tests/unit/` o `tests/integration/`, preservando el comportamiento, `go test ./...` y el historial previo de TDD.
 
-## Tasks
-- [x] Extract command bootstrap helpers into an importable internal package so external unit tests can exercise them. Evidence: `1a6c6cb`.
-- [x] Relocate all unit suites into `tests/unit/` and adapt command tests. Evidence: `f15e3e9`.
-- [x] Relocate PostgreSQL tests into `tests/integration/` and fix migration lookup. Evidence: `a6cec35`.
-- [x] Verify all tests, including actual PostgreSQL container execution without skips; update test instructions and commit each work unit. Evidence: `422fdd8` documents commands; independent verification confirmed `go test -count=1 ./...` and both real PostgreSQL integration tests passed without skips.
+## Tareas
+- [x] Extraer los helpers de inicialización del comando a un paquete interno importable para que las pruebas unitarias externas puedan ejercitarlos. Evidencia: `1a6c6cb`.
+- [x] Reubicar todas las suites unitarias en `tests/unit/` y adaptar las pruebas del comando. Evidencia: `f15e3e9`.
+- [x] Reubicar las pruebas de PostgreSQL en `tests/integration/` y corregir la búsqueda de migraciones. Evidencia: `a6cec35`.
+- [x] Verificar todas las pruebas, incluida la ejecución real de contenedores PostgreSQL sin omisiones; actualizar las instrucciones de prueba y hacer commit de cada unidad de trabajo. Evidencia: `422fdd8` documenta los comandos; la verificación independiente confirmó que `go test -count=1 ./...` y ambas pruebas de integración reales de PostgreSQL finalizaron correctamente sin omisiones.
 
-## Scope
-Only test organization and minimal bootstrap extraction; no new product behavior.
+## Alcance
+Solo organización de pruebas y extracción mínima de inicialización; sin comportamiento nuevo del producto.

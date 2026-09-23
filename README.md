@@ -1,48 +1,48 @@
-# Software Metrics and Estimation
+# Métricas de software y estimación
 
-This service currently implements US-01: create a project through an HTTP API backed by PostgreSQL.
+Este servicio implementa actualmente US-01: crear un proyecto mediante una API HTTP respaldada por PostgreSQL.
 
-## Prerequisites
+## Requisitos previos
 
-- Go (the version declared in `go.mod`)
-- PostgreSQL, with a database available to the application
-- The [`golang-migrate`](https://github.com/golang-migrate/migrate) CLI installed and available as `migrate`
+- Go (la versión declarada en `go.mod`)
+- PostgreSQL, con una base de datos disponible para la aplicación
+- La CLI de [`golang-migrate`](https://github.com/golang-migrate/migrate) instalada y disponible como `migrate`
 
-The application does **not** run migrations automatically, and this repository does not install a migration tool for you. Apply the versioned SQL migration before starting the API.
+La aplicación **no** ejecuta las migraciones automáticamente y este repositorio no instala una herramienta de migración. Aplique la migración SQL versionada antes de iniciar la API.
 
-## Run locally
+## Ejecutar localmente
 
-1. Create a PostgreSQL database and set its connection URL. Adapt the credentials, host, port, and database name to your local PostgreSQL setup:
+1. Cree una base de datos de PostgreSQL y establezca su URL de conexión. Adapte las credenciales, el host, el puerto y el nombre de la base de datos a su configuración local de PostgreSQL:
 
    ```sh
    export DATABASE_URL='postgres://postgres:postgres@localhost:5432/projects?sslmode=disable'
    ```
 
-2. Apply the versioned SQL migrations with the `golang-migrate` CLI:
+2. Aplique las migraciones SQL versionadas con la CLI de `golang-migrate`:
 
    ```sh
    migrate -path internal/project/infrastructure/postgres/migrations -database "$DATABASE_URL" up
    ```
 
-   This applies `000001_create_projects.up.sql`, which creates the `projects` table. Migration execution is an explicit deployment or local-environment prerequisite, not runtime API behavior.
+   Esto aplica `000001_create_projects.up.sql`, que crea la tabla `projects`. La ejecución de migraciones es un requisito explícito del despliegue o del entorno local, no comportamiento de la API en tiempo de ejecución.
 
-3. Optionally choose the HTTP listening address. It defaults to `:8080` when `HTTP_ADDR` is unset:
+3. De forma opcional, elija la dirección de escucha HTTP. Su valor predeterminado es `:8080` cuando `HTTP_ADDR` no está configurada:
 
    ```sh
    export HTTP_ADDR=':8080'
    ```
 
-4. Start the API:
+4. Inicie la API:
 
    ```sh
    go run ./cmd/api
    ```
 
-   `DATABASE_URL` is required. At startup, the API connects to and pings PostgreSQL before listening for requests.
+   `DATABASE_URL` es obligatoria. Durante el inicio, la API se conecta a PostgreSQL y comprueba su disponibilidad antes de escuchar solicitudes.
 
-## Create a project
+## Crear un proyecto
 
-With the API running, create a project with:
+Con la API en ejecución, cree un proyecto con:
 
 ```sh
 curl -i -X POST http://localhost:8080/projects \
@@ -54,26 +54,26 @@ curl -i -X POST http://localhost:8080/projects \
   }'
 ```
 
-A valid request returns `201 Created` with `id`, `name`, `start_date`, and `planned_finish_date`. Dates must use `YYYY-MM-DD`, and `planned_finish_date` must be on or after `start_date`.
+Una solicitud válida devuelve `201 Created` con `id`, `name`, `start_date` y `planned_finish_date`. Las fechas deben usar `YYYY-MM-DD` y `planned_finish_date` debe ser igual o posterior a `start_date`.
 
-## Test
+## Pruebas
 
-All tests live under `tests/unit/` and `tests/integration/`. Run them from the repository root:
+Todas las pruebas se encuentran en `tests/unit/` y `tests/integration/`. Ejecútelas desde la raíz del repositorio:
 
 ```sh
 go test -count=1 ./...
 ```
 
-To run only the unit tests:
+Para ejecutar solo las pruebas unitarias:
 
 ```sh
 go test -count=1 ./tests/unit/...
 ```
 
-To run the PostgreSQL integration tests with verbose output:
+Para ejecutar las pruebas de integración de PostgreSQL con salida detallada:
 
 ```sh
 go test -count=1 -v ./tests/integration/...
 ```
 
-The integration tests use Testcontainers and require Docker to be available.
+Las pruebas de integración usan Testcontainers y requieren que Docker esté disponible.
