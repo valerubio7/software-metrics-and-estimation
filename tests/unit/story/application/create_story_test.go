@@ -75,6 +75,25 @@ func TestCreateStoryDoesNotWriteInvalidInput(t *testing.T) {
 	}
 }
 
+func TestCreateStoryDoesNotGenerateIDForInvalidInput(t *testing.T) {
+	repo := &storyRepository{}
+	generated := 0
+	useCase := application.NewCreateStoryUseCase(repo, func() string {
+		generated++
+		return "generated-id"
+	})
+	command := validCommand()
+	command.AcceptanceCriteria = []string{"OK", "\u2003\u00a0"}
+	_, err := useCase.Execute(context.Background(), command)
+	var validation *domain.ValidationError
+	if !errors.As(err, &validation) || validation.Fields["acceptance_criteria"] == "" {
+		t.Fatalf("error = %v, want invalid acceptance_criteria", err)
+	}
+	if generated != 0 || repo.calls != 0 {
+		t.Errorf("generated IDs/writes = %d/%d, want zero before valid input", generated, repo.calls)
+	}
+}
+
 func TestCreateStoryPropagatesRepositoryErrorsWithoutClaimingSuccess(t *testing.T) {
 	for _, failure := range []error{application.ErrProjectNotFound, errors.New("database unavailable")} {
 		t.Run(failure.Error(), func(t *testing.T) {

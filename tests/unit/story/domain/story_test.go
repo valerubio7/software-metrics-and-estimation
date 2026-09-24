@@ -48,6 +48,7 @@ func TestNewStoryRejectsInvalidFields(t *testing.T) {
 		{name: "empty criteria", title: "Título", description: "Descripción", priority: "media", criteria: []string{}, field: "acceptance_criteria"},
 		{name: "empty entry", title: "Título", description: "Descripción", priority: "media", criteria: []string{"Hecho", ""}, field: "acceptance_criteria"},
 		{name: "blank entry", title: "Título", description: "Descripción", priority: "media", criteria: []string{" \t", "Hecho"}, field: "acceptance_criteria"},
+		{name: "Unicode blank criterion", title: "Título", description: "Descripción", priority: "media", criteria: []string{"Hecho", "\u2003\u00a0"}, field: "acceptance_criteria"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

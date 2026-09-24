@@ -67,3 +67,17 @@
 | 4 (parcial) | Tests de commit `2f4893a` fallaron por imports inexistentes | Tests unitarios focalizados y runner verde | Pendiente, sin prueba nueva | Pendiente |
 - Sin desviaciones del diseño. Reversión del GREEN: retirar solo ambos archivos de producción y esta sección, conservando RED y US-01. Límite PR 3 `stacked-to-main`, base `9a4924b`, ≤400 líneas del corte incluyendo pruebas y documentación; sin excepción, push, PR ni merge. Estado nativo consumido: `gentle-ai.sdd-status` v2, `applyState: ready`, `nextRecommended: apply`, 3/10 tareas, sin bloqueos; `actionContext: repo-local` y raíz autorizada del repositorio, sin advertencias. No se obtuvo estado nativo posterior.
 - Pendientes: las líneas exactas `- [ ] 4.` a `- [ ] 10.` permanecen en `tasks.md`; TRIANGULATE/REFACTOR de tarea 4 no se iniciaron.
+
+## Corte 3 correctivo — TRIANGULATE (RED observado; detenerse)
+
+- Base `673be0c` tras RED `2f4893a` y GREEN `673be0c`; tests existentes antes de editar: `go test -count=1 ./tests/unit/story/...` PASS (2 paquetes). Solo pruebas nuevas en `tests/unit/story/{domain/story_test.go,application/create_story_test.go}` y este progreso; fuentes y casillas intactas.
+- Borde añadido: criterio compuesto por espacios Unicode (`U+2003` y `U+00A0`) se rechaza; en aplicación, entrada inválida no debe consumir un ID ni escribir. El dominio pasó y la aplicación falló porque genera un ID **una vez** antes de validar, aunque hace cero escrituras. Es un RED conductual real, no un fallo de infraestructura; no modificar fuentes, esperar decisión del parent para GREEN.
+- `go test -count=1 ./tests/unit/story/...`: FAIL exit 1; `TestCreateStoryDoesNotGenerateIDForInvalidInput`: `generated IDs/writes = 1/0, want zero before valid input`; paquete domain PASS. `go test ./...`: FAIL exit 1 con el mismo test, resto PASS/no test files; integración de proyectos cacheada, sin prueba nueva de PostgreSQL. Runtime harness: N/A (núcleo interno sin ruta HTTP).
+### TDD Cycle Evidence
+
+| Tarea | Safety net | RED previo | GREEN previo | TRIANGULATE | REFACTOR |
+| --- | --- | --- | --- | --- | --- |
+| 4 (parcial) | Unitarios de historias PASS antes de editar | `2f4893a` (imports ausentes) | `673be0c` (unitarios y runner PASS) | Nuevo borde Unicode: domain PASS; generación prematura: RED observado en ambos comandos | Pendiente; prohibido en este corte |
+
+- Tarea 3 ya `[x]`; tarea 4 sigue `[ ]` sin GREEN de este borde ni REFACTOR; tareas 5–10 siguen `[ ]`. Las líneas exactas pendientes `- [ ] 4.` a `- [ ] 10.` figuran en la sección «Corte 2 — plan operativo y evidencia» y permanecen sin marcar en `tasks.md`. Sin desviación del contrato de creación; generación anticipada es el hallazgo. Reversión: retirar solo los casos nuevos y esta sección, conservando RED/GREEN previos. PR 3 `stacked-to-main`, base `9a4924b`, tope 400, sin excepción ni publicación.
+- Estado nativo consumido: `gentle-ai.sdd-status` v2, `applyState: ready`, `nextRecommended: apply`, 3/10 tareas completas; `blockedReasons: []`; `actionContext: repo-local`, raíz y allowedEditRoots del repositorio, sin advertencias. Estado posterior no consultado. Detenerse tras commit de pruebas distinto, sin dar por terminada tarea 4.
