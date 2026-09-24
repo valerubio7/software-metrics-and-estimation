@@ -8,7 +8,7 @@ Este servicio permite crear proyectos (US-01) e historias en el Product Backlog 
 - PostgreSQL, con una base de datos disponible para la aplicación
 - La CLI de [`golang-migrate`](https://github.com/golang-migrate/migrate) instalada y disponible como `migrate`
 
-La aplicación **no** ejecuta las migraciones automáticamente y este repositorio no instala una herramienta de migración. Aplique las migraciones SQL versionadas, incluida `000002_create_stories.up.sql`, antes de iniciar la API o publicar la ruta de historias.
+La aplicación **no** ejecuta las migraciones automáticamente y este repositorio no instala una herramienta de migración. Aplique `000001` antes de crear proyectos y `000002_create_stories.up.sql` antes de habilitar o publicar la ruta de historias.
 
 ## Ejecutar localmente
 
@@ -24,7 +24,7 @@ La aplicación **no** ejecuta las migraciones automáticamente y este repositori
    migrate -path internal/project/infrastructure/postgres/migrations -database "$DATABASE_URL" up
    ```
 
-   Esto aplica `000001_create_projects.up.sql` y `000002_create_stories.up.sql`, que crean `projects` y `stories` con su clave foránea. La ejecución de migraciones es externa a la API: el servidor exige la versión 2 aplicada sin estado `dirty` antes de escuchar solicitudes. No despliegue la ruta nueva antes de aplicar `000002`.
+   Esto aplica `000001_create_projects.up.sql` y `000002_create_stories.up.sql`, que crean `projects` y `stories` con su clave foránea. La ejecución de migraciones es externa a la API: con solo `000001` la creación de proyectos sigue disponible, pero la ruta de historias no se registra hasta que la versión 2 esté aplicada sin estado `dirty`. Un error al consultar la versión tampoco habilita historias. No publique la ruta nueva antes de aplicar `000002`.
 
 3. De forma opcional, elija la dirección de escucha HTTP. Su valor predeterminado es `:8080` cuando `HTTP_ADDR` no está configurada:
 

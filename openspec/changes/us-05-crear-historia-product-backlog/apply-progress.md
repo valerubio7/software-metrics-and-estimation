@@ -290,3 +290,16 @@ Líneas exactas pendientes actuales de `tasks.md`:
 | `da274b9` (compilación) | `f739f7c` (runner e integración PASS) | `c6ae280` caso heredado GREEN-on-arrival → test de arranque versión 1 RED observado por salida del binario | Pendiente |
 
 - Límite `stacked-to-main`, base `ec0850d`, 400 líneas; diff medido antes de esta entrada +291/−9 = **300 líneas**, margen ~100 para GREEN/evidencia posterior. Reversión: retirar solo test y este registro. Estado nativo v2 de entrada apply ready, 9/10, next apply, sin bloqueos; `actionContext: repo-local`, raíces del repositorio, sin advertencias. Sin commit/push/merge/despliegue; `.pi/` intacta. Detenerse para commit gate del parent.
+
+## Corte 6 — GREEN de regresión US-01; sin REFACTOR
+
+- RED real `9ae8820`: el binario salía con versión 1 limpia antes de atender proyectos. `cmd/api/main.go` mantiene `Ping` y siempre compone `POST /projects` si hay conexión; solo agrega dependencias de historias cuando la consulta a `schema_migrations` indica versión ≥2 sin `dirty`. Consulta fallida, versión anterior o `dirty` dejan historias deshabilitadas, con aviso y sin automigración. `README.md` aclara que proyectos siguen disponibles con 000001 y que 000002 limpia precede a historias. Tests intactos; tarea 10 sigue `- [ ]`, 9 `[x]`.
+- `go test -count=1 -run '^TestProjectAPIStartsWithoutStoryMigration$' ./tests/integration/story/postgres`: PASS con proceso real y PostgreSQL Docker. `go test ./...`: PASS (project integration cacheada, story integration fresca 10.759s). `go test -count=1 -v ./tests/integration/...`: PASS, Docker real: 2 tests de proyectos y 7 de historias, **0 SKIP**. `git diff --check`: PASS. El test focalizado demuestra US-01 v1 y ausencia de ruta; la integración handler v2 cubre historias sin arrancar el binario; no se afirma arranque real v2 ni los casos de schema dirty/query error.
+
+### TDD Cycle Evidence — tarea 10 (parcial)
+
+| RED | GREEN | TRIANGULATE | REFACTOR |
+| --- | --- | --- | --- |
+| `9ae8820`: proceso falla en v1 limpia | Proyectos disponibles con v1; focalizado, runner e integración fresca PASS | Caso heredado previo GREEN-on-arrival; borde v1 RED→GREEN | Pendiente; detenerse |
+
+- PR 6 `stacked-to-main` contra `ec0850d`, tope 400; diff medido antes de esta entrada +307/−9 = **316 líneas**. Riesgo pendiente: la rama v2 y el fail-closed de dirty/error de arranque no tienen test de proceso; no ampliar sin gate del parent. No despliegue, commit, merge ni push, `.pi/` sin tocar. Estado nativo v2 de entrada apply ready, 9/10, next apply, sin bloqueos; `actionContext: repo-local`, roots del repositorio, sin advertencias; no se pidió estado posterior.

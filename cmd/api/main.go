@@ -30,15 +30,18 @@ func main() {
 		log.Fatalf("ping PostgreSQL: %v", err)
 	}
 
-	// Do not expose story creation until the externally managed migration is clean.
+	// Only expose stories after the externally managed migration is clean.
 	var version int
 	var dirty bool
-	if err := pool.QueryRow(ctx, "SELECT version, dirty FROM schema_migrations").Scan(&version, &dirty); err != nil || dirty || version < 2 {
-		log.Fatalf("migration 000002 must be applied before starting the API: %v (version=%d, dirty=%t)", err, version, dirty)
+	migrationErr := pool.QueryRow(ctx, "SELECT version, dirty FROM schema_migrations").Scan(&version, &dirty)
+	var handler http.Handler
+	if migrationErr == nil && !dirty && version >= 2 {
+		handler = api.NewHTTPHandler(projectpostgres.NewPostgresProjectRepository(pool), api.NewProjectID,
+			api.StoryDependencies{Repository: storypostgres.NewPostgresStoryRepository(pool), GenerateID: api.NewProjectID})
+	} else {
+		log.Printf("story creation unavailable until migration 000002 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
+		handler = api.NewHTTPHandler(projectpostgres.NewPostgresProjectRepository(pool), api.NewProjectID)
 	}
-
-	handler := api.NewHTTPHandler(projectpostgres.NewPostgresProjectRepository(pool), api.NewProjectID,
-		api.StoryDependencies{Repository: storypostgres.NewPostgresStoryRepository(pool), GenerateID: api.NewProjectID})
 	server := &http.Server{Addr: config.Address, Handler: handler}
 
 	log.Printf("API listening on %s", config.Address)
