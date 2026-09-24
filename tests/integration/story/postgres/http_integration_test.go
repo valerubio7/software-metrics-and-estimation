@@ -20,14 +20,29 @@ import (
 	storypostgres "github.com/valerubio7/software-metrics-and-estimation/internal/story/infrastructure/postgres"
 )
 
-func TestProjectAPIStartsWithoutStoryMigration(t *testing.T) {
-	pool := storyDatabase(t)
-	// The disposable fixture applied both migrations; restore the version-one state.
-	if _, err := pool.Exec(context.Background(), `DROP TABLE stories; CREATE TABLE schema_migrations (version bigint NOT NULL, dirty boolean NOT NULL); INSERT INTO schema_migrations VALUES (1, false)`); err != nil {
-		t.Fatalf("prepare version-one database: %v", err)
+func TestAPIStartupRoutesFollowMigrationState(t *testing.T) {
+	for _, scenario := range []struct {
+		name      string
+		migration string
+		storyCode int
+	}{
+		{"version one", `DROP TABLE stories; CREATE TABLE schema_migrations (version bigint NOT NULL, dirty boolean NOT NULL); INSERT INTO schema_migrations VALUES (1, false)`, http.StatusNotFound},
+		{"version two", `CREATE TABLE schema_migrations (version bigint NOT NULL, dirty boolean NOT NULL); INSERT INTO schema_migrations VALUES (2, false)`, http.StatusCreated},
+		{"dirty", `CREATE TABLE schema_migrations (version bigint NOT NULL, dirty boolean NOT NULL); INSERT INTO schema_migrations VALUES (2, true)`, http.StatusNotFound},
+		{"lookup error", `SELECT 1`, http.StatusNotFound},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			pool := storyDatabase(t)
+			if _, err := pool.Exec(context.Background(), scenario.migration); err != nil {
+				t.Fatalf("prepare migration state: %v", err)
+			}
+			testAPIStartupRoutes(t, pool.Config().ConnString(), scenario.storyCode)
+		})
 	}
-	// Use the live pool's connection configuration for the same disposable container.
-	databaseURL := pool.Config().ConnString()
+}
+
+func testAPIStartupRoutes(t *testing.T, databaseURL string, storyCode int) {
+	t.Helper()
 	binary := filepath.Join(t.TempDir(), "api")
 	build := exec.Command("go", "build", "-o", binary, "./cmd/api")
 	build.Dir = storyModuleRoot(t)
@@ -70,23 +85,31 @@ func TestProjectAPIStartsWithoutStoryMigration(t *testing.T) {
 		}
 		response, err := client.Post("http://"+address+"/projects", "application/json", strings.NewReader(`{"name":"Metrics portal","start_date":"2026-03-01","planned_finish_date":"2026-06-30"}`))
 		if err == nil {
-			response.Body.Close()
 			if response.StatusCode != http.StatusCreated {
+				response.Body.Close()
 				t.Fatalf("project creation status = %d, want 201", response.StatusCode)
 			}
-			story, err := client.Post("http://"+address+"/projects/"+projectID+"/stories", "application/json", strings.NewReader(`{"title":"Registro","description":"Crear historia","priority":"media","acceptance_criteria":["Listo"]}`))
+			var project struct {
+				ID string `json:"id"`
+			}
+			if err := json.NewDecoder(response.Body).Decode(&project); err != nil {
+				response.Body.Close()
+				t.Fatal(err)
+			}
+			response.Body.Close()
+			story, err := client.Post("http://"+address+"/projects/"+project.ID+"/stories", "application/json", strings.NewReader(`{"title":"Registro","description":"Crear historia","priority":"media","acceptance_criteria":["Listo"]}`))
 			if err != nil {
 				t.Fatal(err)
 			}
 			story.Body.Close()
-			if story.StatusCode != http.StatusNotFound {
-				t.Errorf("version-one story status = %d, want 404", story.StatusCode)
+			if story.StatusCode != storyCode {
+				t.Errorf("story status = %d, want %d", story.StatusCode, storyCode)
 			}
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	t.Fatal("API did not serve projects with migration 000001 only")
+	t.Fatal("API did not serve projects for migration state")
 }
 
 func TestStoryHTTPWithMigratedPostgres(t *testing.T) {

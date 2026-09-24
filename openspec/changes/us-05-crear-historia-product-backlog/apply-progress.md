@@ -303,3 +303,16 @@ Líneas exactas pendientes actuales de `tasks.md`:
 | `9ae8820`: proceso falla en v1 limpia | Proyectos disponibles con v1; focalizado, runner e integración fresca PASS | Caso heredado previo GREEN-on-arrival; borde v1 RED→GREEN | Pendiente; detenerse |
 
 - PR 6 `stacked-to-main` contra `ec0850d`, tope 400; diff medido antes de esta entrada +307/−9 = **316 líneas**. Riesgo pendiente: la rama v2 y el fail-closed de dirty/error de arranque no tienen test de proceso; no ampliar sin gate del parent. No despliegue, commit, merge ni push, `.pi/` sin tocar. Estado nativo v2 de entrada apply ready, 9/10, next apply, sin bloqueos; `actionContext: repo-local`, roots del repositorio, sin advertencias; no se pidió estado posterior.
+
+## Corte 6 — cierre tarea 10, revisión REFACTOR
+
+- `tests/integration/story/postgres/http_integration_test.go`: se parametrizó el mismo proceso binario con PostgreSQL desechable para 000001 limpia, 000002 limpia, dirty y error de consulta de migración. Cada caso verifica POST de proyectos 201; solo 000002 limpia ofrece POST historia 201 y los otros estados devuelven 404 sin registrar ruta. La prueba HTTP existente verifica fila enlazada, SQL NULL, 201 y 404 de proyecto inexistente sobre DB migrada; es ejercicio HTTP automatizado, **no** una ejecución manual adicional. Test focalizado de arranque PASS (cuatro subcasos). Tests primero, GREEN-on-arrival para estos bordes tras corrección `e65dc23`; no inventar RED.
+- REFACTOR: revisión de composición opcional, guardia de migración y fixture de proceso; no se justifica cambio de fuente. `go test ./...` PASS (proyectos cacheados, story ejecutada); `go test -count=1 -v ./tests/integration/...` PASS PostgreSQL Docker real: 2 tests de proyectos y 7 de historias (cuatro subcasos de arranque), **0 SKIP**. `git diff --check` PASS. Tarea 10 marcada `- [x]` en `tasks.md` solo después de estos checks; 1–10 quedan `[x]`, ninguna línea `- [ ]` restante.
+
+### TDD Cycle Evidence — cierre tarea 10
+
+| RED | GREEN | TRIANGULATE | REFACTOR |
+| --- | --- | --- | --- |
+| `da274b9` composición ausente; `9ae8820` arranque v1 falla | `f739f7c` composición; `e65dc23` restaura US-01 | `c6ae280` heredado GREEN-on-arrival; v1 RED→GREEN; v2/dirty/error GREEN-on-arrival, sin RED inventado | Revisión sin cambio útil; runner e integración fresca PASS |
+
+- PR 6 `stacked-to-main`, base `ec0850d`, límite 400; diff definitivo a medir tras esta evidencia. Desviación corregida: US-01 ya no depende de migración 000002; rutas de historias solo tras migración limpia. Reversión del slice: desregistrar historia y composición, evaluar datos antes de cualquier down de historias. Estado nativo v2 de entrada apply ready, 9/10, next apply; sin bloqueos ni advertencias `actionContext: repo-local`, roots del repositorio. Estado nativo posterior no consultado: parent debe pedir proyección fresca antes de elegir archive/verify. Sin commit, push, merge, despliegue ni cambios en `.pi/`.
