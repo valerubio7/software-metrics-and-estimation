@@ -237,3 +237,82 @@ Líneas exactas pendientes actuales de `tasks.md`:
 - Cronología TDD: RED `6d2a2c0` (import ausente) → GREEN `1a92f72` → TRIANGULATE RED `75e5f8d` (criterio null recibió 422) → GREEN `91dde9f` (400 antes de validar) → REFACTOR: revisión sin simplificación útil; no se cambiaron fuente ni pruebas. La doble lectura JSON preserva explícitamente distinción de tipo para elementos null y mantiene `DisallowUnknownFields`; una reescritura estética no mejora claridad. Sin desviaciones de diseño.
 - `go test -count=1 ./tests/unit/story/transport/http`: PASS exit 0; `go test ./...`: PASS exit 0 (integraciones cacheadas, no prueba fresca de PostgreSQL); `git diff --check`: PASS exit 0. Tras los checks, tarea 8 marcada `- [x]` en `tasks.md`; pendientes exactos `- [ ] 9.` y `- [ ] 10.` allí, sin iniciar PR 6. Solo tareas/progreso cambian en este cierre; handler y tests siguen en commits previos.
 - PR 5 `stacked-to-main` base real `7f9eb80`, sin publicación/merge ni registro de ruta; diff medido contra base +362/−2 = **364 líneas** (margen 36) ≤400. `.pi/` sin seguimiento intacta. Reversión del slice: retirar handler, tests y registros/casillas de PR 5, sin afectar almacenamiento ni US-01. Estado nativo v2 consumido: apply ready, 7/10 antes de marcar 8, next apply, sin bloqueos; actionContext repo-local con workspaceRoot/allowedEditRoots raíz autorizada del repositorio, sin advertencias. No se consultó estado posterior.
+
+## Corte 6 — tarea 9 RED; detenerse para commit gate
+
+- Base `ec0850d` en `feat/us05-story-http`, cadena local `stacked-to-main` dependiente de PR 5; solo pruebas y evidencia, sin producción, commit, push, merge ni despliegue. Casilla 9 marcada `[x]` en `tasks.md` después del RED; casilla 10 sigue `[ ]` (línea exacta allí). `.pi/` intacta. Reversión: retirar los tests de este corte y esta evidencia/casilla.
+- Tests: `tests/unit/cmd/api/main_test.go` comprueba ruta POST, otros métodos sin escritura y preservación de `POST /projects`; `tests/integration/story/postgres/http_integration_test.go` usa `storyDatabase` (migraciones 000001/000002), proyecto existente, respuesta 201, fila vinculada y puntos SQL NULL, y proyecto ausente 404 sin fila adicional. API de composición propuesta, compatible con llamadas antiguas mediante argumento variádico opcional: `api.NewHTTPHandler(projectRepo, projectIDGenerator, api.StoryDependencies{Repository: storyRepo, GenerateID: storyIDGenerator})`. Pendiente de diseño GREEN: decidir inyección segura en arranque para no publicar ruta sin migración.
+- Safety net antes de editar: `go test -count=1 ./tests/unit/cmd/api ./tests/integration/story/postgres` PASS, PostgreSQL real (8.056s). `go test ./...` **FAIL exit 1**: ambos paquetes nuevos fallan compilación porque `api.StoryDependencies` no existe y `NewHTTPHandler` solo admite dos argumentos; aserciones HTTP nuevas **no ejecutadas**. `go test -count=1 -v ./tests/integration/...` **FAIL exit 1**: story no compila por la misma API; project integration PASS real (2.623s), no se acredita HTTP PostgreSQL ni se reportan skips de story como ejecución. `git diff --check` PASS.
+
+### TDD Cycle Evidence — tarea 9
+
+| Safety net | RED | GREEN | TRIANGULATE | REFACTOR |
+| --- | --- | --- | --- | --- |
+| Unit API y story PostgreSQL PASS antes del cambio | Runner e integración FAIL por composición aún ausente; ninguna aserción nueva corrió | Pendiente de parent gate (tarea 10) | Pendiente | Pendiente |
+
+- Medida provisional corte 6: +111/−1 = **112 líneas** antes de esta evidencia (45 unitarias, 65 integración, casilla +1/−1); con esta sección ~122–130. Pronóstico del corte completo **~270–360** líneas si composición, arranque, README, borde TRIANGULATE y evidencia añaden ~145–230; dejar margen respecto a 400 y medir de nuevo antes de GREEN, sin minificar ni omitir pruebas. No hay desviación de contrato; RED por compilación, no por assertion runtime. Estado nativo v2 consumido: `applyState: ready`, 8/10 antes de marcar 9, `nextRecommended: apply`, `blockedReasons: []`, `notes: []`; `actionContext: repo-local`, workspaceRoot/allowedEditRoots raíz canónica autorizada, sin advertencias. Estado posterior no consultado.
+
+## Corte 6 — GREEN de tarea 10; detenerse antes de TRIANGULATE
+
+- RED previo comprometido por parent en `da274b9`: compilación fallaba por composición ausente, sin ejecutar nuevas aserciones. `internal/api/api.go`: `StoryDependencies` opcional en `NewHTTPHandler`, manteniendo llamadas existentes de dos argumentos; registrar POST de historias solo cuando se inyectan dependencias. `cmd/api/main.go`: comprobar `schema_migrations.version >= 2` y `dirty=false` antes de crear handler y escuchar; inyectar ambos repositorios PostgreSQL y UUID del servidor. Migraciones siguen externas. `README.md`: cuatro campos, ejemplo/respuesta y rollback con datos. Ningún test cambió, tarea 10 permanece `- [ ]` hasta TRIANGULATE y REFACTOR; tarea 9 sigue `[x]`.
+- `go test -count=1 ./tests/unit/cmd/api`: PASS. `go test ./...`: PASS (integración de proyectos cacheada; historias ejecutadas 9.121s). `go test -count=1 -v ./tests/integration/...`: PASS PostgreSQL Testcontainers real; 2 tests de proyectos y 6 de historias (incluido HTTP), **0 SKIP**. `git diff --check`: PASS. No arranque manual contra base persistente ni despliegue: la verificación de migración de `main` aún carece de test de arranque específico.
+
+### TDD Cycle Evidence — tarea 10 (parcial)
+
+| RED previo | GREEN | TRIANGULATE | REFACTOR |
+| --- | --- | --- | --- |
+| `da274b9`: composición inexistente; aserciones sin ejecutar | API focalizada, runner e integración PostgreSQL reales PASS sin skips | Pendiente; sugerencia: ruta de historias ausente para llamada heredada con solo dos dependencias, conservando POST /projects | Pendiente |
+
+- Límite PR 6 `stacked-to-main`, base `ec0850d`, presupuesto 400; diff aislado medido antes de esta entrada +172/−8 = **180 líneas** incluyendo tests RED y README; recontar esta evidencia al cierre. Desviaciones: ninguna de producto; comprobación de versión/dirty se efectúa en el arranque en vez de auto-migrar. Reversión: desregistrar ruta y revertir composición/documentación de este corte; datos requieren decisión separada antes de cualquier down. Estado nativo v2 de entrada: apply ready, 9/10, next apply, sin bloqueos; `actionContext: repo-local`, raíz canónica y allowedEditRoots del repositorio, sin advertencias; no se solicitó nuevo estado. Sin commits, push, merge ni publicación; `.pi/` intacta.
+
+## Corte 6 — TRIANGULATE test-first GREEN-on-arrival; detenerse
+
+- Sobre GREEN comprometido `f739f7c`, sin cambios de producción: test nuevo en `tests/unit/cmd/api/main_test.go` ejercita la composición heredada de dos argumentos. `POST /projects/{project_id}/stories` devuelve 404 (ruta ausente) y `POST /projects` continúa creando exactamente un proyecto. Safety net previa `go test -count=1 ./tests/unit/cmd/api ./tests/integration/story/postgres`: PASS (PostgreSQL real, 9.212s). Caso nuevo **GREEN-on-arrival**: `go test ./...` PASS, unitarios API ejecutados; integración en este runner cacheada. `go test -count=1 -v ./tests/integration/...` PASS, Docker PostgreSQL real, 2 tests proyectos y 6 historias, **0 SKIP**. No inventar RED conductual.
+- Hallazgo pendiente: el nuevo chequeo de versión en `cmd/api/main.go` llama `log.Fatalf` si falta `schema_migrations` o versión 000002; esto impide iniciar incluso el endpoint de proyectos de US-01 en una DB solo con 000001. El contrato de no alterar US-01 exige decidir si ese bloqueo de arranque es deseado; no está cubierto por tests del handler. Para probar arranque real con 000001, 000002 y `dirty`, la ruta derivada sería `cmd/api/main_test.go` (fuera de superficies autorizadas); solicitar al parent ampliar autorización antes de crear tests de arranque o cambiar producción. No se cambió `cmd/api/main.go`, no se modificaron tests de integración ni tareas: 9 `[x]`, 10 `- [ ]` en `tasks.md`.
+
+### TDD Cycle Evidence — tarea 10 (TRIANGULATE parcial)
+
+| RED histórico | GREEN histórico | TRIANGULATE | REFACTOR |
+| --- | --- | --- | --- |
+| `da274b9`, compilación ausente | `f739f7c`, runner e integración PASS | Test de composición heredada GREEN-on-arrival; no nuevo RED de producto | Pendiente, detenerse |
+
+- PR 6 `stacked-to-main`, base `ec0850d`, límite 400; medir diff final tras este registro. Desviaciones del diseño: posible regresión US-01 por guardia global, requiere decisión; no publicación/merge/commit ni cambio de `.pi/`. Estado nativo v2 consumido: apply ready, 9/10, next apply, sin bloqueos; `actionContext: repo-local`, raíz y allowedEditRoots autorizados, sin advertencias; no se obtuvo estado posterior.
+
+## Corte 6 — TRIANGULATE RED de arranque real, detenerse antes de corregir
+
+- Sobre `c6ae280` (test de composición heredada GREEN-on-arrival), solo se amplió `tests/integration/story/postgres/http_integration_test.go`: Testcontainers temporal con migraciones existentes, se retira tabla `stories` y se establece `schema_migrations` en versión 1 limpia; `go build` a `t.TempDir`, proceso API local y puerto efímero. Se espera que `POST /projects` cree un proyecto y que POST de historia no esté registrado (404), sin persistencia fuera del contenedor ni proceso huérfano. No se modificó producción ni casillas (9 `[x]`, 10 `- [ ]`).
+- Primer test focalizado: FAIL tras esperar 8s a que arrancara US-01; evidencia todavía ambigua porque no distinguía error de arranque de espera de red. Corregido **solo el observador de test**: captura stderr y salida real del proceso; `go test -count=1 -run '^TestProjectAPIStartsWithoutStoryMigration$' -v ./tests/integration/story/postgres` **FAIL exit 1** en ~2s: `API exited before serving US-01: exit status 1; ... migration 000002 must be applied ... (version=1, dirty=false)`. RED conductual real de regresión US-01, no fallo de infraestructura ni compilación. `go test ./...` FAIL por mismo test (primera versión del observador); demás paquetes PASS/cacheados. `git diff --check` PASS. No se ejecutó la suite fresca de integración completa: la prueba focalizada usa Docker real y demuestra el defecto; el resto queda para GREEN.
+
+### TDD Cycle Evidence — tarea 10 (RED de regresión)
+
+| RED previo | GREEN previo | TRIANGULATE | REFACTOR |
+| --- | --- | --- | --- |
+| `da274b9` (compilación) | `f739f7c` (runner e integración PASS) | `c6ae280` caso heredado GREEN-on-arrival → test de arranque versión 1 RED observado por salida del binario | Pendiente |
+
+- Límite `stacked-to-main`, base `ec0850d`, 400 líneas; diff medido antes de esta entrada +291/−9 = **300 líneas**, margen ~100 para GREEN/evidencia posterior. Reversión: retirar solo test y este registro. Estado nativo v2 de entrada apply ready, 9/10, next apply, sin bloqueos; `actionContext: repo-local`, raíces del repositorio, sin advertencias. Sin commit/push/merge/despliegue; `.pi/` intacta. Detenerse para commit gate del parent.
+
+## Corte 6 — GREEN de regresión US-01; sin REFACTOR
+
+- RED real `9ae8820`: el binario salía con versión 1 limpia antes de atender proyectos. `cmd/api/main.go` mantiene `Ping` y siempre compone `POST /projects` si hay conexión; solo agrega dependencias de historias cuando la consulta a `schema_migrations` indica versión ≥2 sin `dirty`. Consulta fallida, versión anterior o `dirty` dejan historias deshabilitadas, con aviso y sin automigración. `README.md` aclara que proyectos siguen disponibles con 000001 y que 000002 limpia precede a historias. Tests intactos; tarea 10 sigue `- [ ]`, 9 `[x]`.
+- `go test -count=1 -run '^TestProjectAPIStartsWithoutStoryMigration$' ./tests/integration/story/postgres`: PASS con proceso real y PostgreSQL Docker. `go test ./...`: PASS (project integration cacheada, story integration fresca 10.759s). `go test -count=1 -v ./tests/integration/...`: PASS, Docker real: 2 tests de proyectos y 7 de historias, **0 SKIP**. `git diff --check`: PASS. El test focalizado demuestra US-01 v1 y ausencia de ruta; la integración handler v2 cubre historias sin arrancar el binario; no se afirma arranque real v2 ni los casos de schema dirty/query error.
+
+### TDD Cycle Evidence — tarea 10 (parcial)
+
+| RED | GREEN | TRIANGULATE | REFACTOR |
+| --- | --- | --- | --- |
+| `9ae8820`: proceso falla en v1 limpia | Proyectos disponibles con v1; focalizado, runner e integración fresca PASS | Caso heredado previo GREEN-on-arrival; borde v1 RED→GREEN | Pendiente; detenerse |
+
+- PR 6 `stacked-to-main` contra `ec0850d`, tope 400; diff medido antes de esta entrada +307/−9 = **316 líneas**. Riesgo pendiente: la rama v2 y el fail-closed de dirty/error de arranque no tienen test de proceso; no ampliar sin gate del parent. No despliegue, commit, merge ni push, `.pi/` sin tocar. Estado nativo v2 de entrada apply ready, 9/10, next apply, sin bloqueos; `actionContext: repo-local`, roots del repositorio, sin advertencias; no se pidió estado posterior.
+
+## Corte 6 — cierre tarea 10, revisión REFACTOR
+
+- `tests/integration/story/postgres/http_integration_test.go`: se parametrizó el mismo proceso binario con PostgreSQL desechable para 000001 limpia, 000002 limpia, dirty y error de consulta de migración. Cada caso verifica POST de proyectos 201; solo 000002 limpia ofrece POST historia 201 y los otros estados devuelven 404 sin registrar ruta. La prueba HTTP existente verifica fila enlazada, SQL NULL, 201 y 404 de proyecto inexistente sobre DB migrada; es ejercicio HTTP automatizado, **no** una ejecución manual adicional. Test focalizado de arranque PASS (cuatro subcasos). Tests primero, GREEN-on-arrival para estos bordes tras corrección `e65dc23`; no inventar RED.
+- REFACTOR: revisión de composición opcional, guardia de migración y fixture de proceso; no se justifica cambio de fuente. `go test ./...` PASS (proyectos cacheados, story ejecutada); `go test -count=1 -v ./tests/integration/...` PASS PostgreSQL Docker real: 2 tests de proyectos y 7 de historias (cuatro subcasos de arranque), **0 SKIP**. `git diff --check` PASS. Tarea 10 marcada `- [x]` en `tasks.md` solo después de estos checks; 1–10 quedan `[x]`, ninguna línea `- [ ]` restante.
+
+### TDD Cycle Evidence — cierre tarea 10
+
+| RED | GREEN | TRIANGULATE | REFACTOR |
+| --- | --- | --- | --- |
+| `da274b9` composición ausente; `9ae8820` arranque v1 falla | `f739f7c` composición; `e65dc23` restaura US-01 | `c6ae280` heredado GREEN-on-arrival; v1 RED→GREEN; v2/dirty/error GREEN-on-arrival, sin RED inventado | Revisión sin cambio útil; runner e integración fresca PASS |
+
+- PR 6 `stacked-to-main`, base `ec0850d`, límite 400; diff definitivo a medir tras esta evidencia. Desviación corregida: US-01 ya no depende de migración 000002; rutas de historias solo tras migración limpia. Reversión del slice: desregistrar historia y composición, evaluar datos antes de cualquier down de historias. Estado nativo v2 de entrada apply ready, 9/10, next apply; sin bloqueos ni advertencias `actionContext: repo-local`, roots del repositorio. Estado nativo posterior no consultado: parent debe pedir proyección fresca antes de elegir archive/verify. Sin commit, push, merge, despliegue ni cambios en `.pi/`.

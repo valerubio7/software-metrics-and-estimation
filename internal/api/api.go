@@ -8,6 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/application"
 	transporthttp "github.com/valerubio7/software-metrics-and-estimation/internal/project/transport/http"
+	storyapplication "github.com/valerubio7/software-metrics-and-estimation/internal/story/application"
+	storyhttp "github.com/valerubio7/software-metrics-and-estimation/internal/story/transport/http"
 )
 
 // Config contains the API runtime configuration.
@@ -36,10 +38,21 @@ func NewProjectID() string {
 	return uuid.NewString()
 }
 
-// NewHTTPHandler builds the HTTP handler for project endpoints.
-func NewHTTPHandler(repository application.ProjectRepository, generateID application.IDGenerator) http.Handler {
+// StoryDependencies enables story creation after the story migration is available.
+type StoryDependencies struct {
+	Repository storyapplication.StoryRepository
+	GenerateID storyapplication.IDGenerator
+}
+
+// NewHTTPHandler builds the HTTP handler; existing project-only callers remain valid.
+// The caller must verify migration 000002 before supplying story dependencies.
+func NewHTTPHandler(repository application.ProjectRepository, generateID application.IDGenerator, stories ...StoryDependencies) http.Handler {
 	useCase := application.NewCreateProjectUseCase(repository, generateID)
 	mux := http.NewServeMux()
 	mux.Handle("POST /projects", transporthttp.NewCreateProjectHandler(useCase))
+	if len(stories) != 0 {
+		storyUseCase := storyapplication.NewCreateStoryUseCase(stories[0].Repository, stories[0].GenerateID)
+		mux.Handle("POST /projects/{project_id}/stories", storyhttp.NewCreateStoryHandler(storyUseCase))
+	}
 	return mux
 }
