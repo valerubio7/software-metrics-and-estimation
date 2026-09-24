@@ -119,6 +119,22 @@ func decodeCreateStoryRequest(body io.Reader) (createStoryRequest, error) {
 	if err := strict.Decode(&input); err != nil {
 		return createStoryRequest{}, err
 	}
+	// JSON null inside a string array otherwise decodes as an empty string.
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return createStoryRequest{}, err
+	}
+	if criteria := fields["acceptance_criteria"]; len(criteria) > 0 && criteria[0] == '[' {
+		var elements []json.RawMessage
+		if err := json.Unmarshal(criteria, &elements); err != nil {
+			return createStoryRequest{}, err
+		}
+		for _, element := range elements {
+			if bytes.Equal(element, []byte("null")) {
+				return createStoryRequest{}, errors.New("criterion must be a string")
+			}
+		}
+	}
 	return input, nil
 }
 
