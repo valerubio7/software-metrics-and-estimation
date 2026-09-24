@@ -100,6 +100,7 @@ func TestCreateStoryRejectsInvalidJSONShape(t *testing.T) {
 		"empty": "", "malformed": `{"title":`, "multiple": validBody + validBody,
 		"null": "null", "array": `[]`, "string": `"hello"`,
 		"wrong title type": `{"title":7}`, "wrong criteria type": `{"acceptance_criteria":[7]}`,
+		"null criterion is not a string": `{"title":"Hi","description":"Description","priority":"baja","acceptance_criteria":["ok",null]}`,
 		"unknown": `{"other":null}`, "id": `{"id":null}`, "project_id": `{"project_id":null}`,
 		"status": `{"status":null}`, "story_points null": `{"story_points":null}`,
 		"story_points zero": `{"story_points":0}`,
