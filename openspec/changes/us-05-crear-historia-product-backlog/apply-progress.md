@@ -81,3 +81,12 @@
 
 - Tarea 3 ya `[x]`; tarea 4 sigue `[ ]` sin GREEN de este borde ni REFACTOR; tareas 5–10 siguen `[ ]`. Las líneas exactas pendientes `- [ ] 4.` a `- [ ] 10.` figuran en la sección «Corte 2 — plan operativo y evidencia» y permanecen sin marcar en `tasks.md`. Sin desviación del contrato de creación; generación anticipada es el hallazgo. Reversión: retirar solo los casos nuevos y esta sección, conservando RED/GREEN previos. PR 3 `stacked-to-main`, base `9a4924b`, tope 400, sin excepción ni publicación.
 - Estado nativo consumido: `gentle-ai.sdd-status` v2, `applyState: ready`, `nextRecommended: apply`, 3/10 tareas completas; `blockedReasons: []`; `actionContext: repo-local`, raíz y allowedEditRoots del repositorio, sin advertencias. Estado posterior no consultado. Detenerse tras commit de pruebas distinto, sin dar por terminada tarea 4.
+
+## Corte 3 correctivo — TRIANGULATE GREEN (sin REFACTOR)
+
+- RED `e163c23` confirmado: `go test -count=1 ./tests/unit/story/...` y `go test ./...` FAIL exit 1 en `TestCreateStoryDoesNotGenerateIDForInvalidInput` (ID/escrituras `1/0`, esperado `0/0`); dominio PASS. Sin cambios de tests.
+- GREEN: `internal/story/application/create_story.go` valida mediante `NewStory` antes de generar ID; una escritura solo después de validación. Ambos comandos anteriores PASS (unitarios de historias: 2 paquetes); integración de proyectos en `go test ./...` cacheada, sin nueva prueba de DB. Harness runtime: N/A, núcleo sin endpoint. Desviaciones: ninguna.
+- TDD Cycle Evidence: | Tarea | RED | GREEN | TRIANGULATE | REFACTOR |
+  | --- | --- | --- | --- | --- |
+  | 4 (parcial) | `e163c23` falla en generación anticipada | Validación antes de ID; ambos runners PASS | Borde Unicode satisfecho; fuente corregida | Pendiente: detenerse antes |
+- Casillas persistidas: 3 `[x]`; 4–10 `[ ]` (líneas exactas en sección «Corte 2» y `tasks.md`); no marcar 4 hasta REFACTOR. PR 3 `stacked-to-main`, base `9a4924b`, ≤400 líneas sin excepción. Reversión: revertir solo esta corrección y evidencia, conservando RED y GREEN previos. Estado nativo v2 consumido: apply ready, 3/10, next apply; `actionContext: repo-local` con root autorizado, sin advertencias; estado posterior no consultado.

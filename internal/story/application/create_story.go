@@ -40,10 +40,11 @@ func NewCreateStoryUseCase(repository StoryRepository, generateID IDGenerator) *
 
 // Execute validates and inserts a story, returning it only after persistence succeeds.
 func (u *CreateStoryUseCase) Execute(ctx context.Context, command CreateStoryCommand) (domain.Story, error) {
-	story, err := domain.NewStory(u.generateID(), command.ProjectID, command.Title, command.Description, command.Priority, command.AcceptanceCriteria)
+	story, err := domain.NewStory("", command.ProjectID, command.Title, command.Description, command.Priority, command.AcceptanceCriteria)
 	if err != nil {
 		return domain.Story{}, err
 	}
+	story.ID = u.generateID()
 	if err := u.repository.Create(ctx, story); err != nil {
 		return domain.Story{}, err
 	}
