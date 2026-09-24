@@ -54,3 +54,16 @@
   | 3 | Tests escritos; runner falla por imports ausentes (exit 1) | Pendiente | Pendiente: agregar primero borde Unicode en criterios | Pendiente |
 - Estado nativo consumido: `gentle-ai.sdd-status` v2, `applyState: ready`, `nextRecommended: apply`, 2/10 completas antes del RED, `blockedReasons: []`, `notes: []`; `actionContext: repo-local`, `workspaceRoot` y `allowedEditRoots` en la raíz de este repositorio, sin advertencias. Estado nativo posterior no consultado.
 - Pendientes: las líneas exactas `- [ ] 4.` a `- [ ] 10.` están en `tasks.md` y en la sección histórica anterior; la línea `- [ ] 3.` anterior refleja solo el corte 2, no el estado actual. Reversión del RED: retirar únicamente ambas pruebas y revertir esta entrada y casilla 3; ningún dato ni US-01 afectado.
+
+## Corte 3 correctivo — solo GREEN
+
+- RED previo: commit `2f4893a9b7f31264c9025111ad78c2ef1f440aca`, falló `go test ./...` por paquetes de historias ausentes; pruebas intactas. Intento correctivo, no continuación ni copia del intento anterior `feat/us05-story-core` (rama preservada).
+- GREEN: nuevos `internal/story/domain/story.go` e `internal/story/application/create_story.go`; validación por campo, textos y orden conservados, puntos nulos, estado pendiente, ID inyectado, una escritura válida y error tipado independiente de PostgreSQL. Sin ruta HTTP ni migración. Tarea 3 ya `[x]`; tarea 4 continúa `[ ]` hasta TRIANGULATE y REFACTOR. Casillas 5–10 siguen sin marcar; no se modificó `tasks.md` en este paso.
+- Pruebas: `go test -count=1 ./tests/unit/story/...` PASS (ambos paquetes); `go test ./...` PASS (integración de proyectos cacheada); `go test -count=1 -v ./tests/integration/...` PASS con **2 SKIP** por acceso denegado a Docker, no acredita PostgreSQL. Runtime harness: N/A, módulo interno sin composición ni endpoint público.
+### TDD Cycle Evidence
+
+| Tarea | RED | GREEN | TRIANGULATE | REFACTOR |
+| --- | --- | --- | --- | --- |
+| 4 (parcial) | Tests de commit `2f4893a` fallaron por imports inexistentes | Tests unitarios focalizados y runner verde | Pendiente, sin prueba nueva | Pendiente |
+- Sin desviaciones del diseño. Reversión del GREEN: retirar solo ambos archivos de producción y esta sección, conservando RED y US-01. Límite PR 3 `stacked-to-main`, base `9a4924b`, ≤400 líneas del corte incluyendo pruebas y documentación; sin excepción, push, PR ni merge. Estado nativo consumido: `gentle-ai.sdd-status` v2, `applyState: ready`, `nextRecommended: apply`, 3/10 tareas, sin bloqueos; `actionContext: repo-local` y raíz autorizada del repositorio, sin advertencias. No se obtuvo estado nativo posterior.
+- Pendientes: las líneas exactas `- [ ] 4.` a `- [ ] 10.` permanecen en `tasks.md`; TRIANGULATE/REFACTOR de tarea 4 no se iniciaron.
