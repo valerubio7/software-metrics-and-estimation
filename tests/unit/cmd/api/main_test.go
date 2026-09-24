@@ -66,6 +66,25 @@ func TestNewHTTPHandlerRegistersStoryAndPreservesProjects(t *testing.T) {
 	}
 }
 
+func TestProjectOnlyCompositionDoesNotExposeStoryRoute(t *testing.T) {
+	projects := &fakeProjectRepository{}
+	handler := api.NewHTTPHandler(projects, func() string { return "5c21cbd4-d9a7-42df-9c3a-c0866f058746" })
+	storyRequest := httptest.NewRequest(http.MethodPost, "/projects/5c21cbd4-d9a7-42df-9c3a-c0866f058746/stories",
+		strings.NewReader(`{"title":"Registro","description":"Crear historia","priority":"media","acceptance_criteria":["Listo"]}`))
+	storyResponse := httptest.NewRecorder()
+	handler.ServeHTTP(storyResponse, storyRequest)
+	if storyResponse.Code != http.StatusNotFound {
+		t.Errorf("project-only story status = %d, want 404", storyResponse.Code)
+	}
+
+	projectResponse := httptest.NewRecorder()
+	handler.ServeHTTP(projectResponse, httptest.NewRequest(http.MethodPost, "/projects",
+		strings.NewReader(`{"name":"Metrics portal","start_date":"2026-03-01","planned_finish_date":"2026-06-30"}`)))
+	if projectResponse.Code != http.StatusCreated || len(projects.projects) != 1 {
+		t.Errorf("project-only POST status = %d, writes = %d", projectResponse.Code, len(projects.projects))
+	}
+}
+
 func TestLoadConfigRequiresDatabaseURL(t *testing.T) {
 	_, err := api.LoadConfig(func(string) string { return "" })
 

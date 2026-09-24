@@ -264,3 +264,16 @@ Líneas exactas pendientes actuales de `tasks.md`:
 | `da274b9`: composición inexistente; aserciones sin ejecutar | API focalizada, runner e integración PostgreSQL reales PASS sin skips | Pendiente; sugerencia: ruta de historias ausente para llamada heredada con solo dos dependencias, conservando POST /projects | Pendiente |
 
 - Límite PR 6 `stacked-to-main`, base `ec0850d`, presupuesto 400; diff aislado medido antes de esta entrada +172/−8 = **180 líneas** incluyendo tests RED y README; recontar esta evidencia al cierre. Desviaciones: ninguna de producto; comprobación de versión/dirty se efectúa en el arranque en vez de auto-migrar. Reversión: desregistrar ruta y revertir composición/documentación de este corte; datos requieren decisión separada antes de cualquier down. Estado nativo v2 de entrada: apply ready, 9/10, next apply, sin bloqueos; `actionContext: repo-local`, raíz canónica y allowedEditRoots del repositorio, sin advertencias; no se solicitó nuevo estado. Sin commits, push, merge ni publicación; `.pi/` intacta.
+
+## Corte 6 — TRIANGULATE test-first GREEN-on-arrival; detenerse
+
+- Sobre GREEN comprometido `f739f7c`, sin cambios de producción: test nuevo en `tests/unit/cmd/api/main_test.go` ejercita la composición heredada de dos argumentos. `POST /projects/{project_id}/stories` devuelve 404 (ruta ausente) y `POST /projects` continúa creando exactamente un proyecto. Safety net previa `go test -count=1 ./tests/unit/cmd/api ./tests/integration/story/postgres`: PASS (PostgreSQL real, 9.212s). Caso nuevo **GREEN-on-arrival**: `go test ./...` PASS, unitarios API ejecutados; integración en este runner cacheada. `go test -count=1 -v ./tests/integration/...` PASS, Docker PostgreSQL real, 2 tests proyectos y 6 historias, **0 SKIP**. No inventar RED conductual.
+- Hallazgo pendiente: el nuevo chequeo de versión en `cmd/api/main.go` llama `log.Fatalf` si falta `schema_migrations` o versión 000002; esto impide iniciar incluso el endpoint de proyectos de US-01 en una DB solo con 000001. El contrato de no alterar US-01 exige decidir si ese bloqueo de arranque es deseado; no está cubierto por tests del handler. Para probar arranque real con 000001, 000002 y `dirty`, la ruta derivada sería `cmd/api/main_test.go` (fuera de superficies autorizadas); solicitar al parent ampliar autorización antes de crear tests de arranque o cambiar producción. No se cambió `cmd/api/main.go`, no se modificaron tests de integración ni tareas: 9 `[x]`, 10 `- [ ]` en `tasks.md`.
+
+### TDD Cycle Evidence — tarea 10 (TRIANGULATE parcial)
+
+| RED histórico | GREEN histórico | TRIANGULATE | REFACTOR |
+| --- | --- | --- | --- |
+| `da274b9`, compilación ausente | `f739f7c`, runner e integración PASS | Test de composición heredada GREEN-on-arrival; no nuevo RED de producto | Pendiente, detenerse |
+
+- PR 6 `stacked-to-main`, base `ec0850d`, límite 400; medir diff final tras este registro. Desviaciones del diseño: posible regresión US-01 por guardia global, requiere decisión; no publicación/merge/commit ni cambio de `.pi/`. Estado nativo v2 consumido: apply ready, 9/10, next apply, sin bloqueos; `actionContext: repo-local`, raíz y allowedEditRoots autorizados, sin advertencias; no se obtuvo estado posterior.
