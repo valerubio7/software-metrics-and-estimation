@@ -9,7 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/api"
-	"github.com/valerubio7/software-metrics-and-estimation/internal/project/infrastructure/postgres"
+	projectpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/project/infrastructure/postgres"
+	storypostgres "github.com/valerubio7/software-metrics-and-estimation/internal/story/infrastructure/postgres"
 )
 
 func main() {
@@ -29,7 +30,15 @@ func main() {
 		log.Fatalf("ping PostgreSQL: %v", err)
 	}
 
-	handler := api.NewHTTPHandler(postgres.NewPostgresProjectRepository(pool), api.NewProjectID)
+	// Do not expose story creation until the externally managed migration is clean.
+	var version int
+	var dirty bool
+	if err := pool.QueryRow(ctx, "SELECT version, dirty FROM schema_migrations").Scan(&version, &dirty); err != nil || dirty || version < 2 {
+		log.Fatalf("migration 000002 must be applied before starting the API: %v (version=%d, dirty=%t)", err, version, dirty)
+	}
+
+	handler := api.NewHTTPHandler(projectpostgres.NewPostgresProjectRepository(pool), api.NewProjectID,
+		api.StoryDependencies{Repository: storypostgres.NewPostgresStoryRepository(pool), GenerateID: api.NewProjectID})
 	server := &http.Server{Addr: config.Address, Handler: handler}
 
 	log.Printf("API listening on %s", config.Address)

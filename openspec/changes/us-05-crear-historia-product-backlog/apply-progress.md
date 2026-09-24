@@ -251,3 +251,16 @@ Líneas exactas pendientes actuales de `tasks.md`:
 | Unit API y story PostgreSQL PASS antes del cambio | Runner e integración FAIL por composición aún ausente; ninguna aserción nueva corrió | Pendiente de parent gate (tarea 10) | Pendiente | Pendiente |
 
 - Medida provisional corte 6: +111/−1 = **112 líneas** antes de esta evidencia (45 unitarias, 65 integración, casilla +1/−1); con esta sección ~122–130. Pronóstico del corte completo **~270–360** líneas si composición, arranque, README, borde TRIANGULATE y evidencia añaden ~145–230; dejar margen respecto a 400 y medir de nuevo antes de GREEN, sin minificar ni omitir pruebas. No hay desviación de contrato; RED por compilación, no por assertion runtime. Estado nativo v2 consumido: `applyState: ready`, 8/10 antes de marcar 9, `nextRecommended: apply`, `blockedReasons: []`, `notes: []`; `actionContext: repo-local`, workspaceRoot/allowedEditRoots raíz canónica autorizada, sin advertencias. Estado posterior no consultado.
+
+## Corte 6 — GREEN de tarea 10; detenerse antes de TRIANGULATE
+
+- RED previo comprometido por parent en `da274b9`: compilación fallaba por composición ausente, sin ejecutar nuevas aserciones. `internal/api/api.go`: `StoryDependencies` opcional en `NewHTTPHandler`, manteniendo llamadas existentes de dos argumentos; registrar POST de historias solo cuando se inyectan dependencias. `cmd/api/main.go`: comprobar `schema_migrations.version >= 2` y `dirty=false` antes de crear handler y escuchar; inyectar ambos repositorios PostgreSQL y UUID del servidor. Migraciones siguen externas. `README.md`: cuatro campos, ejemplo/respuesta y rollback con datos. Ningún test cambió, tarea 10 permanece `- [ ]` hasta TRIANGULATE y REFACTOR; tarea 9 sigue `[x]`.
+- `go test -count=1 ./tests/unit/cmd/api`: PASS. `go test ./...`: PASS (integración de proyectos cacheada; historias ejecutadas 9.121s). `go test -count=1 -v ./tests/integration/...`: PASS PostgreSQL Testcontainers real; 2 tests de proyectos y 6 de historias (incluido HTTP), **0 SKIP**. `git diff --check`: PASS. No arranque manual contra base persistente ni despliegue: la verificación de migración de `main` aún carece de test de arranque específico.
+
+### TDD Cycle Evidence — tarea 10 (parcial)
+
+| RED previo | GREEN | TRIANGULATE | REFACTOR |
+| --- | --- | --- | --- |
+| `da274b9`: composición inexistente; aserciones sin ejecutar | API focalizada, runner e integración PostgreSQL reales PASS sin skips | Pendiente; sugerencia: ruta de historias ausente para llamada heredada con solo dos dependencias, conservando POST /projects | Pendiente |
+
+- Límite PR 6 `stacked-to-main`, base `ec0850d`, presupuesto 400; diff aislado medido antes de esta entrada +172/−8 = **180 líneas** incluyendo tests RED y README; recontar esta evidencia al cierre. Desviaciones: ninguna de producto; comprobación de versión/dirty se efectúa en el arranque en vez de auto-migrar. Reversión: desregistrar ruta y revertir composición/documentación de este corte; datos requieren decisión separada antes de cualquier down. Estado nativo v2 de entrada: apply ready, 9/10, next apply, sin bloqueos; `actionContext: repo-local`, raíz canónica y allowedEditRoots del repositorio, sin advertencias; no se solicitó nuevo estado. Sin commits, push, merge ni publicación; `.pi/` intacta.
