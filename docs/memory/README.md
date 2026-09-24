@@ -10,6 +10,6 @@ This is a JSON import, **not** a sync-chunk transfer. The snapshot contains four
 
 ## Current state
 
-US05 issue 33 implementation is 10/10 tasks complete; independent verification passed (`go test -count=1 ./...`, PostgreSQL 16 integration, `go vet ./...`, and diff check). These are **local branches**, not merged or published: storage `feat/us05-story-storage` at `7f9eb80`, handler `feat/us05-story-handler` at `ec0850d`, and HTTP `feat/us05-story-http` at `84b28e7`. The handoff branch is `docs/us05-team-handoff`, based on `84b28e7`.
+US05 issue 33 implementation is 10/10 tasks complete; independent verification passed (`go test -count=1 ./...`, PostgreSQL 16 integration, `go vet ./...`, and diff check). Planning, tasks, core, storage, handler, and HTTP were integrated into `main` through PRs #50–#55, preserving chronological TDD commits. The HTTP integration merge is `555c184`. This final handoff supplies the curated memory and closing reference for issue #33.
 
-Issue 33 remains open until a closing commit reaches `main`. This snapshot neither closes the issue nor authorizes a merge, push, or deployment.
+The export is a historical snapshot taken before integration; its earlier branch and delivery statements describe that time, not current authorization or status. Integrating the closing commit into `main` closes issue #33. Importing this snapshot does not deploy the service, apply database migrations, or grant permission for Git operations.
