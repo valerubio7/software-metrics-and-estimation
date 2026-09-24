@@ -179,6 +179,116 @@ func TestStoriesForeignKeyPreventsOrphansInBothWriteOrders(t *testing.T) {
 	}
 }
 
+// The first transaction remains open until PostgreSQL reports the competing
+// statement waiting on its lock. This tests overlap, not just two serial orders.
+func TestStoriesForeignKeyPreservesIntegrityDuringConcurrentInsertAndDelete(t *testing.T) {
+	for _, insertWins := range []bool{true, false} {
+		name := "delete commits first"
+		if insertWins {
+			name = "insert commits first"
+		}
+		t.Run(name, func(t *testing.T) {
+			pool := storyDatabase(t)
+			insertProject(t, pool, projectID)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			tx, err := pool.Begin(ctx)
+			if err != nil {
+				t.Fatalf("begin first writer: %v", err)
+			}
+			defer tx.Rollback(context.Background())
+
+			story := validStory(projectID)
+			waitingQuery := "INSERT INTO stories"
+			if insertWins {
+				_, err = tx.Exec(ctx, `
+					INSERT INTO stories (id, project_id, title, description, priority, status, story_points, acceptance_criteria)
+					VALUES ($1, $2, $3, $4, $5, $6, NULL, $7)
+				`, story.ID, story.ProjectID, story.Title, story.Description, story.Priority, story.Status, story.AcceptanceCriteria)
+				waitingQuery = "DELETE FROM projects"
+			} else {
+				_, err = tx.Exec(ctx, "DELETE FROM projects WHERE id = $1", projectID)
+			}
+			if err != nil {
+				t.Fatalf("first uncommitted write: %v", err)
+			}
+
+			result := make(chan error, 1)
+			go func() {
+				if insertWins {
+					_, err := pool.Exec(ctx, "DELETE FROM projects WHERE id = $1", projectID)
+					result <- err
+				} else {
+					result <- storypostgres.NewPostgresStoryRepository(pool).Create(ctx, story)
+				}
+			}()
+			waitForStoryWriteLock(t, ctx, pool, waitingQuery, result)
+			if err := tx.Commit(ctx); err != nil {
+				t.Fatalf("commit first writer: %v", err)
+			}
+			select {
+			case err := <-result:
+				if insertWins {
+					assertDatabaseError(t, err, "23503", "stories_project_id_fkey")
+				} else if !errors.Is(err, application.ErrProjectNotFound) {
+					t.Errorf("concurrent insert error = %v, want ErrProjectNotFound", err)
+				}
+			case <-ctx.Done():
+				t.Fatalf("waiting writer did not finish: %v", ctx.Err())
+			}
+
+			want := 0
+			if insertWins {
+				want = 1
+			}
+			if got := storyCount(t, pool); got != want {
+				t.Errorf("story count = %d, want %d", got, want)
+			}
+			var projects, orphans int
+			if err := pool.QueryRow(ctx, "SELECT count(*) FROM projects").Scan(&projects); err != nil {
+				t.Fatalf("count projects: %v", err)
+			}
+			if err := pool.QueryRow(ctx, `
+				SELECT count(*) FROM stories s LEFT JOIN projects p ON p.id = s.project_id WHERE p.id IS NULL
+			`).Scan(&orphans); err != nil {
+				t.Fatalf("count orphans: %v", err)
+			}
+			if projects != want || orphans != 0 {
+				t.Errorf("projects/orphans = %d/%d, want %d/0", projects, orphans, want)
+			}
+		})
+	}
+}
+
+func waitForStoryWriteLock(t *testing.T, ctx context.Context, pool *pgxpool.Pool, statement string, result <-chan error) {
+	t.Helper()
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var blocked bool
+		err := pool.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM pg_stat_activity
+				WHERE pid <> pg_backend_pid() AND wait_event_type = 'Lock'
+				AND position($1 in query) > 0
+			)
+		`, statement).Scan(&blocked)
+		if err != nil {
+			t.Fatalf("inspect waiting writer: %v", err)
+		}
+		if blocked {
+			return
+		}
+		select {
+		case err := <-result:
+			t.Fatalf("writer completed without observed lock wait: %v", err)
+		case <-ctx.Done():
+			t.Fatalf("writer never waited for first transaction: %v", ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}
+
 func validStory(project string) domain.Story {
 	return domain.Story{
 		ID: storyID, ProjectID: project, Title: "  Registro  ", Description: "Detalle original",
