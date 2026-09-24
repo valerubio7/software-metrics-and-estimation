@@ -1,18 +1,93 @@
 package postgres_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/valerubio7/software-metrics-and-estimation/internal/api"
 	projectpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/project/infrastructure/postgres"
 	storypostgres "github.com/valerubio7/software-metrics-and-estimation/internal/story/infrastructure/postgres"
 )
+
+func TestProjectAPIStartsWithoutStoryMigration(t *testing.T) {
+	pool := storyDatabase(t)
+	// The disposable fixture applied both migrations; restore the version-one state.
+	if _, err := pool.Exec(context.Background(), `DROP TABLE stories; CREATE TABLE schema_migrations (version bigint NOT NULL, dirty boolean NOT NULL); INSERT INTO schema_migrations VALUES (1, false)`); err != nil {
+		t.Fatalf("prepare version-one database: %v", err)
+	}
+	// Use the live pool's connection configuration for the same disposable container.
+	databaseURL := pool.Config().ConnString()
+	binary := filepath.Join(t.TempDir(), "api")
+	build := exec.Command("go", "build", "-o", binary, "./cmd/api")
+	build.Dir = storyModuleRoot(t)
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build API: %v: %s", err, output)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	listener.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	server := exec.CommandContext(ctx, binary)
+	server.Env = append(os.Environ(), "DATABASE_URL="+databaseURL, "HTTP_ADDR="+address)
+	var stderr bytes.Buffer
+	server.Stderr = &stderr
+	if err := server.Start(); err != nil {
+		t.Fatalf("start API: %v", err)
+	}
+	finished := make(chan error, 1)
+	go func() { finished <- server.Wait() }()
+	defer func() {
+		if server.Process != nil {
+			_ = server.Process.Kill()
+		}
+		select {
+		case <-finished:
+		default:
+		}
+	}()
+
+	client := &http.Client{Timeout: time.Second}
+	for ctx.Err() == nil {
+		select {
+		case err := <-finished:
+			t.Fatalf("API exited before serving US-01: %v; stderr: %s", err, stderr.String())
+		default:
+		}
+		response, err := client.Post("http://"+address+"/projects", "application/json", strings.NewReader(`{"name":"Metrics portal","start_date":"2026-03-01","planned_finish_date":"2026-06-30"}`))
+		if err == nil {
+			response.Body.Close()
+			if response.StatusCode != http.StatusCreated {
+				t.Fatalf("project creation status = %d, want 201", response.StatusCode)
+			}
+			story, err := client.Post("http://"+address+"/projects/"+projectID+"/stories", "application/json", strings.NewReader(`{"title":"Registro","description":"Crear historia","priority":"media","acceptance_criteria":["Listo"]}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			story.Body.Close()
+			if story.StatusCode != http.StatusNotFound {
+				t.Errorf("version-one story status = %d, want 404", story.StatusCode)
+			}
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatal("API did not serve projects with migration 000001 only")
+}
 
 func TestStoryHTTPWithMigratedPostgres(t *testing.T) {
 	pool := storyDatabase(t)

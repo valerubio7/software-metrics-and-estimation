@@ -277,3 +277,16 @@ Líneas exactas pendientes actuales de `tasks.md`:
 | `da274b9`, compilación ausente | `f739f7c`, runner e integración PASS | Test de composición heredada GREEN-on-arrival; no nuevo RED de producto | Pendiente, detenerse |
 
 - PR 6 `stacked-to-main`, base `ec0850d`, límite 400; medir diff final tras este registro. Desviaciones del diseño: posible regresión US-01 por guardia global, requiere decisión; no publicación/merge/commit ni cambio de `.pi/`. Estado nativo v2 consumido: apply ready, 9/10, next apply, sin bloqueos; `actionContext: repo-local`, raíz y allowedEditRoots autorizados, sin advertencias; no se obtuvo estado posterior.
+
+## Corte 6 — TRIANGULATE RED de arranque real, detenerse antes de corregir
+
+- Sobre `c6ae280` (test de composición heredada GREEN-on-arrival), solo se amplió `tests/integration/story/postgres/http_integration_test.go`: Testcontainers temporal con migraciones existentes, se retira tabla `stories` y se establece `schema_migrations` en versión 1 limpia; `go build` a `t.TempDir`, proceso API local y puerto efímero. Se espera que `POST /projects` cree un proyecto y que POST de historia no esté registrado (404), sin persistencia fuera del contenedor ni proceso huérfano. No se modificó producción ni casillas (9 `[x]`, 10 `- [ ]`).
+- Primer test focalizado: FAIL tras esperar 8s a que arrancara US-01; evidencia todavía ambigua porque no distinguía error de arranque de espera de red. Corregido **solo el observador de test**: captura stderr y salida real del proceso; `go test -count=1 -run '^TestProjectAPIStartsWithoutStoryMigration$' -v ./tests/integration/story/postgres` **FAIL exit 1** en ~2s: `API exited before serving US-01: exit status 1; ... migration 000002 must be applied ... (version=1, dirty=false)`. RED conductual real de regresión US-01, no fallo de infraestructura ni compilación. `go test ./...` FAIL por mismo test (primera versión del observador); demás paquetes PASS/cacheados. `git diff --check` PASS. No se ejecutó la suite fresca de integración completa: la prueba focalizada usa Docker real y demuestra el defecto; el resto queda para GREEN.
+
+### TDD Cycle Evidence — tarea 10 (RED de regresión)
+
+| RED previo | GREEN previo | TRIANGULATE | REFACTOR |
+| --- | --- | --- | --- |
+| `da274b9` (compilación) | `f739f7c` (runner e integración PASS) | `c6ae280` caso heredado GREEN-on-arrival → test de arranque versión 1 RED observado por salida del binario | Pendiente |
+
+- Límite `stacked-to-main`, base `ec0850d`, 400 líneas; diff medido antes de esta entrada +291/−9 = **300 líneas**, margen ~100 para GREEN/evidencia posterior. Reversión: retirar solo test y este registro. Estado nativo v2 de entrada apply ready, 9/10, next apply, sin bloqueos; `actionContext: repo-local`, raíces del repositorio, sin advertencias. Sin commit/push/merge/despliegue; `.pi/` intacta. Detenerse para commit gate del parent.
