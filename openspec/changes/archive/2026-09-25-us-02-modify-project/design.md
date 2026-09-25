@@ -1,80 +1,80 @@
-# Design: Modify an Existing Project
+# Diseño: Modificar un proyecto existente
 
-Add a full-replacement project update endpoint using the existing HTTP, application, domain, and PostgreSQL boundaries. The design implements the `project` delta requirements while leaving project creation, story creation, and project status behavior unchanged.
+Agregar un endpoint de actualización de proyectos con reemplazo completo que use los límites existentes de HTTP, aplicación, dominio y PostgreSQL. El diseño implementa los requisitos delta de `project` y mantiene sin cambios el comportamiento de creación de proyectos, creación de historias y estado de proyectos.
 
-## Technical Approach
+## Enfoque técnico
 
-Register `PUT /projects/{project_id}` in the existing `http.ServeMux`. The handler strictly decodes the complete basic-data JSON object and obtains the target ID from the route. The update use case parses ISO dates using the existing application date parser, validates the resulting complete project through `domain.NewProject`, then performs one repository update. Validation happens before the repository call. PostgreSQL updates only `name`, `start_date`, and `planned_finish_date`; zero affected rows maps to a project-not-found error. Successful updates return HTTP 200 with the existing project response shape and the route ID.
+Registrar `PUT /projects/{project_id}` en el `http.ServeMux` existente. El handler decodifica estrictamente el objeto JSON completo de datos básicos y obtiene el ID de destino de la ruta. El caso de uso de actualización analiza las fechas ISO mediante el analizador de fechas existente de la aplicación, valida el proyecto resultante completo con `domain.NewProject` y luego realiza una actualización en el repositorio. La validación ocurre antes de la llamada al repositorio. PostgreSQL actualiza únicamente `name`, `start_date` y `planned_finish_date`; cero filas afectadas se traduce en un error de proyecto inexistente. Las actualizaciones exitosas devuelven HTTP 200 con el formato de respuesta existente del proyecto y el ID de la ruta.
 
-This follows the proposal’s full-replacement contract and the delta scenarios for equal dates, actionable validation failures, missing IDs, and preservation of data beyond the three basic fields. No schema change is needed: the existing projects table already stores these fields and enforces the date-order constraint.
+Esto sigue el contrato de reemplazo completo de la propuesta y los escenarios delta para fechas iguales, errores de validación accionables, IDs inexistentes y preservación de datos ajenos a los tres campos básicos. No se necesita modificar el esquema: la tabla `projects` existente ya almacena estos campos y aplica la restricción de orden de fechas.
 
-## Architecture Decisions
+## Decisiones de arquitectura
 
-### Decision: Reuse project invariants and date parsing
+### Decisión: Reutilizar las invariantes del proyecto y el análisis de fechas
 
-**Choice**: Add an `UpdateProjectUseCase` in `internal/project/application/update_project.go`. Reuse the package-level `parseDate` helper and `domain.NewProject` to validate the complete replacement before persistence.
+**Elección**: Agregar `UpdateProjectUseCase` en `internal/project/application/update_project.go`. Reutilizar la función auxiliar `parseDate` del paquete y `domain.NewProject` para validar el reemplazo completo antes de persistirlo.
 
-**Alternatives considered**: Put parsing and validation in the HTTP handler, or introduce a separate update-only domain validator.
+**Alternativas consideradas**: Ubicar el análisis y la validación en el handler HTTP, o introducir un validador de dominio exclusivo para actualizaciones.
 
-**Rationale**: Validation belongs at the application/domain boundary, not in transport. `NewProject` already enforces nonblank names, required dates, and finish-date ordering for the same three-field representation. Reusing it avoids divergent create/update rules and avoids unnecessary domain API changes.
+**Justificación**: La validación corresponde al límite de aplicación/dominio, no al de transporte. `NewProject` ya exige nombres no vacíos, fechas obligatorias y el orden correcto de las fechas para la misma representación de tres campos. Reutilizarlo evita que diverjan las reglas de creación y actualización, y evita cambios innecesarios en la API del dominio.
 
-### Decision: Extend the project repository contract with update and not-found semantics
+### Decisión: Ampliar el contrato del repositorio de proyectos con la actualización y la semántica not found
 
-**Choice**: Add `Update(context.Context, domain.Project) error` to `application.ProjectRepository` and define `application.ErrProjectNotFound`. The PostgreSQL implementation checks `RowsAffected()` and returns that sentinel when the ID matches no row.
+**Elección**: Agregar `Update(context.Context, domain.Project) error` a `application.ProjectRepository` y definir `application.ErrProjectNotFound`. La implementación de PostgreSQL comprueba `RowsAffected()` y devuelve ese sentinel cuando el ID no coincide con ninguna fila.
 
-**Alternatives considered**: Add a second repository interface and inject it separately, or treat an update affecting zero rows as success.
+**Alternativas consideradas**: Agregar una segunda interfaz de repositorio e inyectarla por separado, o considerar exitosa una actualización que afecta cero filas.
 
-**Rationale**: The existing API composition already receives one project repository for all project operations. One extended contract keeps construction straightforward and lets use-case and handler tests inject one fake. Returning not found from the persistence boundary distinguishes a missing row from a database failure without a read-before-write race.
+**Justificación**: La composición actual de la API ya recibe un repositorio de proyectos para todas las operaciones relacionadas. Un único contrato ampliado mantiene sencilla la construcción y permite que las pruebas del caso de uso y del handler inyecten un solo doble de prueba. Devolver not found desde el límite de persistencia distingue una fila inexistente de un fallo de base de datos sin una condición de carrera entre lectura y escritura.
 
-### Decision: Use the route ID as the update identity and keep the update statement narrow
+### Decisión: Usar el ID de la ruta como identidad de actualización y mantener acotada la sentencia de actualización
 
-**Choice**: Parse `project_id` as a UUID at the HTTP boundary, pass its canonical string to the use case, and use it as the `WHERE id = $1` parameter. The SQL statement assigns only the three basic-data columns.
+**Elección**: Analizar `project_id` como UUID en el límite HTTP, pasar su cadena canónica al caso de uso y usarla como parámetro de `WHERE id = $1`. La sentencia SQL asigna únicamente las tres columnas de datos básicos.
 
-**Alternatives considered**: Accept an ID in the body, load and replace an entire project record, or update additional columns in anticipation of later user stories.
+**Alternativas consideradas**: Aceptar un ID en el cuerpo, cargar y reemplazar un registro de proyecto completo, o actualizar columnas adicionales anticipándose a futuras historias de usuario.
 
-**Rationale**: The endpoint is explicitly addressed by ID and the caller already knows that ID. A narrow parameterized `UPDATE` cannot replace the primary key or touch story/member data. This also avoids adding listing or selection behavior, which is out of scope.
+**Justificación**: El endpoint se direcciona explícitamente mediante un ID y quien realiza la llamada ya conoce ese ID. Un `UPDATE` parametrizado y acotado no puede reemplazar la clave primaria ni afectar los datos de historias o miembros. Esto también evita agregar comportamientos de listado o selección, que están fuera de alcance.
 
-### Decision: Match existing HTTP error and response conventions
+### Decisión: Mantener las convenciones existentes de errores y respuestas HTTP
 
-**Choice**: Return `200 OK` with the existing project response fields on success; return `400` for malformed JSON, `422` for malformed UUIDs or domain validation failures, `404` for a well-formed but unknown UUID, and `500` for unexpected persistence errors. Reuse the existing JSON error shape and avoid exposing repository details.
+**Elección**: Devolver `200 OK` con los campos de respuesta existentes del proyecto si la operación tiene éxito; devolver `400` para JSON mal formado, `422` para UUID mal formados o errores de validación del dominio, `404` para un UUID bien formado pero desconocido, y `500` para errores inesperados de persistencia. Reutilizar el formato de error JSON existente y evitar exponer detalles del repositorio.
 
-**Alternatives considered**: Return `204 No Content`, or introduce a new error format/status convention.
+**Alternativas consideradas**: Devolver `204 No Content` o introducir un formato de error/convención de estados nuevo.
 
-**Rationale**: Returning the updated representation makes the replacement outcome explicit and aligns with existing project response serialization. Existing handlers already use JSON error objects and `422` field errors; the story handler provides the UUID path parsing and not-found mapping precedent.
+**Justificación**: Devolver la representación actualizada explicita el resultado del reemplazo y coincide con la serialización existente de las respuestas de proyectos. Los handlers existentes ya usan objetos de error JSON y errores de campos con `422`; el handler de historias ofrece un precedente para analizar UUID en la ruta y asignar not found.
 
-## Data Flow
+## Flujo de datos
 
 ```text
 PUT /projects/{project_id}
-  → ServeMux route
-  → UpdateProjectHandler: strict JSON decode + UUID parse
-  → UpdateProjectUseCase: parse dates + validate complete Project
+  → Ruta ServeMux
+  → UpdateProjectHandler: decodificación JSON estricta + análisis de UUID
+  → UpdateProjectUseCase: análisis de fechas + validación del Project completo
   → ProjectRepository.Update
-  → PostgreSQL UPDATE of name/start_date/planned_finish_date only
-  ← updated project representation (200), or mapped validation/not-found/error response
+  → UPDATE de PostgreSQL únicamente para name/start_date/planned_finish_date
+  ← Representación actualizada del proyecto (200) o respuesta asignada de validación/not found/error
 ```
 
-Malformed body or UUID and invalid project data stop before persistence. The update operation is one SQL statement; an unknown UUID produces zero affected rows and is reported as not found. No project is created as a fallback.
+Un cuerpo o UUID mal formado, o datos de proyecto inválidos, detienen el flujo antes de la persistencia. La operación de actualización consta de una sentencia SQL; un UUID desconocido produce cero filas afectadas y se informa como not found. No se crea un proyecto como alternativa.
 
-## File Changes
+## Cambios en archivos
 
-| File | Action | Description |
+| Archivo | Acción | Descripción |
 |------|--------|-------------|
-| `internal/api/api.go` | Modify | Construct the update use case and register `PUT /projects/{project_id}` alongside the existing project route. |
-| `internal/project/application/create_project.go` | Modify | Extend the shared `ProjectRepository` contract with the update operation. |
-| `internal/project/application/update_project.go` | Create | Define the replacement command, use case, and project-not-found sentinel; parse dates, validate via the existing domain constructor, and persist only valid projects. |
-| `internal/project/transport/http/handler.go` | Modify | Add the update handler/request flow, UUID parsing, result/error mapping, and reuse the existing response and JSON helpers. |
-| `internal/project/infrastructure/postgres/repository.go` | Modify | Implement a parameterized update limited to three basic columns and map zero affected rows to not found. |
-| `tests/unit/project/application/update_project_test.go` | Create | Table-test successful replacement, equal dates, validation cases with no write, and repository error/not-found propagation. |
-| `tests/unit/project/transport/http/handler_test.go` | Modify | Test route-level request validation, success/error status and payloads, and that invalid requests do not reach persistence. |
-| `tests/unit/cmd/api/main_test.go` | Modify | Extend project fakes and verify API composition registers the update route without disturbing existing routes. |
-| `tests/integration/project/postgres/repository_integration_test.go` | Modify | Verify update values, unchanged project ID and associated story data, and not-found behavior against PostgreSQL. Apply the existing stories migration in the preservation scenario. |
+| `internal/api/api.go` | Modificar | Construir el caso de uso de actualización y registrar `PUT /projects/{project_id}` junto a la ruta existente de proyectos. |
+| `internal/project/application/create_project.go` | Modificar | Ampliar el contrato compartido de `ProjectRepository` con la operación de actualización. |
+| `internal/project/application/update_project.go` | Crear | Definir el comando de reemplazo, el caso de uso y el sentinel de proyecto inexistente; analizar las fechas, validar mediante el constructor existente del dominio y persistir solo proyectos válidos. |
+| `internal/project/transport/http/handler.go` | Modificar | Agregar el flujo de solicitud/handler de actualización, el análisis de UUID, la asignación de resultados/errores y reutilizar las funciones auxiliares existentes para respuestas y JSON. |
+| `internal/project/infrastructure/postgres/repository.go` | Modificar | Implementar una actualización parametrizada limitada a tres columnas básicas y asignar cero filas afectadas a not found. |
+| `tests/unit/project/application/update_project_test.go` | Crear | Probar con una tabla el reemplazo exitoso, las fechas iguales, los casos de validación sin escritura y la propagación de errores del repositorio/not found. |
+| `tests/unit/project/transport/http/handler_test.go` | Modificar | Probar la validación de solicitudes en la ruta, los estados y cuerpos de éxito/error, y que las solicitudes inválidas no lleguen a persistencia. |
+| `tests/unit/cmd/api/main_test.go` | Modificar | Ampliar los dobles de prueba de proyectos y verificar que la composición de la API registre la ruta de actualización sin afectar las rutas existentes. |
+| `tests/integration/project/postgres/repository_integration_test.go` | Modificar | Verificar los valores actualizados, la conservación del ID del proyecto y los datos de historias asociadas, y el comportamiento not found contra PostgreSQL. Aplicar la migración existente de historias en el escenario de preservación. |
 
-No production changes are planned for `internal/project/domain/project.go`: its current constructor already represents the invariant required for updates. No migration file changes are planned.
+No se prevén cambios de producción en `internal/project/domain/project.go`: su constructor actual ya representa la invariante requerida para las actualizaciones. No se prevén cambios en archivos de migración.
 
-## Interfaces / Contracts
+## Interfaces / contratos
 
-The repository contract remains in the project application package and gains one operation:
+El contrato del repositorio permanece en el paquete de aplicación de proyectos y suma una operación:
 
 ```go
 type ProjectRepository interface {
@@ -85,7 +85,7 @@ type ProjectRepository interface {
 var ErrProjectNotFound = errors.New("project not found")
 ```
 
-The update command carries the path identity and all required replacement fields:
+El comando de actualización contiene la identidad de la ruta y todos los campos obligatorios del reemplazo:
 
 ```go
 type UpdateProjectCommand struct {
@@ -96,7 +96,7 @@ type UpdateProjectCommand struct {
 }
 ```
 
-HTTP request and success representation:
+Solicitud HTTP y representación de éxito:
 
 ```http
 PUT /projects/{project_id}
@@ -109,38 +109,38 @@ Content-Type: application/json
 {"id":"<project_id>","name":"Metrics portal","start_date":"2026-03-01","planned_finish_date":"2026-06-30"}
 ```
 
-The request is a complete replacement, not a patch. All three JSON fields are required by validation; unknown fields, malformed JSON, and trailing JSON values are rejected by the existing strict decoder pattern. Missing/blank names and missing/invalid dates produce field-specific validation errors. Equal dates are valid. Repository update errors must not leak database details through HTTP.
+La solicitud es un reemplazo completo, no un patch. La validación exige los tres campos JSON; el patrón de decodificación estricta existente rechaza los campos desconocidos, el JSON mal formado y los valores JSON sobrantes. Los nombres faltantes/vacíos y las fechas faltantes/inválidas producen errores de validación específicos por campo. Las fechas iguales son válidas. Los errores de actualización del repositorio no deben exponer detalles de la base de datos por HTTP.
 
-## Testing Strategy
+## Estrategia de pruebas
 
-Strict TDD applies: write the focused failing tests first, implement to green, then refactor. Tests should be scenario-oriented and table-driven where cases share the same behavior.
+Se aplica TDD estricto: primero escribir las pruebas específicas que fallan, implementar hasta que pasen y luego refactorizar. Las pruebas deben organizarse por escenario y usar tablas cuando los casos compartan el mismo comportamiento.
 
-| Layer | What to Test | Approach |
+| Capa | Qué probar | Enfoque |
 |-------|-------------|----------|
-| Domain/application unit | Full replacement validation, equal dates, each missing/blank/invalid field, finish-before-start, and no repository write on invalid values | Use the existing domain constructor and a recording fake repository; assert field errors and exact call count. |
-| HTTP/route unit | `PUT` registration, success response, malformed body/extra fields, missing fields, invalid UUID, unknown ID, and persistence/internal errors | `httptest` against the composed handler; assert status, JSON fields, and that rejected input performs no write. Retain existing POST and story route coverage. |
-| PostgreSQL integration | Three columns change, ID remains fixed, unknown ID is not found, and existing story association/data is unchanged | Extend the Testcontainers repository test, apply migrations 000001 and 000002 for the story-preservation case, then query persisted project and story rows. Docker is required; current helpers skip when Docker is unavailable. |
-| Full suite | Cross-package compatibility after extending the repository interface | Run `go test ./...`; report Docker-dependent integration tests as skipped if Docker is unavailable. |
+| Pruebas unitarias de dominio/aplicación | Validación del reemplazo completo, fechas iguales, cada campo faltante/vacío/inválido, finalización anterior al inicio y ausencia de escritura en el repositorio para valores inválidos | Usar el constructor de dominio existente y un doble de prueba del repositorio que registre llamadas; comprobar los errores por campo y el número exacto de llamadas. |
+| Pruebas unitarias HTTP/ruta | Registro de `PUT`, respuesta exitosa, cuerpo mal formado/campos adicionales, campos faltantes, UUID inválido, ID desconocido y errores de persistencia/internos | Usar `httptest` contra el handler compuesto; comprobar el estado, los campos JSON y que las entradas rechazadas no generen escrituras. Mantener la cobertura existente de las rutas POST e historias. |
+| Integración con PostgreSQL | Cambian tres columnas, el ID permanece fijo, un ID desconocido devuelve not found y la asociación/datos de historias existentes no cambian | Ampliar la prueba del repositorio con Testcontainers, aplicar las migraciones 000001 y 000002 para el caso de preservación de historias y luego consultar las filas persistidas del proyecto y las historias. Se requiere Docker; los helpers actuales omiten estas pruebas si Docker no está disponible. |
+| Suite completa | Compatibilidad entre paquetes tras ampliar la interfaz del repositorio | Ejecutar `go test ./...`; informar como omitidas las pruebas de integración dependientes de Docker si Docker no está disponible. |
 
-The expected authored scope includes a use case, transport and repository changes, and tests at three boundaries. This is a realistic **high risk** to the fixed 400 changed-line budget because the existing tests are explicit and a story-preservation integration scenario adds setup/assertions. Keep tests table-driven and focused on the specified contract; do not add unrelated flows. The delivery remains one PR as directed.
+El alcance de autoría previsto incluye un caso de uso, cambios de transporte y repositorio, y pruebas en tres límites. Existe un **riesgo alto** realista de superar el límite fijo de 400 líneas modificadas, porque las pruebas existentes son explícitas y el escenario de integración para preservar historias agrega configuración y aserciones. Mantener las pruebas tabulares y enfocadas en el contrato especificado; no agregar flujos no relacionados. La entrega sigue siendo un solo PR, según lo indicado.
 
-## Threat Matrix
+## Matriz de amenazas
 
-This change adds HTTP routing, so routing applicability is addressed below. It does not add shell commands, subprocesses, VCS/PR automation, executable-file classification, or process integration. The supplied matrix’s rows are explicit N/A because their listed boundaries are not present; do not create tests or tasks for those N/A rows.
+Este cambio agrega enrutamiento HTTP, por lo que a continuación se aborda su aplicabilidad. No agrega comandos de shell, subprocesos, automatización de VCS/PR, clasificación de archivos ejecutables ni integración de procesos. Las filas N/A de la matriz proporcionada se indican explícitamente porque esos límites no están presentes; no crear pruebas ni tareas para dichas filas N/A.
 
-| Boundary | Applicability | Design response / safe and failure behavior | Planned RED tests |
+| Límite | Aplicabilidad | Respuesta de diseño / comportamiento seguro y ante fallos | Pruebas RED previstas |
 |---|---|---|---|
-| HTTP route registration and path identity (change-specific routing boundary) | Applicable | Match only `PUT /projects/{project_id}`; parse the path as UUID and reject malformed IDs before repository access; a valid but absent ID returns 404 without creating or modifying data. | Composed-handler tests prove the route is registered, invalid UUID has no write, unknown UUID returns 404/no write, and other existing routes remain intact. |
-| Documentation-like paths | N/A — no file classification or execution boundary changes. | No design response required. | None. |
-| Git repository selection | N/A — no Git command or repository-selection behavior changes. | No design response required. | None. |
-| Commit state | N/A — no commit/index automation changes. | No design response required. | None. |
-| Push state | N/A — no push or refspec automation changes. | No design response required. | None. |
-| PR commands | N/A — no PR command construction or execution changes. | No design response required. | None. |
+| Registro de rutas HTTP e identidad de ruta (límite de enrutamiento específico del cambio) | Aplicable | Coincidir únicamente con `PUT /projects/{project_id}`; analizar la ruta como UUID y rechazar IDs mal formados antes de acceder al repositorio; un ID válido pero inexistente devuelve 404 sin crear ni modificar datos. | Las pruebas del handler compuesto demuestran que la ruta está registrada, que un UUID inválido no genera escrituras, que un UUID desconocido devuelve 404/sin escrituras y que las demás rutas existentes siguen intactas. |
+| Rutas similares a documentación | N/A — no hay cambios en la clasificación ni en la ejecución de archivos. | No se requiere respuesta de diseño. | Ninguna. |
+| Selección del repositorio Git | N/A — no hay cambios en comandos de Git ni en el comportamiento de selección del repositorio. | No se requiere respuesta de diseño. | Ninguna. |
+| Estado de commit | N/A — no hay cambios en automatización de commit/índice. | No se requiere respuesta de diseño. | Ninguna. |
+| Estado de push | N/A — no hay cambios en automatización de push ni de refspec. | No se requiere respuesta de diseño. | Ninguna. |
+| Comandos de PR | N/A — no hay cambios en la construcción ni ejecución de comandos de PR. | No se requiere respuesta de diseño. | Ninguna. |
 
-## Migration / Rollout
+## Migración / despliegue
 
-No migration required. The projects table already contains all fields and its date check constraint permits equal dates. The route is available whenever the existing API handler is composed; no feature flag or staged rollout is needed. Rollback is removal/revert of the application, route, repository operation, and tests; existing rows remain valid.
+No se requiere migración. La tabla `projects` ya contiene todos los campos y su restricción de fechas permite fechas iguales. La ruta está disponible cuando se compone el handler existente de la API; no se necesita un feature flag ni un despliegue gradual. La reversión consiste en eliminar/revertir la aplicación, la ruta, la operación del repositorio y las pruebas; las filas existentes siguen siendo válidas.
 
-## Open Questions
+## Preguntas abiertas
 
-None. The 400-line budget is a delivery risk to be monitored during task planning and implementation; it does not block the technical design.
+Ninguna. El límite de 400 líneas es un riesgo de entrega que debe monitorearse durante la planificación de tareas y la implementación; no bloquea el diseño técnico.

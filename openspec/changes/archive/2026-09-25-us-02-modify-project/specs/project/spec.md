@@ -1,79 +1,79 @@
-# Delta for Project
+# Delta para Project
 
 ## ADDED Requirements
 
-### Requirement: Replace the basic data of an existing project
+### Requirement: Reemplazar los datos básicos de un proyecto existente
 
-The system MUST provide `PUT /projects/{project_id}` to replace the complete basic-data representation of the identified project. A valid request MUST provide `name`, `start_date`, and `planned_finish_date`. On success, the system MUST persist the supplied values and return the updated project's identifier and basic data.
+El sistema MUST ofrecer `PUT /projects/{project_id}` para reemplazar la representación completa de los datos básicos del proyecto identificado. Una solicitud válida MUST incluir `name`, `start_date` y `planned_finish_date`. Si la operación tiene éxito, el sistema MUST persistir los valores proporcionados y devolver el identificador y los datos básicos del proyecto actualizado.
 
-#### Scenario: Update all basic fields of an existing project
+#### Scenario: Actualizar todos los campos básicos de un proyecto existente
 
-- GIVEN an existing project and a request containing a nonblank `name`, a valid `start_date`, and a valid `planned_finish_date` that is not before the start date
-- WHEN the client sends `PUT /projects/{project_id}` with the project's ID
-- THEN the system persists all three supplied basic fields for that project
-- AND returns a successful response containing the same project ID and the updated basic fields
+- GIVEN un proyecto existente y una solicitud con `name` no vacío, `start_date` válida y `planned_finish_date` válida que no sea anterior a la fecha de inicio
+- WHEN el cliente envía `PUT /projects/{project_id}` con el ID del proyecto
+- THEN el sistema persiste los tres campos básicos proporcionados para ese proyecto
+- AND devuelve una respuesta exitosa con el mismo ID del proyecto y los campos básicos actualizados
 
-#### Scenario: Accept a planned finish date equal to the start date
+#### Scenario: Aceptar una fecha de finalización planificada igual a la fecha de inicio
 
-- GIVEN an existing project and a complete request whose `planned_finish_date` equals its `start_date`
-- WHEN the client sends `PUT /projects/{project_id}`
-- THEN the system accepts and persists the updated basic data
+- GIVEN un proyecto existente y una solicitud completa cuyo `planned_finish_date` es igual a su `start_date`
+- WHEN el cliente envía `PUT /projects/{project_id}`
+- THEN el sistema acepta y persiste los datos básicos actualizados
 
-### Requirement: Reject incomplete or invalid project update data
+### Requirement: Rechazar datos incompletos o inválidos al actualizar un proyecto
 
-The system MUST reject an update request if any required basic field is missing or invalid, MUST explain the validation reason, and MUST NOT persist any part of the rejected update.
+El sistema MUST rechazar una solicitud de actualización si falta algún campo básico obligatorio o es inválido, MUST explicar el motivo de validación y MUST NOT persistir ninguna parte de la actualización rechazada.
 
-#### Scenario: Reject a request missing a required basic field
+#### Scenario: Rechazar una solicitud a la que le falte un campo básico obligatorio
 
-- GIVEN an existing project
-- AND an update request omits `name`, `start_date`, or `planned_finish_date`
-- WHEN the client sends `PUT /projects/{project_id}`
-- THEN the system returns a validation error identifying the missing field
-- AND the project's previously stored basic data remains unchanged
+- GIVEN un proyecto existente
+- AND una solicitud de actualización omite `name`, `start_date` o `planned_finish_date`
+- WHEN el cliente envía `PUT /projects/{project_id}`
+- THEN el sistema devuelve un error de validación que identifica el campo faltante
+- AND los datos básicos previamente almacenados del proyecto permanecen sin cambios
 
-#### Scenario: Reject a blank project name
+#### Scenario: Rechazar un nombre de proyecto vacío
 
-- GIVEN an existing project and an update request with a missing or blank `name`
-- WHEN the client sends `PUT /projects/{project_id}`
-- THEN the system returns a validation error identifying the invalid name
-- AND the project's previously stored basic data remains unchanged
+- GIVEN un proyecto existente y una solicitud de actualización con `name` faltante o vacío
+- WHEN el cliente envía `PUT /projects/{project_id}`
+- THEN el sistema devuelve un error de validación que identifica el nombre inválido
+- AND los datos básicos previamente almacenados del proyecto permanecen sin cambios
 
-#### Scenario: Reject an invalid date value
+#### Scenario: Rechazar un valor de fecha inválido
 
-- GIVEN an existing project and a complete update request with an invalid `start_date` or `planned_finish_date`
-- WHEN the client sends `PUT /projects/{project_id}`
-- THEN the system returns a validation error identifying the invalid date
-- AND the project's previously stored basic data remains unchanged
+- GIVEN un proyecto existente y una solicitud de actualización completa con `start_date` o `planned_finish_date` inválida
+- WHEN el cliente envía `PUT /projects/{project_id}`
+- THEN el sistema devuelve un error de validación que identifica la fecha inválida
+- AND los datos básicos previamente almacenados del proyecto permanecen sin cambios
 
-### Requirement: Enforce project date consistency during updates
+### Requirement: Aplicar la consistencia de fechas del proyecto durante las actualizaciones
 
-The system MUST reject an update when `planned_finish_date` is earlier than `start_date`, MUST explain the date inconsistency, and MUST NOT persist any part of the rejected update.
+El sistema MUST rechazar una actualización cuando `planned_finish_date` sea anterior a `start_date`, MUST explicar la inconsistencia de fechas y MUST NOT persistir ninguna parte de la actualización rechazada.
 
-#### Scenario: Reject a planned finish date before the start date
+#### Scenario: Rechazar una fecha de finalización planificada anterior a la fecha de inicio
 
-- GIVEN an existing project and a complete update request whose `planned_finish_date` is earlier than `start_date`
-- WHEN the client sends `PUT /projects/{project_id}`
-- THEN the system returns a validation error explaining that the planned finish date cannot be earlier than the start date
-- AND the project's previously stored basic data remains unchanged
+- GIVEN un proyecto existente y una solicitud de actualización completa cuyo `planned_finish_date` es anterior a `start_date`
+- WHEN el cliente envía `PUT /projects/{project_id}`
+- THEN el sistema devuelve un error de validación que explica que la fecha de finalización planificada no puede ser anterior a la fecha de inicio
+- AND los datos básicos previamente almacenados del proyecto permanecen sin cambios
 
-### Requirement: Report an unknown project during update
+### Requirement: Informar si el proyecto no existe durante la actualización
 
-The system MUST return a not-found response when the ID in `PUT /projects/{project_id}` does not identify an existing project, and MUST NOT create a project or alter any existing project data.
+El sistema MUST devolver una respuesta not found cuando el ID de `PUT /projects/{project_id}` no identifique un proyecto existente y MUST NOT crear un proyecto ni modificar los datos de ningún proyecto existente.
 
-#### Scenario: Update a project with an unknown ID
+#### Scenario: Actualizar un proyecto con un ID desconocido
 
-- GIVEN the requested project ID does not exist
-- WHEN the client sends `PUT /projects/{project_id}` with otherwise valid basic data
-- THEN the system returns a not-found response
-- AND no project is created and no existing project data is changed
+- GIVEN el ID del proyecto solicitado no existe
+- WHEN el cliente envía `PUT /projects/{project_id}` con datos básicos válidos en los demás aspectos
+- THEN el sistema devuelve una respuesta not found
+- AND no se crea ningún proyecto ni se modifican los datos de proyectos existentes
 
-### Requirement: Preserve data outside the project's basic fields
+### Requirement: Preservar los datos ajenos a los campos básicos del proyecto
 
-When updating a project, the system MUST change only that project's `name`, `start_date`, and `planned_finish_date`. It MUST preserve the project's identifier, other project data, and all member and story data associated with or otherwise unrelated to the project.
+Al actualizar un proyecto, el sistema MUST cambiar únicamente `name`, `start_date` y `planned_finish_date` de ese proyecto. MUST preservar el identificador del proyecto, los demás datos del proyecto y todos los datos de miembros e historias asociados al proyecto o no relacionados con él.
 
-#### Scenario: Update basic data without changing unrelated data
+#### Scenario: Actualizar los datos básicos sin modificar los datos no relacionados
 
-- GIVEN an existing project with an identifier, other project data, associated members, and associated stories
-- WHEN the client successfully updates the project's `name`, `start_date`, and `planned_finish_date`
-- THEN the project retains the same identifier and all other project data
-- AND all associated member and story data remains unchanged
+- GIVEN un proyecto existente con un identificador, otros datos de proyecto, miembros asociados e historias asociadas
+- WHEN el cliente actualiza correctamente `name`, `start_date` y `planned_finish_date` del proyecto
+- THEN el proyecto conserva el mismo identificador y todos los demás datos del proyecto
+- AND todos los datos de miembros e historias asociados permanecen sin cambios

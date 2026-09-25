@@ -1,68 +1,68 @@
-# Proposal: Modify an Existing Project
+# Propuesta: Modificar un proyecto existente
 
-## Intent
+## Intención
 
-Implement US-02 (GitHub issue #30) so a client that already knows a project ID can update its name, start date, and planned finish date. Updates must enforce the existing date invariant, persist valid changes, and leave all unrelated project and member/story data unchanged.
+Implementar US-02 (issue #30 de GitHub) para que un cliente que ya conoce el ID de un proyecto pueda actualizar su nombre, fecha de inicio y fecha de finalización planificada. Las actualizaciones deben aplicar la invariante de fechas existente, persistir los cambios válidos y mantener sin cambios todos los datos no relacionados del proyecto, sus miembros y sus historias.
 
-## Scope
+## Alcance
 
-### In Scope
-- Add `PUT /projects/{project_id}` for replacing the complete basic-data representation (`name`, `start_date`, `planned_finish_date`) of the identified project.
-- Reject invalid or incomplete data, including a planned finish date before the start date; return a reason and do not persist invalid changes.
-- Persist valid changes to the selected project's three basic fields only; return not found for an unknown project ID.
-- Cover validation, HTTP behavior, persistence, and preservation of unrelated data with unit and integration tests.
+### Incluido
+- Agregar `PUT /projects/{project_id}` para reemplazar la representación completa de los datos básicos (`name`, `start_date`, `planned_finish_date`) del proyecto identificado.
+- Rechazar datos inválidos o incompletos, incluida una fecha de finalización planificada anterior a la fecha de inicio; informar el motivo y no persistir los cambios inválidos.
+- Persistir únicamente los tres campos básicos del proyecto seleccionado cuando los cambios sean válidos; devolver not found si el ID del proyecto es desconocido.
+- Cubrir la validación, el comportamiento HTTP, la persistencia y la preservación de datos no relacionados mediante pruebas unitarias y de integración.
 
-### Out of Scope
-- Project listing, searching, or interactive selection; the caller already has the ID.
-- Project creation (US-01), member management (US-03), and project status (US-04).
-- Partial-update semantics (`PATCH`) or changes to project/story/member data models.
+### Fuera de alcance
+- Listado, búsqueda o selección interactiva de proyectos; quien realiza la llamada ya dispone del ID.
+- Creación de proyectos (US-01), gestión de miembros (US-03) y estado del proyecto (US-04).
+- Semántica de actualización parcial (`PATCH`) o cambios en los modelos de datos de proyectos, historias o miembros.
 
-## Capabilities
+## Capacidades
 
-### New Capabilities
-- None.
+### Capacidades nuevas
+- Ninguna.
 
-### Modified Capabilities
-- `project`: add the existing-project basic-data update behavior while preserving the current US-01 creation requirements. The specs phase should create a delta for `openspec/specs/project/spec.md`.
+### Capacidades modificadas
+- `project`: agregar el comportamiento de actualización de los datos básicos de un proyecto existente y preservar los requisitos actuales de creación de US-01. La fase de especificación debe crear un delta para `openspec/specs/project/spec.md`.
 
-## Approach
+## Enfoque
 
-Follow the existing Go HTTP/application/domain/PostgreSQL boundaries. Implement `PUT /projects/{project_id}` as a full replacement of the three required basic fields, validate the complete resulting state before persistence, and update only `name`, `start_date`, and `planned_finish_date` for the path ID. Use the conventional not-found response for an unknown ID. Keep error responses informative and ensure invalid input never reaches persistence. Follow strict TDD with focused unit/HTTP tests and PostgreSQL integration coverage; run `go test ./...` (integration tests require Docker/Testcontainers). Keep the implementation reviewable within the configured 400-changed-line budget in a single PR.
+Respetar los límites existentes de Go entre HTTP, aplicación, dominio y PostgreSQL. Implementar `PUT /projects/{project_id}` como reemplazo completo de los tres campos básicos obligatorios, validar el estado resultante completo antes de persistir y actualizar únicamente `name`, `start_date` y `planned_finish_date` para el ID de la ruta. Usar la respuesta convencional not found para un ID desconocido. Mantener informativas las respuestas de error y asegurar que las entradas inválidas nunca lleguen a persistencia. Seguir TDD estricto con pruebas unitarias/HTTP específicas y cobertura de integración con PostgreSQL; ejecutar `go test ./...` (las pruebas de integración requieren Docker/Testcontainers). Mantener la implementación revisable dentro del límite configurado de 400 líneas modificadas en un único PR.
 
-## Affected Areas
+## Áreas afectadas
 
-| Area | Impact | Description |
+| Área | Impacto | Descripción |
 |------|--------|-------------|
-| `internal/api/api.go` | Modified | Register the project update route. |
-| `internal/project/domain/` and `internal/project/application/` | Modified | Reuse project invariants and add the update use case/repository contract. |
-| `internal/project/transport/http/handler.go` | Modified | Decode and handle update requests and responses. |
-| `internal/project/infrastructure/postgres/repository.go` | Modified | Update only the three basic-data columns and distinguish a missing project. |
-| `tests/unit/project/` | Modified | Cover valid updates, invalid data, missing IDs, and no persistence on validation failure. |
-| `tests/integration/project/postgres/repository_integration_test.go` | Modified | Verify updated fields and preservation of the project ID and related/unrelated data. |
-| `openspec/specs/project/spec.md` | Modified in future specs/archive phase | Define the US-02 behavior as a delta without removing US-01 requirements. |
+| `internal/api/api.go` | Modificado | Registrar la ruta de actualización del proyecto. |
+| `internal/project/domain/` y `internal/project/application/` | Modificado | Reutilizar las invariantes del proyecto y agregar el caso de uso/contrato del repositorio para actualizarlo. |
+| `internal/project/transport/http/handler.go` | Modificado | Decodificar y gestionar las solicitudes y respuestas de actualización. |
+| `internal/project/infrastructure/postgres/repository.go` | Modificado | Actualizar únicamente las tres columnas de datos básicos y detectar si falta el proyecto. |
+| `tests/unit/project/` | Modificado | Cubrir actualizaciones válidas, datos inválidos, IDs inexistentes y ausencia de persistencia cuando falla la validación. |
+| `tests/integration/project/postgres/repository_integration_test.go` | Modificado | Verificar los campos actualizados y la preservación del ID del proyecto y de los datos relacionados y no relacionados. |
+| `openspec/specs/project/spec.md` | Se modificará en la futura fase de especificación/archivo | Definir el comportamiento de US-02 como delta sin eliminar los requisitos de US-01. |
 
-## Risks
+## Riesgos
 
-| Risk | Likelihood | Mitigation |
+| Riesgo | Probabilidad | Mitigación |
 |------|------------|------------|
-| A broad update could overwrite unrelated data. | Medium | Restrict the update statement to the three basic fields and assert preservation in integration tests. |
-| Full-replacement `PUT` requires clients to send all three fields, even for a one-field change. | Low | Make required-field/full-replacement behavior explicit in the API contract and validation errors. |
-| PostgreSQL integration verification may be unavailable without Docker. | Medium | Run unit tests regardless; run and report `go test ./...` with Docker/Testcontainers when available. |
-| The single-PR change could exceed the 400-line review budget. | Low | Keep scope limited to US-02 and monitor authored additions plus deletions during implementation; do not add unrelated flows. |
+| Una actualización amplia podría sobrescribir datos no relacionados. | Media | Limitar la sentencia de actualización a los tres campos básicos y comprobar su preservación en pruebas de integración. |
+| El `PUT` de reemplazo completo exige que los clientes envíen los tres campos, incluso al cambiar uno solo. | Baja | Dejar explícito el comportamiento de campos obligatorios/reemplazo completo en el contrato de la API y en los errores de validación. |
+| La verificación de integración con PostgreSQL podría no estar disponible sin Docker. | Media | Ejecutar las pruebas unitarias de todos modos; ejecutar e informar `go test ./...` con Docker/Testcontainers cuando esté disponible. |
+| El cambio en un solo PR podría superar el límite de revisión de 400 líneas. | Baja | Limitar el alcance a US-02 y monitorear las adiciones y eliminaciones propias durante la implementación; no agregar flujos no relacionados. |
 
-## Rollback Plan
+## Plan de reversión
 
-Revert the single implementation PR. This change requires no schema migration; reverting the route, use case, repository update, and tests restores the previous creation-only behavior. Existing persisted project records remain valid and are not deleted by rollback.
+Revertir el único PR de implementación. Este cambio no requiere una migración de esquema; revertir la ruta, el caso de uso, la actualización del repositorio y las pruebas restaura el comportamiento anterior, limitado a la creación. Los registros de proyectos ya persistidos siguen siendo válidos y la reversión no los elimina.
 
-## Dependencies
+## Dependencias
 
-- Existing PostgreSQL project table and project date invariant; no external dependency or schema migration is expected.
-- Docker is required to execute Testcontainers integration tests.
+- Tabla de proyectos de PostgreSQL e invariante de fechas del proyecto existentes; no se prevé una dependencia externa ni una migración de esquema.
+- Se requiere Docker para ejecutar las pruebas de integración basadas en Testcontainers.
 
-## Success Criteria
+## Criterios de éxito
 
-- [ ] A client can replace all three basic fields for a project by ID, and the successful response reflects the persisted values.
-- [ ] Unknown IDs return not found; missing/invalid fields and `planned_finish_date < start_date` return an explanatory error and leave persisted values unchanged.
-- [ ] Updating a project preserves its ID and all unrelated project, member, and story data.
-- [ ] `go test ./...` passes, including PostgreSQL integration tests when Docker is available.
-- [ ] The implementation is delivered in one PR with no more than 400 authored changed lines.
+- [ ] Un cliente puede reemplazar por ID los tres campos básicos de un proyecto y la respuesta exitosa refleja los valores persistidos.
+- [ ] Los IDs desconocidos devuelven not found; los campos faltantes/inválidos y `planned_finish_date < start_date` devuelven un error explicativo y dejan sin cambios los valores persistidos.
+- [ ] La actualización de un proyecto preserva su ID y todos los datos no relacionados de proyectos, miembros e historias.
+- [ ] `go test ./...` pasa, incluidas las pruebas de integración con PostgreSQL cuando Docker está disponible.
+- [ ] La implementación se entrega en un PR con no más de 400 líneas modificadas de autoría.

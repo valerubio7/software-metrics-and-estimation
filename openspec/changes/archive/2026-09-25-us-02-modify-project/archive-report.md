@@ -1,61 +1,61 @@
-# Archive Report: Modify an Existing Project (US-02)
+# Informe de archivo: Modificar un proyecto existente (US-02)
 
 **Status:** Archived
 **Date:** 2026-09-25
-**Change:** `us-02-modify-project`
+**Cambio:** `us-02-modify-project`
 
-## Native status and edit scope
+## Estado nativo y alcance de edición
 
-Refreshed native status with `gentle-ai sdd-status us-02-modify-project --cwd /home/santy/Proyectos/software-metrics-and-estimation --json --instructions` reported:
+La actualización del estado nativo mediante `gentle-ai sdd-status us-02-modify-project --cwd /home/santy/Proyectos/software-metrics-and-estimation --json --instructions` informó:
 
-- Artifact store: `openspec`; `applyState: all_done`; `nextRecommended: archive`.
-- Tasks: 15/15 complete; no blocked reasons.
-- `actionContext.mode`: `repo-local`; the project root is the only allowed edit root.
-- Proposal, delta spec, design, tasks, and apply-progress locators resolved. No verify-report locator exists; verification reports are optional.
+- Almacén de artefactos: `openspec`; `applyState: all_done`; `nextRecommended: archive`.
+- Tareas: 15/15 completas; no hay motivos de bloqueo.
+- `actionContext.mode`: `repo-local`; la raíz del proyecto es la única raíz de edición permitida.
+- Se resolvieron las ubicaciones de la propuesta, la especificación delta, el diseño, las tareas y el avance de implementación. No existe una ubicación para el informe de verificación; los informes de verificación son opcionales.
 
-The requested archive and the narrowly scoped canonical-format prerequisite were explicitly approved. `openspec/config.yaml` was also changed during SDD initialization after the initial clean-worktree check; it was not pre-existing. No commit, PR, or push was performed.
+El archivo solicitado y el requisito previo, de alcance acotado, sobre el formato canónico se aprobaron explícitamente. `openspec/config.yaml` también se modificó durante la inicialización de SDD, después de la comprobación inicial del árbol de trabajo limpio; ese cambio no existía previamente. No se realizó ningún commit, PR ni push.
 
-## Artifacts preserved
+## Artefactos preservados
 
-The archived change directory contains:
+El directorio del cambio archivado contiene:
 
-- `proposal.md` — present
-- `specs/project/spec.md` — present
-- `design.md` — present
-- `tasks.md` — present; all 15 tasks remain checked complete (15/15, 0 unfinished)
-- `apply-progress.md` — present
-- `exploration.md` — present
-- `verify-report.md` — absent
+- `proposal.md` — presente
+- `specs/project/spec.md` — presente
+- `design.md` — presente
+- `tasks.md` — presente; las 15 tareas siguen marcadas como completas (15/15, 0 sin finalizar)
+- `apply-progress.md` — presente
+- `exploration.md` — presente
+- `verify-report.md` — ausente
 
-No task checkboxes or historical reports were rewritten. The destination is `openspec/changes/archive/2026-09-25-us-02-modify-project/`; the active change directory is absent.
+No se reescribieron casillas de tareas ni informes históricos. El destino es `openspec/changes/archive/2026-09-25-us-02-modify-project/`; el directorio del cambio activo no existe.
 
-## Canonical specification sync
+## Sincronización de la especificación canónica
 
-The existing `openspec/specs/project/spec.md` contained seven existing requirements. As the user-approved prerequisite, only their seven `### Requisito:` headings were changed to `### Requirement:`; the Spanish requirement bodies and scenarios were left unchanged. `git diff --check` passed.
+La especificación existente `openspec/specs/project/spec.md` contenía siete requisitos. Como requisito previo aprobado por el usuario, solo se cambiaron sus siete encabezados `### Requisito:` por `### Requirement:`; los cuerpos y escenarios en español de los requisitos no se modificaron. `git diff --check` pasó.
 
-The native composer completed successfully (exit 0) using the required temporary output and atomic replacement:
+El compositor nativo finalizó correctamente (exit 0) mediante la salida temporal requerida y el reemplazo atómico:
 
 ```bash
 gentle-ai sdd-archive-compose --canonical "openspec/specs/project/spec.md" --delta "openspec/changes/us-02-modify-project/specs/project/spec.md" --output "openspec/specs/project/spec.md.compose-tmp" && mv "openspec/specs/project/spec.md.compose-tmp" "openspec/specs/project/spec.md"
 ```
 
-It appended five ADDED requirements for full project replacement, validation, date consistency, unknown IDs, and preservation of unrelated data. The seven existing requirement bodies/scenarios were preserved. The composition was additive and not destructive; no other requirement operation was present.
+Agregó cinco requisitos ADDED para el reemplazo completo de proyectos, la validación, la consistencia de fechas, los IDs desconocidos y la preservación de datos no relacionados. Se preservaron los cuerpos/escenarios de los siete requisitos existentes. La composición fue aditiva, no destructiva, y no incluyó ninguna otra operación sobre requisitos.
 
-## Implementation and verification at close
+## Implementación y verificación al cierre
 
-The persisted tasks artifact records all 15 implementation and verification tasks complete. Final-state facts supplied at archive confirm the focused test suite, uncached full `go test ./...` including project and story PostgreSQL integration, and `git diff --check` passed.
+El artefacto de tareas persistido registra como completas las 15 tareas de implementación y verificación. Los datos de estado final proporcionados al archivar confirman que pasaron la suite focalizada, la ejecución completa de `go test ./...` sin caché —incluida la integración con PostgreSQL de proyectos e historias— y `git diff --check`.
 
-Strict-TDD history is reported precisely: tests were written before production implementation, but the initial RED execution was blocked because Go was unavailable. No RED result is claimed retroactively. The later uncached full-suite run exercised and passed both PostgreSQL integration packages.
+El historial de TDD estricto se informa con precisión: las pruebas se escribieron antes de la implementación de producción, pero la ejecución RED inicial quedó bloqueada porque Go no estaba disponible. No se afirma retroactivamente ningún resultado RED. La ejecución posterior de la suite completa sin caché ejercitó ambos paquetes de integración con PostgreSQL y pasó.
 
-Delivery remained a single PR with explicit user-approved `size:exception`, 494 authored implementation lines, and no chained PR. This archive records that approved delivery policy; it does not claim a PR was created or merged.
+La entrega siguió siendo un único PR con `size:exception` aprobado explícitamente por el usuario, 494 líneas de implementación de autoría y sin PR encadenados. Este archivo registra esa política de entrega aprobada; no afirma que se haya creado ni integrado un PR.
 
-No verify-report exists. There are no unfinished tasks. The unresolved verification-history finding is the unobserved initial RED execution; current GREEN/full-suite results are reported above without converting that historical blocker into a RED pass.
+No existe un informe de verificación. No hay tareas sin finalizar. El hallazgo pendiente del historial de verificación es que no se observó la ejecución RED inicial; los resultados actuales de GREEN/la suite completa se informan arriba sin transformar ese bloqueo histórico en una ejecución RED exitosa.
 
-## Mechanical archive integrity
+## Integridad mecánica del archivo
 
-The pre-move recursive snapshot was compared with the destination after the move using `diff -r`. The command emitted no output and exited 0; this empty output is the required byte-identity evidence. `git mv` rejected the untracked source directory (`fatal: source directory is empty`), so the guarded fallback compared the unchanged source against the snapshot and then used `mv`; the required post-move comparison passed.
+La instantánea recursiva previa al traslado se comparó con el destino posterior al traslado mediante `diff -r`. El comando no emitió salida y terminó con exit 0; esta salida vacía es la evidencia requerida de identidad byte a byte. `git mv` rechazó el directorio de origen sin seguimiento (`fatal: source directory is empty`), por lo que la alternativa protegida comparó el origen sin cambios con la instantánea y luego usó `mv`; la comparación posterior al traslado requerida pasó.
 
-Verbatim output of the post-move comparison:
+Salida textual de la comparación posterior al traslado:
 
 ```text
 ```

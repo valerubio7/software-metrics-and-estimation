@@ -29,7 +29,7 @@ testing:
         formatter: null
 
 conventions:
-  technical_artifacts_language: en
+  technical_artifacts_language: es
   source_control:
     commit_style: conventional-commits
 
