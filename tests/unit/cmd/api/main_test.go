@@ -43,6 +43,113 @@ func (r *fakeStoryRepository) Create(_ context.Context, story storydomain.Story)
 	return nil
 }
 
+type fakeStoryUpdater struct {
+	updates []storydomain.Story
+}
+
+func (u *fakeStoryUpdater) Update(_ context.Context, story storydomain.Story) (storydomain.Story, error) {
+	u.updates = append(u.updates, story)
+	return story, nil
+}
+
+const (
+	updateProjectID = "5c21cbd4-d9a7-42df-9c3a-c0866f058746"
+	updateStoryID   = "e99c05a4-03ea-4c19-8f59-286dd59e7aa1"
+	updateBody      = `{"title":"Nuevo título","description":"Otra descripción","priority":"alta","status":"en_progreso","acceptance_criteria":["Primero","Segundo"],"estimated_hours":2.5}`
+)
+
+func newStoryHandler(stories *fakeStoryRepository, updater *fakeStoryUpdater) http.Handler {
+	dependencies := api.StoryDependencies{Repository: stories, GenerateID: func() string { return updateStoryID }}
+	if updater != nil {
+		dependencies.Updater = updater
+	}
+	return api.NewHTTPHandler(&fakeProjectRepository{}, func() string { return updateProjectID }, dependencies)
+}
+
+func TestNewHTTPHandlerRegistersStoryUpdateRouteWhenUpdaterIsPresent(t *testing.T) {
+	updater := &fakeStoryUpdater{}
+	handler := newStoryHandler(&fakeStoryRepository{}, updater)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPut,
+		"/projects/"+updateProjectID+"/stories/"+updateStoryID, strings.NewReader(updateBody)))
+	if response.Code != http.StatusOK || len(updater.updates) != 1 {
+		t.Fatalf("PUT status = %d, updates = %d; body = %s", response.Code, len(updater.updates), response.Body.String())
+	}
+	var result map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["id"] != updateStoryID || result["project_id"] != updateProjectID || result["status"] != "en_progreso" ||
+		result["estimated_hours"] != 2.5 || result["story_points"] != nil {
+		t.Errorf("updated story response = %v", result)
+	}
+}
+
+func TestNewHTTPHandlerWithoutUpdaterDoesNotExposeStoryUpdate(t *testing.T) {
+	stories := &fakeStoryRepository{}
+	handler := newStoryHandler(stories, nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPut,
+		"/projects/"+updateProjectID+"/stories/"+updateStoryID, strings.NewReader(updateBody)))
+	if response.Code != http.StatusNotFound {
+		t.Errorf("PUT without updater status = %d, want 404", response.Code)
+	}
+
+	created := httptest.NewRecorder()
+	handler.ServeHTTP(created, httptest.NewRequest(http.MethodPost, "/projects/"+updateProjectID+"/stories",
+		strings.NewReader(`{"title":"Registro","description":"Crear historia","priority":"media","acceptance_criteria":["Listo"]}`)))
+	if created.Code != http.StatusCreated || len(stories.stories) != 1 {
+		t.Errorf("creation status = %d, writes = %d; body = %s", created.Code, len(stories.stories), created.Body.String())
+	}
+}
+
+func TestStoryRoutingPreservesCollectionAndItemBoundaries(t *testing.T) {
+	updater := &fakeStoryUpdater{}
+	handler := newStoryHandler(&fakeStoryRepository{}, updater)
+	collection := "/projects/" + updateProjectID + "/stories"
+	item := collection + "/" + updateStoryID
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		status int
+	}{
+		{"collection GET", http.MethodGet, collection, http.StatusMethodNotAllowed},
+		{"collection PUT", http.MethodPut, collection, http.StatusMethodNotAllowed},
+		{"collection DELETE", http.MethodDelete, collection, http.StatusMethodNotAllowed},
+		{"trailing slash", http.MethodPut, collection + "/", http.StatusNotFound},
+		{"item GET", http.MethodGet, item, http.StatusMethodNotAllowed},
+		{"item POST", http.MethodPost, item, http.StatusMethodNotAllowed},
+		{"item PATCH", http.MethodPatch, item, http.StatusMethodNotAllowed},
+		{"item DELETE", http.MethodDelete, item, http.StatusMethodNotAllowed},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(tt.method, tt.path, strings.NewReader(updateBody)))
+			if response.Code != tt.status || len(updater.updates) != 0 {
+				t.Errorf("%s %s status = %d, updates = %d; want %d and 0 updates", tt.method, tt.path, response.Code, len(updater.updates), tt.status)
+			}
+		})
+	}
+}
+
+func TestStoryUpdateTwiceKeepsTheLastWrite(t *testing.T) {
+	updater := &fakeStoryUpdater{}
+	handler := newStoryHandler(&fakeStoryRepository{}, updater)
+	path := "/projects/" + updateProjectID + "/stories/" + updateStoryID
+	for _, body := range []string{updateBody, strings.Replace(updateBody, `"status":"en_progreso"`, `"status":"completada"`, 1)} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPut, path, strings.NewReader(body)))
+		if response.Code != http.StatusOK {
+			t.Fatalf("PUT status = %d; body = %s", response.Code, response.Body.String())
+		}
+	}
+	if len(updater.updates) != 2 || updater.updates[0].Status != "en_progreso" || updater.updates[1].Status != "completada" {
+		t.Errorf("updates = %+v, want en_progreso then completada", updater.updates)
+	}
+}
+
 func TestNewHTTPHandlerRegistersStoryAndPreservesProjects(t *testing.T) {
 	projects := &fakeProjectRepository{}
 	stories := &fakeStoryRepository{}

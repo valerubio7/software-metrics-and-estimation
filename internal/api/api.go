@@ -39,13 +39,17 @@ func NewProjectID() string {
 }
 
 // StoryDependencies enables story creation after the story migration is available.
+// Updater is optional: the update route is registered only when it is supplied, which
+// the caller does after verifying migration 000003.
 type StoryDependencies struct {
 	Repository storyapplication.StoryRepository
 	GenerateID storyapplication.IDGenerator
+	Updater    storyapplication.StoryUpdater
 }
 
 // NewHTTPHandler builds the HTTP handler; existing project-only callers remain valid.
-// The caller must verify migration 000002 before supplying story dependencies.
+// The caller must verify migration 000002 before supplying story dependencies and
+// migration 000003 before supplying StoryDependencies.Updater.
 func NewHTTPHandler(repository application.ProjectRepository, generateID application.IDGenerator, stories ...StoryDependencies) http.Handler {
 	useCase := application.NewCreateProjectUseCase(repository, generateID)
 	updateUseCase := application.NewUpdateProjectUseCase(repository)
@@ -55,6 +59,10 @@ func NewHTTPHandler(repository application.ProjectRepository, generateID applica
 	if len(stories) != 0 {
 		storyUseCase := storyapplication.NewCreateStoryUseCase(stories[0].Repository, stories[0].GenerateID)
 		mux.Handle("POST /projects/{project_id}/stories", storyhttp.NewCreateStoryHandler(storyUseCase))
+		if stories[0].Updater != nil {
+			updateStoryUseCase := storyapplication.NewUpdateStoryUseCase(stories[0].Updater)
+			mux.Handle("PUT /projects/{project_id}/stories/{story_id}", storyhttp.NewUpdateStoryHandler(updateStoryUseCase))
+		}
 	}
 	return mux
 }

@@ -254,35 +254,35 @@ Amenaza cubierta: solapamiento de patrones de routing (`/projects/{id}/stories` 
 
 ### Preparación
 
-- [ ] 5.1 Crear la rama `feat/us06-wire-update-route-docs` a partir de `feat/us06-http-update-handler` y confirmar `go test ./...` en verde como línea base.
+- [x] 5.1 Crear la rama `feat/us06-wire-update-route-docs` a partir de `feat/us06-http-update-handler` y confirmar `go test ./...` en verde como línea base.
 
 ### RED
 
-- [ ] 5.2 RED unitario de composición: en `tests/unit/cmd/api/main_test.go` agregar un fake de updater y tests: con `Updater` presente, `PUT /projects/{id}/stories/{story_id}` responde `200` y hay exactamente una actualización; con `Updater` nil, la misma ruta responde `404` y la creación sigue funcionando; se preservan los `405` de `GET`/`PUT`/`DELETE` sobre `/projects/{id}/stories`; `/projects/{id}/stories/` responde `404`; el caso solo-proyectos se conserva. Ejecutar `go test ./tests/unit/cmd/api/...` y observar la falla (`StoryDependencies.Updater` indefinido).
-- [ ] 5.3 RED de integración (requiere Docker): en `tests/integration/story/postgres/http_integration_test.go` agregar el escenario `version three` a `TestAPIStartupRoutesFollowMigrationState` (modificación disponible), `version two` conserva la creación y la ruta de modificación no existe (`404`), `dirty` en versión 3 no expone la ruta, y de punta a punta crear → modificar `200` con `project_id` intacto, y una historia inexistente → `404`. Ejecutar `go test ./tests/integration/story/postgres/... -run "TestAPIStartup" -v` y observar la falla.
+- [x] 5.2 RED unitario de composición: en `tests/unit/cmd/api/main_test.go` agregar un fake de updater y tests: con `Updater` presente, `PUT /projects/{id}/stories/{story_id}` responde `200` y hay exactamente una actualización; con `Updater` nil, la misma ruta responde `404` y la creación sigue funcionando; se preservan los `405` de `GET`/`PUT`/`DELETE` sobre `/projects/{id}/stories`; `/projects/{id}/stories/` responde `404`; el caso solo-proyectos se conserva. Ejecutar `go test ./tests/unit/cmd/api/...` y observar la falla (`StoryDependencies.Updater` indefinido).
+- [x] 5.3 RED de integración (requiere Docker): en `tests/integration/story/postgres/http_integration_test.go` agregar el escenario `version three` a `TestAPIStartupRoutesFollowMigrationState` (modificación disponible), `version two` conserva la creación y la ruta de modificación no existe (`404`), `dirty` en versión 3 no expone la ruta, y de punta a punta crear → modificar `200` con `project_id` intacto, y una historia inexistente → `404`. Ejecutar `go test ./tests/integration/story/postgres/... -run "TestAPIStartup" -v` y observar la falla.
 
 ### GREEN
 
-- [ ] 5.4 GREEN `api.go`: en `internal/api/api.go` agregar `Updater storyapplication.StoryUpdater` a `StoryDependencies` (campo aditivo y opcional) y registrar `PUT /projects/{project_id}/stories/{story_id}` con `NewUpdateStoryHandler` solo si `Updater != nil`. Ejecutar `go test ./tests/unit/cmd/api/...` y observar el pase.
-- [ ] 5.5 GREEN `main.go`: en `cmd/api/main.go` resolver los tres casos a partir de una única lectura de `schema_migrations` (`err == nil && !dirty && version >= 3` → proyectos + crear + modificar; `>= 2` → proyectos + crear; resto → solo proyectos), cada uno con su log, inyectando el mismo `*PostgresStoryRepository` como `Repository` y como `Updater`. Ejecutar `go test ./tests/integration/story/postgres/... -run "TestAPIStartup" -v` y observar el pase.
+- [x] 5.4 GREEN `api.go`: en `internal/api/api.go` agregar `Updater storyapplication.StoryUpdater` a `StoryDependencies` (campo aditivo y opcional) y registrar `PUT /projects/{project_id}/stories/{story_id}` con `NewUpdateStoryHandler` solo si `Updater != nil`. Ejecutar `go test ./tests/unit/cmd/api/...` y observar el pase.
+- [x] 5.5 GREEN `main.go`: en `cmd/api/main.go` resolver los tres casos a partir de una única lectura de `schema_migrations` (`err == nil && !dirty && version >= 3` → proyectos + crear + modificar; `>= 2` → proyectos + crear; resto → solo proyectos), cada uno con su log, inyectando el mismo `*PostgresStoryRepository` como `Repository` y como `Updater`. Ejecutar `go test ./tests/integration/story/postgres/... -run "TestAPIStartup" -v` y observar el pase.
 
 ### TRIANGULATE
 
-- [ ] 5.6 TRIANGULATE: en `tests/unit/cmd/api/main_test.go` y `tests/integration/story/postgres/http_integration_test.go` agregar modificar dos veces seguidas (gana la última), `PATCH`/`DELETE`/`POST`/`GET` sobre la ruta del ítem responden `405` cuando la ruta existe, versión 3 con `dirty` sin ruta, y que el log de arranque distingue los tres casos. Ejecutar y observar el pase.
+- [x] 5.6 TRIANGULATE: en `tests/unit/cmd/api/main_test.go` y `tests/integration/story/postgres/http_integration_test.go` agregar modificar dos veces seguidas (gana la última), `PATCH`/`DELETE`/`POST`/`GET` sobre la ruta del ítem responden `405` cuando la ruta existe, versión 3 con `dirty` sin ruta, y que el log de arranque distingue los tres casos. Ejecutar y observar el pase.
 
 ### Documentación
 
-- [ ] 5.7 Documentar en `README.md` la operación `PUT /projects/{project_id}/stories/{story_id}` (los seis campos obligatorios, `estimated_hours` puede ser `null`), el conjunto de `status` (`pendiente`, `en_progreso`, `completada`, sin reglas de transición), las reglas de la estimación (número `> 0`, máximo 2 decimales, `<= 99999.99`, `null` la borra), la migración `000003` requerida y su condición de exposición (`version >= 3`), la lista de errores (`400`, `404`, `405`, `422`, `500`) y la limitación **última escritura gana** (sin versionado ni control de concurrencia).
-- [ ] 5.8 Confirmar que el delta `openspec/changes/us-06-modificar-historia-product-backlog/specs/historia/spec.md` describe exactamente lo implementado en los slices 1-5 (mensajes de `fields`, códigos HTTP, gate de versión). Solo se corrige el delta si la implementación difiere de lo especificado; la aplicación del delta a `openspec/specs/historia/spec.md` ocurre al archivar, no aquí.
+- [x] 5.7 Documentar en `README.md` la operación `PUT /projects/{project_id}/stories/{story_id}` (los seis campos obligatorios, `estimated_hours` puede ser `null`), el conjunto de `status` (`pendiente`, `en_progreso`, `completada`, sin reglas de transición), las reglas de la estimación (número `> 0`, máximo 2 decimales, `<= 99999.99`, `null` la borra), la migración `000003` requerida y su condición de exposición (`version >= 3`), la lista de errores (`400`, `404`, `405`, `422`, `500`) y la limitación **última escritura gana** (sin versionado ni control de concurrencia).
+- [x] 5.8 Confirmar que el delta `openspec/changes/us-06-modificar-historia-product-backlog/specs/historia/spec.md` describe exactamente lo implementado en los slices 1-5 (mensajes de `fields`, códigos HTTP, gate de versión). Solo se corrige el delta si la implementación difiere de lo especificado; la aplicación del delta a `openspec/specs/historia/spec.md` ocurre al archivar, no aquí.
 
 ### REFACTOR
 
-- [ ] 5.9 REFACTOR: revisar `cmd/api/main.go` (las tres ramas de esquema) y simplificar solo si hay duplicación real; de lo contrario registrar "sin cambios necesarios". Ejecutar `go test ./tests/unit/cmd/api/...` antes y después (verde) y `go test ./...` completo.
+- [x] 5.9 REFACTOR: revisar `cmd/api/main.go` (las tres ramas de esquema) y simplificar solo si hay duplicación real; de lo contrario registrar "sin cambios necesarios". Ejecutar `go test ./tests/unit/cmd/api/...` antes y después (verde) y `go test ./...` completo.
 
 ### Verificación y commit
 
-- [ ] 5.10 Verificar el slice: `gofmt -l .` sin salida, `go vet ./...` limpio, `go test ./...` en verde **con Docker** (los tests de arranque real deben mostrar `PASS`, no `SKIP`; si se saltaron, registrarlo y no declarar verificado el arranque real). Revisión manual del README renderizado.
-- [ ] 5.11 COMMIT del slice 5 (un único commit, tests y README incluidos): `feat(api): expose story update route behind schema version 3`. Cuerpo con la evidencia TDD real (RED por `StoryDependencies.Updater` indefinido y escenarios de arranque, GREEN, triangulación, REFACTOR o "sin cambios", `go test ./...` y estado de la integración: corrida o **SKIPPED**). Rollback: revertir solo este commit quita la ruta y deja la creación intacta; el esquema puede permanecer en versión 3.
+- [x] 5.10 Verificar el slice: `gofmt -l .` sin salida, `go vet ./...` limpio, `go test ./...` en verde **con Docker** (los tests de arranque real deben mostrar `PASS`, no `SKIP`; si se saltaron, registrarlo y no declarar verificado el arranque real). Revisión manual del README renderizado.
+- [x] 5.11 COMMIT del slice 5 (un único commit, tests y README incluidos): `feat(api): expose story update route behind schema version 3`. Cuerpo con la evidencia TDD real (RED por `StoryDependencies.Updater` indefinido y escenarios de arranque, GREEN, triangulación, REFACTOR o "sin cambios", `go test ./...` y estado de la integración: corrida o **SKIPPED**). Rollback: revertir solo este commit quita la ruta y deja la creación intacta; el esquema puede permanecer en versión 3.
 
 ## Trazabilidad de requisitos de la spec a tareas
 

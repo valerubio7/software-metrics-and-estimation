@@ -1,7 +1,7 @@
 # Progreso de aplicación: US-06 — Modificar una historia del Product Backlog
 
 Modo: TDD estricto (`go test ./...`). Estrategia de entrega: `ask-on-risk`, cadena `stacked-to-main`.
-Ramas de los lotes: `feat/us06-domain-story-update` (base `main`, lote 1), `feat/us06-application-update-story` (lote 2), `feat/us06-storage-estimated-hours` (lote 3) y `feat/us06-http-update-handler` (lote 4), cada una apilada sobre la anterior. No se hizo push ni PR.
+Ramas de los lotes: `feat/us06-domain-story-update` (base `main`, lote 1), `feat/us06-application-update-story` (lote 2), `feat/us06-storage-estimated-hours` (lote 3) `feat/us06-http-update-handler` (lote 4) y `feat/us06-wire-update-route-docs` (lote 5), cada una apilada sobre la anterior. No se hizo push ni PR.
 
 ## Estado acumulado de tareas
 
@@ -12,7 +12,7 @@ Ramas de los lotes: `feat/us06-domain-story-update` (base `main`, lote 1), `feat
 | 2. Aplicación | 2.1 a 2.8 | Completas (commit `d50d432`, rama `feat/us06-application-update-story`) |
 | 3. Almacenamiento | 3.1 a 3.16 | Completas (commit `2bc1986`, rama `feat/us06-storage-estimated-hours`; Docker disponible, integración corrida) |
 | 4. Handler HTTP | 4.1 a 4.11 | Completas (commit `dc42020`, rama `feat/us06-http-update-handler`) |
-| 5. Composición y docs | 5.1 a 5.11 | Pendientes |
+| 5. Composición y docs | 5.1 a 5.11 | Completas (commits `3ad219e` `fix(test)` y `dfb4743`, rama `feat/us06-wire-update-route-docs`; Docker disponible, integración corrida) |
 
 ## Lote 1: Slice 0 y Slice 1 (dominio)
 
@@ -256,4 +256,76 @@ presentes en el mapa crudo; `errors.As` de `ValidationError` antes que `errors.I
 
 ### Tareas restantes
 
-Slice 5 (rama `feat/us06-wire-update-route-docs`, base `feat/us06-http-update-handler`): tareas 5.1 a 5.11.
+Slice 5 (rama `feat/us06-wire-update-route-docs`, base `feat/us06-http-update-handler`): tareas 5.1 a 5.11 (ver lote 5).
+
+## Lote 5: Slice 5 (composición y docs)
+
+Rama `feat/us06-wire-update-route-docs`, creada desde `feat/us06-http-update-handler` (apilada,
+`stacked-to-main`). No se hizo push ni PR. Es el último slice de la cadena.
+
+### Línea base (tarea 5.1)
+
+`go test ./tests/unit/...` en verde en la rama nueva. `TestAPIStartupRoutesFollowMigrationState` (4/4
+subtests) falla, preexistente en Windows: `start API: exec: ".../api": executable file not found in %PATH%`.
+
+### Corrección previa e independiente (commit `3ad219e`)
+
+`fix(test): build API test binary with .exe suffix on Windows`. RED: la falla observada de arriba (los cuatro
+subtests). GREEN: en `testAPIStartupRoutes` el binario se llama `api.exe` cuando `runtime.GOOS == "windows"`
+-> `go test ./tests/integration/story/postgres/... -run "TestAPIStartup"` `ok` (4/4). Se commiteó aparte
+(1 archivo, +6/-1) para mantener enfocado el commit del slice.
+
+### Evidencia del ciclo TDD
+
+| Tarea | Archivo de test | Capa | Red de seguridad | RED | GREEN | TRIANGULATE | REFACTOR |
+|-------|-----------------|------|------------------|-----|-------|-------------|----------|
+| 5.2 | `tests/unit/cmd/api/main_test.go` (`TestNewHTTPHandlerRegistersStoryUpdateRouteWhenUpdaterIsPresent`, `TestNewHTTPHandlerWithoutUpdaterDoesNotExposeStoryUpdate`, `TestStoryRoutingPreservesCollectionAndItemBoundaries` (8 subtests), `TestStoryUpdateTwiceKeepsTheLastWrite`; fake `fakeStoryUpdater`) | Unitario | Suite de `cmd/api` verde antes | Falla de compilación observada: `dependencies.Updater undefined (type api.StoryDependencies has no field or method Updater)` | Ver 5.4 | Ver 5.6 | Ver 5.9 |
+| 5.3 | `tests/integration/story/postgres/http_integration_test.go` (`TestAPIStartupRoutesFollowMigrationState`: escenarios `version three`, `dirty version three`, aserción del log de arranque y helper `assertStoryUpdateRoute`) | Integración (binario real + PostgreSQL 16 vía Testcontainers) | Fix de `.exe` ya en verde | Fallas observadas: `version_two` y `version_three`: `startup log = "... API listening on ..." want ... "story update unavailable"` / `"story creation and update available"`; y `version_three`: `PUT = 404 404 page not found` | Ver 5.5 | Ver 5.6 | — |
+| 5.4 | `internal/api/api.go` (`StoryDependencies.Updater`, ruta `PUT /projects/{project_id}/stories/{story_id}` solo si `Updater != nil`) | Unitario | — | Cubierto por 5.2 | `go test ./tests/unit/cmd/api/...` PASS | — | — |
+| 5.5 | `cmd/api/main.go` (`switch` de tres casos: `>= 3` -> crear + modificar con el mismo repositorio como `Repository` y `Updater`; `>= 2` -> solo crear; resto -> solo proyectos; un log propio por caso) | Integración | — | Cubierto por 5.3 | `go test ./tests/integration/story/postgres/... -run "TestAPIStartup" -v` PASS (6/6 subtests) | — | — |
+| 5.6 | idem | Unitario + integración | — | — | — | Modificar dos veces (gana la última), `405` de `GET`/`POST`/`PATCH`/`DELETE` sobre la ruta del ítem, `405` de la colección, `/stories/` -> `404`, versión 3 `dirty` sin ruta y log distinto por caso: **pruebas de caracterización, pasaron de inmediato** (la lógica de 5.4/5.5 ya era general); solo 5.2 y 5.3 tuvieron RED real | — |
+| 5.7 | `README.md` | Docs | — | N/A | N/A | N/A | Sección "Modificar una historia" (en español, como el resto del README) |
+| 5.8 | `specs/historia/spec.md` (delta) | Docs | — | N/A | N/A | N/A | Confirmado sin cambios: códigos HTTP, `story_not_found`/`internal_error`, `is required` y el gate `version >= 3 && !dirty` coinciden con lo implementado |
+| 5.9 | `cmd/api/main.go` | Unitario | Verde antes y después | — | — | — | Sin cambios necesarios: los tres casos ya son un único `switch` sobre una sola lectura de `schema_migrations`; sin duplicación real |
+
+Prueba adicional de integración (caracterización, sin RED, pedida en el encargo del slice):
+`TestStoryUpdateHTTPWithMigratedPostgres` (in-process, PostgreSQL real): crear -> `PUT` `200` con
+`project_id` intacto y `story_points` (sembrado en `8`) preservado, borde `99999.99` y orden de criterios;
+historia inexistente y historia de otro proyecto -> `404 story_not_found`, fila sin cambios.
+
+Resumen de tests: 4 funciones unitarias nuevas (8 subtests en la tabla de enrutamiento), 1 función de
+integración nueva, `TestAPIStartupRoutesFollowMigrationState` ampliado de 4 a 6 escenarios y el helper
+`assertStoryUpdateRoute`. Capas: unitaria e integración. Funciones puras nuevas: ninguna.
+
+### Evidencia del work unit
+
+| Evidencia | Valor observado |
+|-----------|-----------------|
+| Comando de test focalizado | `go test -count=1 ./tests/unit/cmd/api/...` -> `ok` |
+| Harness de runtime | `go test -count=1 ./tests/integration/story/postgres/... -run "TestAPIStartup" -v` -> PASS (6/6 subtests, binario `api.exe` compilado por el test contra PostgreSQL 16 real); más `TestStoryUpdateHTTPWithMigratedPostgres` PASS. Docker Desktop 28.0.4; ningún test saltado |
+| `go vet ./...` | Limpio |
+| `gofmt` | Verificado sobre el contenido sin CR (`tr -d '\r' \| gofmt -l`): limpio en los cinco archivos `.go` tocados |
+| `go test -count=1 ./...` completo | Todos `ok`: `integration/project/postgres` 32 s, `integration/story/postgres` 196 s y los siete paquetes `tests/unit/...`. Sin fallas ni tests saltados |
+| Revisión del README | Releído el Markdown fuente (renderizado no ejecutable en este entorno): secciones, bloque `sh` de `curl` y lista de reglas coherentes con la spec |
+| Rollback | Revertir `dfb4743` (`api.go`, `main.go`, tests y README): quita la ruta y deja la creación intacta; el esquema puede permanecer en versión 3. El fix `3ad219e` se revierte por separado |
+
+### Commits
+
+- `3ad219e` `fix(test): build API test binary with .exe suffix on Windows` (1 archivo, +6/-1).
+- `dfb4743` `feat(api): expose story update route behind schema version 3` (5 archivos, +304/-15 = 319 líneas autoradas: ~29 de código, ~266 de tests y ~24 de README; dentro del presupuesto de 400).
+
+### Desviaciones del diseño
+
+Ninguna en el comportamiento. Los mensajes de log de los tres casos de arranque son:
+`story creation and update available (schema version=N)`, `story update unavailable until migration 000003 is clean (version=N)` y el existente `story creation unavailable until migration 000002 is clean (...)`.
+
+### Problemas encontrados
+
+- El caso de éxito de versión 2 antes no emitía ningún log; ahora los tres casos lo hacen (necesario para que "el log distingue los tres casos" sea verificable).
+- `gofmt -l .` sigue listando archivos por CRLF de la copia de trabajo de Windows (preexistente).
+- `tasks.md` y `apply-progress.md` quedan sin commitear a propósito, para el commit `docs(sdd)` del orquestador.
+- La aserción del log lee `stderr` (un `bytes.Buffer`) mientras el proceso hijo sigue vivo; es seguro en la práctica porque el log se escribe antes de escuchar (y por tanto antes de la primera respuesta), pero un `-race` estricto podría señalarlo. No se ejecutó con `-race`.
+
+### Tareas restantes
+
+Ninguna. Todas las tareas de los slices 0 a 5 están completas; siguiente paso recomendado: `sdd-archive` (aplicar el delta a `openspec/specs/historia/spec.md`).
