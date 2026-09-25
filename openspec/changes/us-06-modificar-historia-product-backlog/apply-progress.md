@@ -1,7 +1,7 @@
 # Progreso de aplicación: US-06 — Modificar una historia del Product Backlog
 
 Modo: TDD estricto (`go test ./...`). Estrategia de entrega: `ask-on-risk`, cadena `stacked-to-main`.
-Rama del lote: `feat/us06-domain-story-update` (base `main`). No se hizo push ni PR.
+Ramas de los lotes: `feat/us06-domain-story-update` (base `main`, lote 1) y `feat/us06-application-update-story` (base la anterior, lote 2). No se hizo push ni PR.
 
 ## Estado acumulado de tareas
 
@@ -9,7 +9,7 @@ Rama del lote: `feat/us06-domain-story-update` (base `main`). No se hizo push ni
 |-------|--------|--------|
 | 0. Planificación | 0.1, 0.2 | Completas (commit `46392a5`) |
 | 1. Dominio | 1.1 a 1.8 | Completas (commit `fab506d`) |
-| 2. Aplicación | 2.1 a 2.8 | Pendientes |
+| 2. Aplicación | 2.1 a 2.8 | Completas (commit `d50d432`, rama `feat/us06-application-update-story`) |
 | 3. Almacenamiento | 3.1 a 3.16 | Pendientes (requiere Docker) |
 | 4. Handler HTTP | 4.1 a 4.11 | Pendientes |
 | 5. Composición y docs | 5.1 a 5.11 | Pendientes |
@@ -67,7 +67,63 @@ Ninguna en el comportamiento. Detalle menor: se agregaron las constantes no expo
 - Los tests de integración fallan (no se saltan) sin Docker; ver la línea base. El slice 3 y el arranque real del slice 5 seguirán sin poder verificarse en esta máquina.
 - Los archivos `tasks.md` y `apply-progress.md` quedaron **sin commitear** en este lote: `tasks.md` ya está incluido sin marcas en el commit de planificación y la plantilla de commits del slice no pide incluir las marcas `[x]`. Se reportan al orquestador para decidir si se agrupan en un commit `docs(sdd)` posterior.
 
-### Tareas restantes
+### Tareas restantes (tras el lote 1)
 
 Slices 2 a 5 (ramas `feat/us06-application-update-story`, `feat/us06-storage-estimated-hours`,
 `feat/us06-http-update-handler`, `feat/us06-wire-update-route-docs`).
+
+## Lote 2: Slice 2 (aplicación)
+
+Rama `feat/us06-application-update-story`, creada desde `feat/us06-domain-story-update` (apilada,
+`stacked-to-main`). No se hizo push ni PR.
+
+### Línea base (tarea 2.1)
+
+`go test ./...` en la rama nueva antes de tocar nada: los paquetes unitarios pasan; los de integración
+FALLAN con `rootless Docker is not supported on Windows` (preexistente, ambiental; no es evidencia).
+
+### Evidencia del ciclo TDD
+
+| Tarea | Archivo de test | Capa | Red de seguridad | RED | GREEN | TRIANGULATE | REFACTOR |
+|-------|-----------------|------|------------------|-----|-------|-------------|----------|
+| 2.2 | `tests/unit/story/application/update_story_test.go` (`TestUpdateStoryWritesOnceWithCanonicalIdentifiersAndAllSixFields`, `TestUpdateStoryDoesNotWriteInvalidInput`, `TestUpdateStoryPropagatesPortErrorsWithoutClaimingSuccess`, `TestUpdateStoryErrStoryNotFoundIsDistinctFromProjectNotFound`) | Unitario | N/A (archivo nuevo); paquete `story/application` en verde | Falla observada: `undefined: application.UpdateStoryCommand`, `NewUpdateStoryUseCase`, `ErrStoryNotFound` (error de compilación) | Pase observado con un `Execute` mínimo (sin `MissingFields`) | Ver 2.4 | Ver 2.6 |
+| 2.3 | `internal/story/application/update_story.go` | Unitario | N/A | Cubierto por 2.2 | `go test ./tests/unit/story/application/...` PASS | — | — |
+| 2.4 | idem (`TestUpdateStoryReportsEverySuppliedMissingFieldAsRequired`, `...ReportsASingleMissingFieldOnly` (6 subtests), `...MergesInvalidIdentifiersWithContentErrors` (3 casos), `...MissingKeyMessageWinsOverZeroValueContentMessage`, `...DistinguishesAbsentEstimatedHoursFromExplicitNull` (2 subtests)) | Unitario | — | — | — | RED real observado contra el `Execute` mínimo (ignoraba `MissingFields`, devolvía `error = <nil>` y mensajes de dominio en lugar de `is required`); tras generalizar `Execute` (sembrar `fields` con `MissingFields` y no sobrescribir claves existentes) PASS | — |
+| 2.5 | `tests/unit/story/application/create_story_test.go` | Unitario | Suite de creación en verde | Prueba de caracterización: pasó de inmediato (el slice 1 ya deja `EstimatedHours == nil`); no es un RED | PASS | — | — |
+| 2.6 | `internal/story/application/update_story.go` | Unitario | Verde antes y después | — | — | — | Sin cambios necesarios: no hay duplicación real en `Execute` |
+
+Resumen de tests: 9 funciones de test de nivel superior nuevas más 1 aserción aditiva; todas en verde.
+Capa usada: solo unitaria. Fake de `StoryUpdater` escrito a mano (`storyUpdater`). Sin funciones puras nuevas
+(el caso de uso es orquestación; las reglas viven en el dominio).
+
+### Evidencia del work unit
+
+| Evidencia | Valor observado |
+|-----------|-----------------|
+| Comando de test focalizado | `go test ./tests/unit/story/application/...` -> `ok` |
+| Harness de runtime | N/A: caso de uso sobre fake; sin frontera de proceso ni de red |
+| `go vet ./...` | Limpio |
+| `gofmt` | Los archivos nuevos no aparecen en `gofmt -l`; `create_story.go` y `create_story_test.go` aparecen solo por CRLF de la copia de trabajo de Windows (preexistente; el diff de git es de 3 líneas) |
+| `go test ./...` completo | Paquetes unitarios `ok` (`cmd/api`, `project/*`, `story/application`, `story/domain`, `story/transport/http`); integración FALLA por falta de Docker (**no verificado**) |
+| Compilación de tests ajenos | `create_story_test.go`, `transport/http/handler_test.go` y `cmd/api/main_test.go` compilan y pasan sin cambios (el puerto es separado de `StoryRepository`) |
+| Rollback | Revertir `d50d432` (`internal/story/application/update_story.go`, `tests/unit/story/application/update_story_test.go` y la aserción aditiva de `create_story_test.go`) |
+
+### Commit
+
+- `d50d432` `feat(story): add update story use case and port` (3 archivos, +327 líneas autoradas, dentro del presupuesto de 400).
+
+### Desviaciones del diseño
+
+Ninguna en el comportamiento. Nota de proceso: la tarea 2.3 describe el `Execute` completo, pero se
+implementó primero una versión mínima (sin `MissingFields`) para obtener un RED real en la triangulación 2.4
+y se generalizó después; el resultado final coincide con el diseño (Decisión 4).
+
+### Problemas encontrados
+
+- Los tests de integración siguen fallando sin Docker (ver la línea base del lote 1).
+- `tasks.md` y `apply-progress.md` quedan sin commitear a propósito, para el commit `docs(sdd)` del orquestador.
+
+### Tareas restantes
+
+Slices 3 a 5 (ramas `feat/us06-storage-estimated-hours`, `feat/us06-http-update-handler`,
+`feat/us06-wire-update-route-docs`). El slice 3 requiere Docker.
