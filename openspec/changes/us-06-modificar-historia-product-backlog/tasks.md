@@ -134,29 +134,29 @@ Amenaza cubierta: identificadores de ruta como input hostil (`"abc"`, vacío, ma
 
 ### Preparación
 
-- [ ] 2.1 Crear la rama `feat/us06-application-update-story` a partir de `feat/us06-domain-story-update` y confirmar `go test ./...` en verde como línea base.
+- [x] 2.1 Crear la rama `feat/us06-application-update-story` a partir de `feat/us06-domain-story-update` y confirmar `go test ./...` en verde como línea base.
 
 ### RED
 
-- [ ] 2.2 RED comportamiento base: crear `tests/unit/story/application/update_story_test.go` con un fake de `StoryUpdater` escrito a mano (contador de llamadas y story capturada) y tests para: input inválido → `*domain.ValidationError` y `updater.calls == 0`; input válido → exactamente una llamada con `id`/`project_id` canónicos (`uuid.UUID.String()`, p. ej. UUID en mayúsculas normalizado) y los seis campos; `ErrStoryNotFound` y un error inesperado se propagan con `errors.Is`/igualdad y devuelven `domain.Story{}`; el caso de uso solo recibe el updater (no se genera ningún identificador). Ejecutar `go test ./tests/unit/story/application/...` y observar la falla (símbolos indefinidos: `NewUpdateStoryUseCase`, `UpdateStoryCommand`, `ErrStoryNotFound`).
+- [x] 2.2 RED comportamiento base: crear `tests/unit/story/application/update_story_test.go` con un fake de `StoryUpdater` escrito a mano (contador de llamadas y story capturada) y tests para: input inválido → `*domain.ValidationError` y `updater.calls == 0`; input válido → exactamente una llamada con `id`/`project_id` canónicos (`uuid.UUID.String()`, p. ej. UUID en mayúsculas normalizado) y los seis campos; `ErrStoryNotFound` y un error inesperado se propagan con `errors.Is`/igualdad y devuelven `domain.Story{}`; el caso de uso solo recibe el updater (no se genera ningún identificador). Ejecutar `go test ./tests/unit/story/application/...` y observar la falla (símbolos indefinidos: `NewUpdateStoryUseCase`, `UpdateStoryCommand`, `ErrStoryNotFound`).
 
 ### GREEN
 
-- [ ] 2.3 GREEN: crear `internal/story/application/update_story.go` con `ErrStoryNotFound`, `UpdateStoryCommand` (incluye `MissingFields []string`), interfaz `StoryUpdater`, `UpdateStoryUseCase`, `NewUpdateStoryUseCase` y `Execute` (construye un único `map[string]string`, llama a `domain.NewStoryUpdate`, no invoca el puerto si hay errores, normaliza UUID y llama a `Update`). Implementación mínima que pase 2.2. Ejecutar `go test ./tests/unit/story/application/...` y observar el pase.
+- [x] 2.3 GREEN: crear `internal/story/application/update_story.go` con `ErrStoryNotFound`, `UpdateStoryCommand` (incluye `MissingFields []string`), interfaz `StoryUpdater`, `UpdateStoryUseCase`, `NewUpdateStoryUseCase` y `Execute` (construye un único `map[string]string`, llama a `domain.NewStoryUpdate`, no invoca el puerto si hay errores, normaliza UUID y llama a `Update`). Implementación mínima que pase 2.2. Ejecutar `go test ./tests/unit/story/application/...` y observar el pase.
 
 ### TRIANGULATE
 
-- [ ] 2.4 TRIANGULATE fusión de `fields` (un test por escenario de la spec) en `tests/unit/story/application/update_story_test.go`: `MissingFields` con las seis claves → seis entradas `is required`; una sola clave ausente → un solo campo; `story_id` inválido + `title` vacío → `story_id` y `title`; ambos identificadores inválidos → `project_id` y `story_id`; clave ausente cuyo valor cero también violaría el contenido → gana `is required` (no se sobrescribe); `estimated_hours` ausente frente a `nil` presente (solo `MissingFields` distingue). Siempre `updater.calls == 0` en los casos inválidos. Ejecutar y observar el pase; corregir `Execute` si algún caso falla.
-- [ ] 2.5 TRIANGULATE regresión aditiva: en `tests/unit/story/application/create_story_test.go` agregar la aserción `EstimatedHours == nil` en la historia creada. Nota honesta: si el slice 1 ya dejó el campo en `nil`, este test pasa de inmediato y es una prueba de caracterización, no un RED; registrarlo así en el commit.
+- [x] 2.4 TRIANGULATE fusión de `fields` (un test por escenario de la spec) en `tests/unit/story/application/update_story_test.go`: `MissingFields` con las seis claves → seis entradas `is required`; una sola clave ausente → un solo campo; `story_id` inválido + `title` vacío → `story_id` y `title`; ambos identificadores inválidos → `project_id` y `story_id`; clave ausente cuyo valor cero también violaría el contenido → gana `is required` (no se sobrescribe); `estimated_hours` ausente frente a `nil` presente (solo `MissingFields` distingue). Siempre `updater.calls == 0` en los casos inválidos. Ejecutar y observar el pase; corregir `Execute` si algún caso falla.
+- [x] 2.5 TRIANGULATE regresión aditiva: en `tests/unit/story/application/create_story_test.go` agregar la aserción `EstimatedHours == nil` en la historia creada. Nota honesta: si el slice 1 ya dejó el campo en `nil`, este test pasa de inmediato y es una prueba de caracterización, no un RED; registrarlo así en el commit.
 
 ### REFACTOR
 
-- [ ] 2.6 REFACTOR: unificar en `internal/story/application/update_story.go` la construcción del mapa de `fields` si los tests muestran duplicación (helper interno no exportado); si no hay duplicación real, registrar "REFACTOR: sin cambios necesarios" en lugar de inventar uno. Ejecutar `go test ./tests/unit/story/application/...` antes y después (verde) y `go test ./...` completo.
+- [x] 2.6 REFACTOR: unificar en `internal/story/application/update_story.go` la construcción del mapa de `fields` si los tests muestran duplicación (helper interno no exportado); si no hay duplicación real, registrar "REFACTOR: sin cambios necesarios" en lugar de inventar uno. Ejecutar `go test ./tests/unit/story/application/...` antes y después (verde) y `go test ./...` completo.
 
 ### Verificación y commit
 
-- [ ] 2.7 Verificar el slice: `gofmt -l .` sin salida, `go vet ./...` limpio, `go test ./...` en verde, y comprobar que `tests/unit/story/application/create_story_test.go`, `tests/unit/story/transport/http/handler_test.go` y `tests/unit/cmd/api/main_test.go` siguen compilando sin cambios (el puerto es separado de `StoryRepository`).
-- [ ] 2.8 COMMIT del slice 2 (un único commit): `feat(story): add update story use case and port`. Cuerpo con la evidencia TDD real (RED por símbolos indefinidos, GREEN, casos triangulados de la fusión de `fields`, REFACTOR o "sin cambios", resultado de `go test ./...`). Rollback: revertir solo este commit.
+- [x] 2.7 Verificar el slice: `gofmt -l .` sin salida, `go vet ./...` limpio, `go test ./...` en verde, y comprobar que `tests/unit/story/application/create_story_test.go`, `tests/unit/story/transport/http/handler_test.go` y `tests/unit/cmd/api/main_test.go` siguen compilando sin cambios (el puerto es separado de `StoryRepository`).
+- [x] 2.8 COMMIT del slice 2 (un único commit): `feat(story): add update story use case and port`. Cuerpo con la evidencia TDD real (RED por símbolos indefinidos, GREEN, casos triangulados de la fusión de `fields`, REFACTOR o "sin cambios", resultado de `go test ./...`). Rollback: revertir solo este commit.
 
 ## Slice 3: Almacenamiento (PR 3, rama `feat/us06-storage-estimated-hours`, base PR 2)
 
