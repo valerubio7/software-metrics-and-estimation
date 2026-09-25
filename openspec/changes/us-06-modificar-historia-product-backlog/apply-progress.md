@@ -1,7 +1,7 @@
 # Progreso de aplicación: US-06 — Modificar una historia del Product Backlog
 
 Modo: TDD estricto (`go test ./...`). Estrategia de entrega: `ask-on-risk`, cadena `stacked-to-main`.
-Ramas de los lotes: `feat/us06-domain-story-update` (base `main`, lote 1) y `feat/us06-application-update-story` (base la anterior, lote 2). No se hizo push ni PR.
+Ramas de los lotes: `feat/us06-domain-story-update` (base `main`, lote 1), `feat/us06-application-update-story` (lote 2), `feat/us06-storage-estimated-hours` (lote 3) y `feat/us06-http-update-handler` (lote 4), cada una apilada sobre la anterior. No se hizo push ni PR.
 
 ## Estado acumulado de tareas
 
@@ -11,7 +11,7 @@ Ramas de los lotes: `feat/us06-domain-story-update` (base `main`, lote 1) y `fea
 | 1. Dominio | 1.1 a 1.8 | Completas (commit `fab506d`) |
 | 2. Aplicación | 2.1 a 2.8 | Completas (commit `d50d432`, rama `feat/us06-application-update-story`) |
 | 3. Almacenamiento | 3.1 a 3.16 | Completas (commit `2bc1986`, rama `feat/us06-storage-estimated-hours`; Docker disponible, integración corrida) |
-| 4. Handler HTTP | 4.1 a 4.11 | Pendientes |
+| 4. Handler HTTP | 4.1 a 4.11 | Completas (commit `dc42020`, rama `feat/us06-http-update-handler`) |
 | 5. Composición y docs | 5.1 a 5.11 | Pendientes |
 
 ## Lote 1: Slice 0 y Slice 1 (dominio)
@@ -189,3 +189,71 @@ Ninguna en el comportamiento: escalera en el paso 1, `Update` con una sola sente
 
 Slices 4 y 5 (ramas `feat/us06-http-update-handler`, `feat/us06-wire-update-route-docs`). El arranque real del
 slice 5 depende de resolver el nombre del binario en Windows.
+
+## Lote 4: Slice 4 (handler HTTP)
+
+Rama `feat/us06-http-update-handler`, creada desde `feat/us06-storage-estimated-hours` (apilada,
+`stacked-to-main`). No se hizo push ni PR.
+
+### Nota de proceso (reanudación)
+
+Un intento anterior de este lote dejó en el árbol de trabajo, sin commitear y sin registro, los tests
+(4.2-4.5 y 4.7) y una implementación GREEN con decodificación duplicada. Como no había evidencia de RED
+registrada, se **reprodujo** el RED de forma real: se guardaron copias, se revirtió `handler.go` y se
+apartó `update_handler.go`, se observaron las fallas y se restauró la implementación. Ninguna evidencia
+es inventada; los resultados de abajo son los observados en esta sesión.
+
+### Línea base (tarea 4.1)
+
+`go test ./...` en el estado de la rama del slice 3 (con `git stash -u`): todos los paquetes unitarios e
+`integration/project/postgres` `ok`; en `integration/story/postgres` falla solo
+`TestAPIStartupRoutesFollowMigrationState` (preexistente en Windows: binario `api` sin `.exe`).
+
+### Evidencia del ciclo TDD
+
+| Tarea | Archivo de test | Capa | Red de seguridad | RED | GREEN | TRIANGULATE | REFACTOR |
+|-------|-----------------|------|------------------|-----|-------|-------------|----------|
+| 4.2 | `tests/unit/story/transport/http/handler_test.go` (`TestCreateStoryReturnsPendingUnestimatedStory`) | Unitario | Suite de creación en verde | Falla observada: `estimated_hours is missing from the response, want null` (`handler_test.go:86`) | Pase con `EstimatedHours *float64` en `storyResponse` | — | — |
+| 4.3 | `tests/unit/story/transport/http/update_handler_test.go` (`TestUpdateStoryReturnsTheFullStoredStory`, `...PassesCanonicalIdentifiersAndAllSixFieldsToTheUpdater`, `...MapsOnlyTypedMissingStoryTo404`, `...HidesUnexpectedErrorsBehindAGeneric500`, `...RejectsUnsupportedMethods` (4 subtests)) | Unitario (`httptest`, caso de uso real sobre updater falso) | N/A (archivo nuevo) | Falla de compilación observada: `undefined: transporthttp.NewUpdateStoryHandler` (un único RED por compilación para 4.3-4.5) | PASS | Ver 4.7 | Ver 4.8 |
+| 4.4 | idem (`TestUpdateStoryRejectsInvalidJSONShape`, 20 subtests: JSON malformado, vacío, `[]`, `"texto"`, dos objetos, `owner`, `id`/`project_id`/`story_points` con entero, `0` y `null`, tipos incorrectos, `null` en criterios) | Unitario | N/A | Misma falla de compilación | PASS; siempre `calls == 0` | — | — |
+| 4.5 | idem (`TestUpdateStoryReportsValidationFieldsBeforeWriting`, 14 subtests: UUID inválidos, cada clave ausente, `{}`, contenido/estado/estimación, id inválido más título vacío) | Unitario | N/A | Misma falla de compilación | PASS; siempre `calls == 0` | — | — |
+| 4.6 | `internal/story/transport/http/update_handler.go`, `handler.go` (`storyResponse.EstimatedHours`) | Unitario | — | Cubierto por 4.2-4.5 | `go test ./tests/unit/story/transport/http/...` PASS (14 funciones de test) | — | — |
+| 4.7 | idem (`TestUpdateStoryDistinguishesNullFromAbsentEstimatedHours`, `...RespondsFromTheStoredStoryAndPreservesUnicode`, `...PreservesUnicodeSentByTheClient`; mayúsculas normalizadas en `...PassesCanonicalIdentifiers...`; `Content-Type` verificado por los helpers `decode`/`assertError`) | Unitario | — | — | — | Pasaron de inmediato (pruebas de caracterización: la lógica de 4.6 ya distinguía `null` de ausente por el mapa de claves crudas); no hubo RED nuevo | — |
+| 4.8 | `handler.go`, `update_handler.go` | Unitario | Suite de creación y de modificación en verde antes y después | — | — | — | `decodeCreateStoryRequest` y `decodeUpdateStoryRequest` unificadas en `decodeStoryObject(body, target) (map[string]json.RawMessage, error)`; `newStoryResponse` usado por ambos handlers; `go test ./tests/unit/...` PASS |
+
+Resumen de tests: 10 funciones de test nuevas en `update_handler_test.go` y 1 aserción ampliada en
+`handler_test.go`. Capa usada: solo unitaria. Funciones puras nuevas: `decodeStoryObject`,
+`newStoryResponse`.
+
+### Evidencia del work unit
+
+| Evidencia | Valor observado |
+|-----------|-----------------|
+| Comando de test focalizado | `go test -count=1 ./tests/unit/story/transport/http/...` -> `ok` (14 funciones PASS) |
+| Harness de runtime | N/A: `httptest` con el caso de uso real sobre un updater falso; el proceso real se ejerce en el slice 5 (la ruta aún no está registrada) |
+| `go vet ./...` | Limpio |
+| `gofmt` | Verificado sobre el contenido sin CR (`tr -d '\r' \| gofmt -l`): limpio en `handler.go`, `update_handler.go` y `update_handler_test.go`. `handler_test.go` aparece por un desalineado preexistente en un literal de mapa (línea ~106, no tocada por este slice) |
+| `go test -count=1 ./...` completo | Todos los paquetes unitarios e `integration/project/postgres` `ok`; en `integration/story/postgres` falla SOLO `TestAPIStartupRoutesFollowMigrationState` (subtests `version_one`, `version_two`, `dirty`, `lookup_error`): preexistente en Windows (sin `.exe`), fuera de alcance, pendiente para el slice 5. Docker corrió, ningún test saltado |
+| Rollback | Revertir `dc42020` (`update_handler.go`, helpers de `handler.go`, sus tests y el ejemplo de creación del README); la ruta no está expuesta hasta el slice 5 |
+
+### Commit
+
+- `dc42020` `feat(story): add update story http handler` (5 archivos, +423/-18 = 441 líneas autoradas: ~122 de código, ~317 de tests, 2 de README).
+
+### Desviaciones del diseño
+
+Ninguna. Decisiones 4, 11 y 12 implementadas tal como están: claves ausentes = seis obligatorias menos las
+presentes en el mapa crudo; `errors.As` de `ValidationError` antes que `errors.Is` de `ErrStoryNotFound`;
+`405` defensivo en el handler.
+
+### Problemas encontrados
+
+- **Presupuesto de revisión**: el slice suma 441 líneas autoradas, por encima del pronóstico (~300) y de
+  las 400 del presupuesto (los tests aportan ~317 líneas: tablas de 20 y 14 subtests que fija la spec). No se
+  recortaron tests ni comentarios; se recomienda `size:exception` para el PR 4 (o una decisión del usuario).
+- `TestAPIStartupRoutesFollowMigrationState` sigue fallando en Windows (binario sin `.exe`): preexistente; queda para el slice 5.
+- `tasks.md` y `apply-progress.md` quedan sin commitear a propósito, para el commit `docs(sdd)` del orquestador.
+
+### Tareas restantes
+
+Slice 5 (rama `feat/us06-wire-update-route-docs`, base `feat/us06-http-update-handler`): tareas 5.1 a 5.11.

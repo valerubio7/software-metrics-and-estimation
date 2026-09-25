@@ -38,6 +38,7 @@ type storyResponse struct {
 	Status             string   `json:"status"`
 	StoryPoints        *int     `json:"story_points"`
 	AcceptanceCriteria []string `json:"acceptance_criteria"`
+	EstimatedHours     *float64 `json:"estimated_hours"`
 }
 
 type errorResponse struct {
@@ -54,8 +55,8 @@ func (h *CreateStoryHandler) ServeHTTP(response http.ResponseWriter, request *ht
 		return
 	}
 
-	input, err := decodeCreateStoryRequest(request.Body)
-	if err != nil {
+	var input createStoryRequest
+	if _, err := decodeStoryObject(request.Body, &input); err != nil {
 		writeJSON(response, http.StatusBadRequest, errorResponse{
 			Error: "invalid_request", Message: "request body must be a single valid JSON object with allowed fields",
 		})
@@ -94,48 +95,55 @@ func (h *CreateStoryHandler) ServeHTTP(response http.ResponseWriter, request *ht
 		return
 	}
 
-	writeJSON(response, http.StatusCreated, storyResponse{
+	writeJSON(response, http.StatusCreated, newStoryResponse(story))
+}
+
+// newStoryResponse projects a story to the public response shared by every story operation.
+func newStoryResponse(story domain.Story) storyResponse {
+	return storyResponse{
 		ID: story.ID, ProjectID: story.ProjectID, Title: story.Title,
 		Description: story.Description, Priority: story.Priority, Status: story.Status,
 		StoryPoints: story.StoryPoints, AcceptanceCriteria: story.AcceptanceCriteria,
-	})
+		EstimatedHours: story.EstimatedHours,
+	}
 }
 
-func decodeCreateStoryRequest(body io.Reader) (createStoryRequest, error) {
+// decodeStoryObject strictly decodes a single JSON object into target and returns its raw keys,
+// so callers can tell an absent key apart from an explicit null.
+func decodeStoryObject(body io.Reader, target any) (map[string]json.RawMessage, error) {
 	decoder := json.NewDecoder(body)
 	var raw json.RawMessage
 	if err := decoder.Decode(&raw); err != nil {
-		return createStoryRequest{}, err
+		return nil, err
 	}
 	if len(raw) == 0 || raw[0] != '{' {
-		return createStoryRequest{}, errors.New("request must be an object")
+		return nil, errors.New("request must be an object")
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return createStoryRequest{}, errors.New("request must contain one object")
+		return nil, errors.New("request must contain one object")
 	}
 	strict := json.NewDecoder(bytes.NewReader(raw))
 	strict.DisallowUnknownFields()
-	var input createStoryRequest
-	if err := strict.Decode(&input); err != nil {
-		return createStoryRequest{}, err
+	if err := strict.Decode(target); err != nil {
+		return nil, err
 	}
 	// JSON null inside a string array otherwise decodes as an empty string.
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
-		return createStoryRequest{}, err
+		return nil, err
 	}
 	if criteria := fields["acceptance_criteria"]; len(criteria) > 0 && criteria[0] == '[' {
 		var elements []json.RawMessage
 		if err := json.Unmarshal(criteria, &elements); err != nil {
-			return createStoryRequest{}, err
+			return nil, err
 		}
 		for _, element := range elements {
 			if bytes.Equal(element, []byte("null")) {
-				return createStoryRequest{}, errors.New("criterion must be a string")
+				return nil, errors.New("criterion must be a string")
 			}
 		}
 	}
-	return input, nil
+	return fields, nil
 }
 
 func writeJSON(response http.ResponseWriter, status int, body any) {

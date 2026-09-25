@@ -69,7 +69,7 @@ curl -i -X POST http://localhost:8080/projects/5c21cbd4-d9a7-42df-9c3a-c0866f058
 La respuesta `201 Created` tiene esta forma (el `id` se genera en el servidor):
 
 ```json
-{"id":"<uuid generado>","project_id":"5c21cbd4-d9a7-42df-9c3a-c0866f058746","title":"Registro","description":"Crear historia","priority":"media","status":"pendiente","story_points":null,"acceptance_criteria":["Se registra el trabajo","Se conserva el criterio"]}
+{"id":"<uuid generado>","project_id":"5c21cbd4-d9a7-42df-9c3a-c0866f058746","title":"Registro","description":"Crear historia","priority":"media","status":"pendiente","story_points":null,"acceptance_criteria":["Se registra el trabajo","Se conserva el criterio"],"estimated_hours":null}
 ```
 
 Una forma JSON inválida devuelve `400`, datos inválidos `422` y un proyecto inexistente `404`; los fallos inesperados devuelven `500` sin detalles internos. La FK impide historias huérfanas. Antes de revertir la migración `000002` evalúe y preserve los datos existentes: su `down` elimina la tabla `stories` y todas las historias almacenadas, no los proyectos.
