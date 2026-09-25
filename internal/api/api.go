@@ -48,8 +48,10 @@ type StoryDependencies struct {
 // The caller must verify migration 000002 before supplying story dependencies.
 func NewHTTPHandler(repository application.ProjectRepository, generateID application.IDGenerator, stories ...StoryDependencies) http.Handler {
 	useCase := application.NewCreateProjectUseCase(repository, generateID)
+	updateUseCase := application.NewUpdateProjectUseCase(repository)
 	mux := http.NewServeMux()
 	mux.Handle("POST /projects", transporthttp.NewCreateProjectHandler(useCase))
+	mux.Handle("PUT /projects/{project_id}", transporthttp.NewUpdateProjectHandler(updateUseCase))
 	if len(stories) != 0 {
 		storyUseCase := storyapplication.NewCreateStoryUseCase(stories[0].Repository, stories[0].GenerateID)
 		mux.Handle("POST /projects/{project_id}/stories", storyhttp.NewCreateStoryHandler(storyUseCase))

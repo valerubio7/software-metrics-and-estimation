@@ -9,15 +9,27 @@ import (
 	"testing"
 
 	"github.com/valerubio7/software-metrics-and-estimation/internal/api"
+	"github.com/valerubio7/software-metrics-and-estimation/internal/project/application"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/domain"
 	storydomain "github.com/valerubio7/software-metrics-and-estimation/internal/story/domain"
 )
 
 type fakeProjectRepository struct {
-	projects []domain.Project
+	projects    []domain.Project
+	updateCalls int
+	updateErr   error
 }
 
 func (r *fakeProjectRepository) Create(_ context.Context, project domain.Project) error {
+	r.projects = append(r.projects, project)
+	return nil
+}
+
+func (r *fakeProjectRepository) Update(_ context.Context, project domain.Project) error {
+	r.updateCalls++
+	if r.updateErr != nil {
+		return r.updateErr
+	}
 	r.projects = append(r.projects, project)
 	return nil
 }
@@ -164,5 +176,49 @@ func TestNewHTTPHandlerRegistersCreateProjectRoute(t *testing.T) {
 	}
 	if len(repository.projects) != 1 {
 		t.Fatalf("repository projects = %d, want 1", len(repository.projects))
+	}
+}
+
+func TestNewHTTPHandlerRegistersProjectUpdateRoute(t *testing.T) {
+	repository := &fakeProjectRepository{}
+	handler := api.NewHTTPHandler(repository, func() string { return "5c21cbd4-d9a7-42df-9c3a-c0866f058746" })
+	request := httptest.NewRequest(http.MethodPut, "/projects/5c21cbd4-d9a7-42df-9c3a-c0866f058746",
+		strings.NewReader(`{"name":"Updated","start_date":"2026-03-01","planned_finish_date":"2026-06-30"}`))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || len(repository.projects) != 1 {
+		t.Fatalf("PUT status = %d, writes = %d; body=%s", response.Code, len(repository.projects), response.Body.String())
+	}
+	if repository.projects[0].ID != "5c21cbd4-d9a7-42df-9c3a-c0866f058746" || repository.projects[0].Name != "Updated" {
+		t.Errorf("updated project = %#v", repository.projects[0])
+	}
+}
+
+func TestNewHTTPHandlerMapsInvalidAndUnknownUpdateIDs(t *testing.T) {
+	tests := []struct {
+		name            string
+		projectID       string
+		repositoryError error
+		status          int
+		updateCalls     int
+	}{
+		{name: "malformed UUID", projectID: "not-a-uuid", status: http.StatusUnprocessableEntity},
+		{name: "unknown project", projectID: "5c21cbd4-d9a7-42df-9c3a-c0866f058746", repositoryError: application.ErrProjectNotFound, status: http.StatusNotFound, updateCalls: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := &fakeProjectRepository{updateErr: tt.repositoryError}
+			handler := api.NewHTTPHandler(repository, func() string { return "generated-id" })
+			request := httptest.NewRequest(http.MethodPut, "/projects/"+tt.projectID,
+				strings.NewReader(`{"name":"Updated","start_date":"2026-03-01","planned_finish_date":"2026-06-30"}`))
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != tt.status {
+				t.Fatalf("PUT status = %d, want %d; body=%s", response.Code, tt.status, response.Body.String())
+			}
+			if repository.updateCalls != tt.updateCalls || len(repository.projects) != 0 {
+				t.Errorf("update calls = %d, project writes = %d; want calls=%d, writes=0", repository.updateCalls, len(repository.projects), tt.updateCalls)
+			}
+		})
 	}
 }
