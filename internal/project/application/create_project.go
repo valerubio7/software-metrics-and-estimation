@@ -11,14 +11,15 @@ const dateLayout = "2006-01-02"
 
 // CreateProjectCommand contains the values required to create a project.
 type CreateProjectCommand struct {
-	Name               string
-	StartDate          string
+	Name              string
+	StartDate         string
 	PlannedFinishDate string
 }
 
 // ProjectRepository persists valid projects.
 type ProjectRepository interface {
 	Create(ctx context.Context, project domain.Project) error
+	Update(ctx context.Context, project domain.Project) error
 }
 
 // IDGenerator creates identifiers for new projects.
@@ -26,14 +27,14 @@ type IDGenerator func() string
 
 // CreateProjectUseCase validates and persists a new project.
 type CreateProjectUseCase struct {
-	repository  ProjectRepository
+	repository ProjectRepository
 	generateID IDGenerator
 }
 
 // NewCreateProjectUseCase builds a create-project use case with its dependencies.
 func NewCreateProjectUseCase(repository ProjectRepository, generateID IDGenerator) *CreateProjectUseCase {
 	return &CreateProjectUseCase{
-		repository:  repository,
+		repository: repository,
 		generateID: generateID,
 	}
 }

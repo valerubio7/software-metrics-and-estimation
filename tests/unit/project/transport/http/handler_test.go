@@ -24,6 +24,11 @@ func (r *fakeRepository) Create(_ context.Context, _ domain.Project) error {
 	return r.err
 }
 
+func (r *fakeRepository) Update(_ context.Context, _ domain.Project) error {
+	r.calls++
+	return r.err
+}
+
 func TestCreateProjectHandlerCreatesProjectWithoutStatus(t *testing.T) {
 	repository := &fakeRepository{}
 	handler := newHandler(repository)

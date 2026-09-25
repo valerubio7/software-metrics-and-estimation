@@ -21,6 +21,12 @@ func (r *fakeRepository) Create(_ context.Context, project domain.Project) error
 	return r.err
 }
 
+func (r *fakeRepository) Update(_ context.Context, project domain.Project) error {
+	r.calls++
+	r.projects = append(r.projects, project)
+	return r.err
+}
+
 func TestCreateProjectUseCaseCreatesProjectAndPersistsIt(t *testing.T) {
 	repository := &fakeRepository{}
 	useCase := application.NewCreateProjectUseCase(repository, func() string { return "generated-id" })
@@ -46,9 +52,9 @@ func TestCreateProjectUseCaseCreatesProjectAndPersistsIt(t *testing.T) {
 
 func TestCreateProjectUseCaseRejectsInvalidCommandsWithoutPersisting(t *testing.T) {
 	tests := []struct {
-		name  string
+		name   string
 		mutate func(*application.CreateProjectCommand)
-		field string
+		field  string
 	}{
 		{name: "missing name", mutate: func(c *application.CreateProjectCommand) { c.Name = "" }, field: "name"},
 		{name: "blank name", mutate: func(c *application.CreateProjectCommand) { c.Name = " \t" }, field: "name"},
@@ -112,8 +118,8 @@ func TestCreateProjectUseCasePropagatesRepositoryErrors(t *testing.T) {
 
 func validCommand() application.CreateProjectCommand {
 	return application.CreateProjectCommand{
-		Name:               "Metrics portal",
-		StartDate:          "2026-03-01",
+		Name:              "Metrics portal",
+		StartDate:         "2026-03-01",
 		PlannedFinishDate: "2026-06-30",
 	}
 }
@@ -124,4 +130,3 @@ func sameProject(left, right domain.Project) bool {
 		left.StartDate.Equal(right.StartDate) &&
 		left.PlannedFinishDate.Equal(right.PlannedFinishDate)
 }
-
