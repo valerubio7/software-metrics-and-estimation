@@ -10,7 +10,7 @@ Ramas de los lotes: `feat/us06-domain-story-update` (base `main`, lote 1) y `fea
 | 0. Planificación | 0.1, 0.2 | Completas (commit `46392a5`) |
 | 1. Dominio | 1.1 a 1.8 | Completas (commit `fab506d`) |
 | 2. Aplicación | 2.1 a 2.8 | Completas (commit `d50d432`, rama `feat/us06-application-update-story`) |
-| 3. Almacenamiento | 3.1 a 3.16 | Pendientes (requiere Docker) |
+| 3. Almacenamiento | 3.1 a 3.16 | Completas (commit `2bc1986`, rama `feat/us06-storage-estimated-hours`; Docker disponible, integración corrida) |
 | 4. Handler HTTP | 4.1 a 4.11 | Pendientes |
 | 5. Composición y docs | 5.1 a 5.11 | Pendientes |
 
@@ -127,3 +127,65 @@ y se generalizó después; el resultado final coincide con el diseño (Decisión
 
 Slices 3 a 5 (ramas `feat/us06-storage-estimated-hours`, `feat/us06-http-update-handler`,
 `feat/us06-wire-update-route-docs`). El slice 3 requiere Docker.
+
+## Lote 3: Slice 3 (almacenamiento)
+
+Rama `feat/us06-storage-estimated-hours`, creada desde `feat/us06-application-update-story` (apilada,
+`stacked-to-main`). No se hizo push ni PR.
+
+### Línea base (tarea 3.1)
+
+Docker Desktop 28.0.4 disponible (Testcontainers `postgres:16-alpine` levanta contenedores). Los tests de
+integración de `tests/integration/project/...` y los de repositorio de `tests/integration/story/postgres`
+pasan. Única falla de línea base: `TestAPIStartupRoutesFollowMigrationState`, preexistente en Windows (el
+test compila el binario como `api` sin `.exe`: `executable file not found in %PATH%`); fuera de alcance,
+se aborda en el slice 5.
+
+### Evidencia del ciclo TDD
+
+| Tarea | Archivo de test | Capa | Red de seguridad | RED | GREEN | TRIANGULATE | REFACTOR |
+|-------|-----------------|------|------------------|-----|-------|-------------|----------|
+| 3.2 | `tests/integration/story/postgres/repository_integration_test.go` (lista de migraciones de `storyDatabase`, helper `seedStory`) | Integración | Tests de creación existentes en verde | Falla observada en `TestStoryRepositoryStoresLinkedUnestimatedStory`: `read migration 000003_add_story_estimated_hours.up.sql: ... The system cannot find the file specified.` | Pase con la migración creada | — | — |
+| 3.3 | idem (`TestStoryRepositoryUpdateRoundTripsEstimatedHours`: 0.01, 99999.99, 8, 2.5, 0.07) | Integración | N/A (nuevo) | Falla de compilación observada: `Update undefined (type *PostgresStoryRepository has no field or method Update)` | PASS con el paso 1 de la escalera | Ver 3.13 | — |
+| 3.4 a 3.9 | idem (`...UpdateReplacesAllEditableFields`, `...UpdateWithNilHoursClearsEstimateToNull`, `...UpdateKeepsIdentityAndStoryPoints`, `...UpdateReportsNotFoundWithoutTouchingData`, `...EnforcesNamedStoryConstraints`, `...UpdateTreatsHostileTextAsData`) | Integración | N/A (nuevos) | Misma falla de compilación (`Update` indefinido); son un único RED por compilación, no siete fallas independientes | PASS | Ver 3.13 | — |
+| 3.10 | `internal/project/infrastructure/postgres/migrations/000003_add_story_estimated_hours.{up,down}.sql` | Integración | — | Cubierto por 3.2 | `go test ./tests/integration/story/postgres/... -run "TestStoryRepository" -v` PASS | — | — |
+| 3.11 | `internal/story/infrastructure/postgres/repository.go` (`Update` + aserciones de compilación) | Integración | — | Cubierto por 3.3-3.9 | PASS (mismo comando) | — | — |
+| 3.12 | idem | Integración | — | — | Paso 1 de la escalera suficiente: parámetro `*float64` y `RETURNING` en `&story.EstimatedHours`; `story_points` NULL se escanea directo en `&story.StoryPoints` (`*int`). Sin casteos ni intermediarios `pgtype`; la columna sigue `NUMERIC(7,2)` | — | — |
+| 3.13 | idem (`TestStoryRepositoryUpdateTriangulation`: idempotencia, gana la última, los tres estados; puntos 5 y 13 preservados con horas 1.5; segundo proyecto; contexto cancelado y `CHECK` violado no se etiquetan como no encontrada; rechazos directos de `status`, horas 0, -1 y 100000 -> `22003`) | Integración | — | — | — | PASS de inmediato (la lógica de 3.11 ya era general); son pruebas de caracterización, sin RED nuevo. Comprobación extra de mutación (no commiteada): cambiar el `SET` a `estimated_hours = $8 + 0.01` hizo fallar `lower_bound` e `integer`, y se revirtió | — |
+| 3.14 | `internal/story/infrastructure/postgres/repository.go` | Integración | Suite de almacenamiento verde antes y después | — | — | — | Sin cambios necesarios: `Update` es el único escaneo de columnas nullables, no justifica un helper |
+
+Resumen de tests: 8 funciones de test de nivel superior nuevas en el paquete de integración (más 4 helpers:
+`readRow`, `seedStory`, `show` y punteros auxiliares). Capa usada: solo integración (PostgreSQL real).
+Funciones puras nuevas: ninguna en producción.
+
+### Evidencia del work unit
+
+| Evidencia | Valor observado |
+|-----------|-----------------|
+| Comando de test focalizado | `go test ./tests/integration/story/postgres/... -run "TestStoryRepository" -v` -> `ok` (todas PASS; 114 s) |
+| Harness de runtime | PostgreSQL 16 real vía Testcontainers con migraciones `000001`-`000003`; Docker Desktop 28.0.4; ningún test saltado |
+| `go vet ./...` | Limpio |
+| `gofmt` | Verificado sobre el contenido sin CR (`tr -d '\r' \| gofmt -l`): limpio. `gofmt -l .` sigue listando archivos por CRLF de la copia de trabajo de Windows (preexistente) |
+| `go test ./...` completo | Todos los paquetes unitarios e `integration/project/postgres` `ok`; en `integration/story/postgres` falla SOLO `TestAPIStartupRoutesFollowMigrationState` (preexistente en Windows, sin `.exe`; no causada por este cambio) |
+| Rollback | Revertir `2bc1986` (`000003_*.sql`, `Update` en `repository.go` y los tests de integración). Si `000003` ya se aplicó en un entorno, seguir el plan de rollback de esquema de `proposal.md` (el `down` es destructivo) |
+
+### Commit
+
+- `2bc1986` `feat(story): persist story updates and estimated hours` (4 archivos, +430/-1 = 431 líneas autoradas: ~31 de código, 10 de SQL y ~390 de tests de integración).
+
+### Desviaciones del diseño
+
+Ninguna en el comportamiento: escalera en el paso 1, `Update` con una sola sentencia acotada por `id` y
+`project_id`, constraints nombradas.
+
+### Problemas encontrados
+
+- **Presupuesto de revisión**: el slice suma 431 líneas autoradas, por encima del pronóstico (~300-350) y de las 400 del presupuesto. La diferencia viene de los tests de integración (~390 líneas; ocho funciones con subtests, cada uno con su contenedor). No se recortaron tests ni comentarios para ajustar la cifra; se recomienda `size:exception` para el PR 3 (o una decisión del usuario), dado que el slice ya es una unidad de trabajo cohesiva.
+- `TestAPIStartupRoutesFollowMigrationState` falla en Windows por el nombre del binario (`api` sin `.exe`): preexistente, fuera de alcance del slice 3; queda para el slice 5.
+- Los tests de integración tardan ~5 s por contenedor (uno por test/subtest); el paquete completo ronda 2-3 minutos.
+- `tasks.md` y `apply-progress.md` quedan sin commitear a propósito, para el commit `docs(sdd)` del orquestador.
+
+### Tareas restantes
+
+Slices 4 y 5 (ramas `feat/us06-http-update-handler`, `feat/us06-wire-update-route-docs`). El arranque real del
+slice 5 depende de resolver el nombre del binario en Windows.
