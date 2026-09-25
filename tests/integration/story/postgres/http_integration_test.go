@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -43,7 +44,11 @@ func TestAPIStartupRoutesFollowMigrationState(t *testing.T) {
 
 func testAPIStartupRoutes(t *testing.T, databaseURL string, storyCode int) {
 	t.Helper()
-	binary := filepath.Join(t.TempDir(), "api")
+	name := "api"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	binary := filepath.Join(t.TempDir(), name)
 	build := exec.Command("go", "build", "-o", binary, "./cmd/api")
 	build.Dir = storyModuleRoot(t)
 	if output, err := build.CombinedOutput(); err != nil {
