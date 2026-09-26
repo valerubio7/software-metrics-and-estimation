@@ -200,3 +200,68 @@ Work Unit Evidence (Unidad 3):
 | Comando focalizado y resultado | `go test -count=1 ./tests/integration/story/postgres/... -run "TestStoryRepositoryListByProject\|TestStoriesCreationSequence\|TestStoryRepositoryUpdateDoesNotChangeCreationSequence" -v` → `PASS` los 12 tests nuevos (el 12.º, `...OrdersBySequenceItself`, ejecutado aparte) |
 | Arnés de ejecución | PostgreSQL real vía Testcontainers `postgres:16-alpine` con migraciones `000001`–`000004`; suite completa de integración `PASS`, sin saltos |
 | Frontera de rollback | migraciones `000004` (`up`/`down`), `ListByProject` en `internal/story/infrastructure/postgres/repository.go` y los tests de `tests/integration/story/postgres/repository_integration_test.go`. Si `000004` ya se aplicó en un entorno, ejecutar el `down` (solo se pierde la secuencia de desempate) |
+
+### Unidad 4: Handler HTTP `ListStoriesHandler` (sin Docker)
+
+Ciclo TDD observado:
+
+- **Red de seguridad**: no se modifica ningún archivo existente (`handler.go` y `update_handler.go` quedan
+  intactos; solo se agregan `list_handler.go` y su test). La suite unitaria del transporte de historias estaba
+  verde antes (`ok`, 14 tests de nivel superior).
+- **RED 4.1–4.3**: `tests/unit/story/transport/http/list_handler_test.go` con un `fakeLister` de solo lectura y
+  el caso de uso **real** (`application.NewListStoriesUseCase`): `TestListStoriesReturnsTheOrderedBacklogIn
+  sideTheContainer` (200, `project_id` canónico en minúsculas, orden `alta, media, baja` a partir de un fake en
+  orden de creación, `null` en los anulables), `TestListStoriesRespondsWithAnEmptyArrayNeverNull` (fake que
+  devuelve `nil`; el cuerpo crudo contiene `"stories":[]` y no `null`), `...RejectsInvalidProjectIdentifiers
+  BeforeReading` (`no-es-uuid` y `abc` → 422 con `fields.project_id` y cero lecturas), `...MapsOnlyTheTypedMissing
+  ProjectTo404` (sin clave `stories`) y `...HidesUnexpectedErrorsBehindAGeneric500`. Falla observada (error de
+  compilación): `undefined: transporthttp.NewListStoriesHandler` → `FAIL ... [build failed]`.
+- **GREEN 4.4**: `internal/story/transport/http/list_handler.go` con `NewListStoriesHandler`,
+  `ListStoriesHandler`, `backlogResponse` y el mapa de errores del diseño (`errors.As` de `ValidationError`
+  antes que `errors.Is` de `ErrProjectNotFound`; respuesta con `make([]storyResponse, 0, len(backlog.Stories))`);
+  reutiliza sin cambios `storyResponse`, `newStoryResponse`, `errorResponse` y `writeJSON`. Resultado: los cinco
+  tests pasan.
+- **TRIANGULATE 4.5**: nueve claves exactas por historia y contenedor de exactamente dos claves sin `seq`;
+  identificador canónico entregado al lector (una lectura, en minúsculas); `HEAD` aceptado con una lectura y
+  `POST`/`PUT`/`DELETE` directos al handler → `405 method_not_allowed` con cero lecturas; un lector que devuelve
+  historias **junto con** un error produce `500` sin clave `stories`; `Content-Type: application/json` en `200`,
+  `404` y `500`. Pasaron sin cambios de producción.
+- **Prueba de mutación manual**: cambiar temporalmente `make([]storyResponse, 0, ...)` por `var stories
+  []storyResponse` hace fallar `TestListStoriesRespondsWithAnEmptyArrayNeverNull` (el cuerpo pasa a `null`);
+  se restauró el código y volvió a `ok`.
+- **REFACTOR 4.6**: sin cambios necesarios (los helpers de `handler.go` se reutilizan sin modificarlos; no hay
+  duplicación real). Suite de transporte verde antes y después.
+- **Verificación 4.7**: `go vet ./...` limpio; formato normalizado sin diferencias; `go test ./tests/unit/...`
+  verde (transporte de historias: 24 tests de nivel superior, 10 nuevos); `internal/story/transport/http/
+  handler.go` sin modificar (`git diff` vacío).
+- **`go test -count=1 ./...` completo con Docker (cierre de la Unidad 4)**: unitarios todos `ok`;
+  `tests/integration/story/postgres` `ok` (251 s, sin `SKIP`); `tests/integration/project/postgres` falló una
+  vez en `TestPostgresProjectRepositoryUpdateChangesBasicFieldsOnly` con `wait for PostgreSQL test container:
+  failed to connect ... unexpected EOF` (la misma **falla transitoria de conexión al contenedor** ya vista en
+  la línea base del lote 1; es un paquete que esta unidad no toca). Se re-ejecutó
+  `go test -count=1 ./tests/integration/project/...` → `ok` (16 s). Límite de entorno, no resultado de US-07.
+
+Work Unit Evidence (Unidad 4):
+
+| Evidencia | Valor |
+|---|---|
+| Comando focalizado y resultado | `go test -count=1 ./tests/unit/story/transport/http/...` → `ok` (14 tests previos + 10 nuevos de nivel superior) |
+| Arnés de ejecución | N/A: `httptest` con el caso de uso real sobre un lister falso; el proceso real se ejerce en la Unidad 5 (la ruta no está expuesta hasta entonces) |
+| Frontera de rollback | `internal/story/transport/http/list_handler.go` y `tests/unit/story/transport/http/list_handler_test.go` |
+
+## Tabla de evidencia TDD (lote 2)
+
+| Tarea | Archivo de test | Capa | Red de seguridad | RED | GREEN | TRIANGULATE | REFACTOR |
+|-------|-----------------|------|------------------|-----|-------|-------------|----------|
+| 3.2 | `tests/integration/story/postgres/repository_integration_test.go` | Integración | `-run "TestStoryRepository\|TestStories"` `ok` | `read migration ... cannot find the file` | Pasó con la migración | — | Helper `applyStoryMigration` extraído (test) |
+| 3.3–3.11 | ídem | Integración | ídem | Escritos; `build failed` (`ListByProject` indefinido) | Pasaron 11 tests | ver 3.15–3.16 | — |
+| 3.12–3.14 | ídem (migraciones y `repository.go`) | Integración | ídem | (ver arriba) | Pasó con el paso 1 de la escalera | — | — |
+| 3.15–3.16 | ídem | Integración | ídem | Escritos junto al grupo | Pasaron sin cambiar producción | `down`/`up`, igual prioridad, consultas repetidas; **mutación de `ORDER BY`** detectó un hueco y se agregó `OrdersBySequenceItself` | Sin cambios necesarios (3.17) |
+| 4.1–4.3 | `tests/unit/story/transport/http/list_handler_test.go` | Unitario | N/A (archivo nuevo; 14/14 previos) | Escrito; `build failed` (`NewListStoriesHandler` indefinido) | Pasó (5 tests) | — | — |
+| 4.5 | ídem | Unitario | ídem | (escritos tras el GREEN de 4.4) | Pasaron sin cambiar producción | 9 claves, `seq` ausente, `HEAD`, `405`, error con historias, `Content-Type` | Sin cambios necesarios (4.6); mutación de `make(...)` detectada |
+
+## Estado acumulado (lotes 1 y 2)
+
+Tareas completadas: 0.1–0.3, 1.1–1.7, 2.1–2.7, 3.1–3.19 y 4.1–4.8. Pendientes: Unidad 5 (composición, arranque y
+README; requiere Docker) y Unidad 6 (cierre). Commits de unidad: `5b49131` (1), `a39f3ae` (2), `0a9ebe9` (3) y
+el de la Unidad 4 (ver el historial de la rama).

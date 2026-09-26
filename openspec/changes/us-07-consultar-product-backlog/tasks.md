@@ -223,26 +223,26 @@ hostil (`422` con cero llamadas) y fuga de información (`404` genérico, `500` 
 
 ### RED
 
-- [ ] 4.1 RED camino feliz y contenedor: crear `tests/unit/story/transport/http/list_handler_test.go` (`httptest` con `SetPathValue("project_id")`, caso de uso **real** sobre un lister falso) con: `200` con `project_id` canónico y `stories` en el orden del `Backlog`; los valores ausentes `story_points` y `estimated_hours` como `null`. Ejecutar `go test ./tests/unit/story/transport/http/...` y observar la falla (`NewListStoriesHandler` indefinido).
-- [ ] 4.2 RED lista vacía (amenaza de `null`): con un fake que devuelve **`nil`**, el cuerpo crudo contiene `"stories":[]` y no `"stories":null`.
-- [ ] 4.3 RED errores: `422 validation_failed` con `fields.project_id` y cero llamadas al lister (`"no-es-uuid"`, `"abc"`); `404 project_not_found` sin la clave `stories`; `500 internal_error` con mensaje genérico `an unexpected error occurred` que no contiene el texto del error interno. Ejecutar y observar las fallas.
+- [x] 4.1 RED camino feliz y contenedor: crear `tests/unit/story/transport/http/list_handler_test.go` (`httptest` con `SetPathValue("project_id")`, caso de uso **real** sobre un lister falso) con: `200` con `project_id` canónico y `stories` en el orden del `Backlog`; los valores ausentes `story_points` y `estimated_hours` como `null`. Ejecutar `go test ./tests/unit/story/transport/http/...` y observar la falla (`NewListStoriesHandler` indefinido).
+- [x] 4.2 RED lista vacía (amenaza de `null`): con un fake que devuelve **`nil`**, el cuerpo crudo contiene `"stories":[]` y no `"stories":null`.
+- [x] 4.3 RED errores: `422 validation_failed` con `fields.project_id` y cero llamadas al lister (`"no-es-uuid"`, `"abc"`); `404 project_not_found` sin la clave `stories`; `500 internal_error` con mensaje genérico `an unexpected error occurred` que no contiene el texto del error interno. Ejecutar y observar las fallas.
 
 ### GREEN
 
-- [ ] 4.4 GREEN: crear `internal/story/transport/http/list_handler.go` con `NewListStoriesHandler`, `ListStoriesHandler`, `backlogResponse` y el mapa de errores del diseño (`errors.As` de `ValidationError` antes que `errors.Is` de `ErrProjectNotFound`; respuesta construida con `make([]storyResponse, 0, len(backlog.Stories))`). Reutilizar sin cambios `storyResponse`, `newStoryResponse`, `errorResponse` y `writeJSON` de `internal/story/transport/http/handler.go`. Implementación mínima que pase 4.1–4.3. Ejecutar `go test ./tests/unit/story/transport/http/...` y observar el pase.
+- [x] 4.4 GREEN: crear `internal/story/transport/http/list_handler.go` con `NewListStoriesHandler`, `ListStoriesHandler`, `backlogResponse` y el mapa de errores del diseño (`errors.As` de `ValidationError` antes que `errors.Is` de `ErrProjectNotFound`; respuesta construida con `make([]storyResponse, 0, len(backlog.Stories))`). Reutilizar sin cambios `storyResponse`, `newStoryResponse`, `errorResponse` y `writeJSON` de `internal/story/transport/http/handler.go`. Implementación mínima que pase 4.1–4.3. Ejecutar `go test ./tests/unit/story/transport/http/...` y observar el pase.
 
 ### TRIANGULATE
 
-- [ ] 4.5 TRIANGULATE en `tests/unit/story/transport/http/list_handler_test.go`: cada elemento tiene exactamente las nueve claves (decodificando a `map[string]json.RawMessage`) y ni el contenedor ni los elementos incluyen `seq`; `HEAD` aceptado; `POST` directo al handler responde `405 method_not_allowed`; `Content-Type: application/json` en todas las respuestas; UUID en mayúsculas normalizado en `project_id`; un error del lister junto con historias no devuelve lista parcial. Ejecutar y observar el pase.
+- [x] 4.5 TRIANGULATE en `tests/unit/story/transport/http/list_handler_test.go`: cada elemento tiene exactamente las nueve claves (decodificando a `map[string]json.RawMessage`) y ni el contenedor ni los elementos incluyen `seq`; `HEAD` aceptado; `POST` directo al handler responde `405 method_not_allowed`; `Content-Type: application/json` en todas las respuestas; UUID en mayúsculas normalizado en `project_id`; un error del lister junto con historias no devuelve lista parcial. Ejecutar y observar el pase.
 
 ### REFACTOR
 
-- [ ] 4.6 REFACTOR: ninguno previsto (los helpers se reutilizan sin cambios); registrar "REFACTOR: sin cambios necesarios" salvo que los tests muestren duplicación. Ejecutar `go test ./tests/unit/story/transport/http/...` y `go test ./...` completo.
+- [x] 4.6 REFACTOR: ninguno previsto (los helpers se reutilizan sin cambios); registrar "REFACTOR: sin cambios necesarios" salvo que los tests muestren duplicación. Ejecutar `go test ./tests/unit/story/transport/http/...` y `go test ./...` completo.
 
 ### Verificación y commit
 
-- [ ] 4.7 Verificar la unidad: `gofmt -l .` sin salida, `go vet ./...` limpio y `go test ./...` en verde; confirmar que `internal/story/transport/http/handler.go` no fue modificado.
-- [ ] 4.8 COMMIT de la unidad 4 (un único commit): `feat(story): serve the product backlog over HTTP`. Cuerpo de 5–8 líneas según la Regla de commits. Rollback: revertir solo este commit; la ruta no está expuesta hasta la unidad 5.
+- [x] 4.7 Verificar la unidad: `gofmt -l .` sin salida, `go vet ./...` limpio y `go test ./...` en verde; confirmar que `internal/story/transport/http/handler.go` no fue modificado.
+- [x] 4.8 COMMIT de la unidad 4 (un único commit): `feat(story): serve the product backlog over HTTP`. Cuerpo de 5–8 líneas según la Regla de commits. Rollback: revertir solo este commit; la ruta no está expuesta hasta la unidad 5.
 
 ## Unidad 5: Composición, arranque y documentación (commit 5, **requiere Docker** para el arranque real)
 
