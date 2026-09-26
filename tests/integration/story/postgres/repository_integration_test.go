@@ -673,6 +673,432 @@ func TestStoryRepositoryUpdateTriangulation(t *testing.T) {
 	})
 }
 
+const (
+	emptyProjectID   = "5f2d7c1e-8b4a-4a53-9c1d-3e6b7a9d0f12"
+	missingProjectID = "c7a1d2e3-4b5f-4c6d-8e7f-9a0b1c2d3e4f"
+
+	// Story identifiers whose alphabetical order is the reverse of the seeding order below.
+	firstSeededID  = "f0000000-0000-4000-8000-000000000001"
+	secondSeededID = "80000000-0000-4000-8000-000000000002"
+	thirdSeededID  = "10000000-0000-4000-8000-000000000003"
+)
+
+// backlogStory is a valid story with an explicit identity, priority and title.
+func backlogStory(id, project, priority, title string) domain.Story {
+	story := validStory(project)
+	story.ID, story.Priority, story.Title = id, priority, title
+	return story
+}
+
+func storyIDs(stories []domain.Story) []string {
+	ids := make([]string, 0, len(stories))
+	for _, story := range stories {
+		ids = append(ids, story.ID)
+	}
+	return ids
+}
+
+// listStories calls the repository through the read port, as the use case does.
+func listStories(t *testing.T, pool *pgxpool.Pool, project string) ([]domain.Story, error) {
+	t.Helper()
+	var lister application.StoryLister = storypostgres.NewPostgresStoryRepository(pool)
+	return lister.ListByProject(context.Background(), project)
+}
+
+// seedBacklog inserts the given stories in order so their creation sequence follows it.
+func seedBacklog(t *testing.T, pool *pgxpool.Pool, stories ...domain.Story) {
+	t.Helper()
+	for _, story := range stories {
+		seedStory(t, pool, story, nil, "")
+	}
+}
+
+// sequenceByStory reads the storage-only creation sequence straight from SQL.
+func sequenceByStory(t *testing.T, pool *pgxpool.Pool) map[string]int64 {
+	t.Helper()
+	rows, err := pool.Query(context.Background(), "SELECT id::text, seq FROM stories")
+	if err != nil {
+		t.Fatalf("read creation sequence: %v", err)
+	}
+	defer rows.Close()
+	sequences := make(map[string]int64)
+	for rows.Next() {
+		var id string
+		var seq int64
+		if err := rows.Scan(&id, &seq); err != nil {
+			t.Fatalf("scan creation sequence: %v", err)
+		}
+		sequences[id] = seq
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate creation sequence: %v", err)
+	}
+	return sequences
+}
+
+// tableSnapshot renders both tables with their row versions (xmin), so any write,
+// even one that leaves values unchanged, changes the text.
+func tableSnapshot(t *testing.T, pool *pgxpool.Pool) string {
+	t.Helper()
+	var stories, projects string
+	err := pool.QueryRow(context.Background(), `
+		SELECT coalesce(string_agg(s.xmin::text || ' ' || to_jsonb(s)::text, E'\n' ORDER BY s.id), '') FROM stories s
+	`).Scan(&stories)
+	if err != nil {
+		t.Fatalf("snapshot stories: %v", err)
+	}
+	err = pool.QueryRow(context.Background(), `
+		SELECT coalesce(string_agg(p.xmin::text || ' ' || to_jsonb(p)::text, E'\n' ORDER BY p.id), '') FROM projects p
+	`).Scan(&projects)
+	if err != nil {
+		t.Fatalf("snapshot projects: %v", err)
+	}
+	return stories + "\n--\n" + projects
+}
+
+func TestStoryRepositoryListByProjectReturnsEmptyForProjectWithoutStories(t *testing.T) {
+	pool := storyDatabase(t)
+	insertProject(t, pool, projectID)
+	insertProject(t, pool, otherProjectID)
+	seedBacklog(t, pool, backlogStory(storyID, otherProjectID, "alta", "Historia ajena"))
+
+	got, err := listStories(t, pool, projectID)
+
+	if err != nil {
+		t.Fatalf("ListByProject(project without stories) error = %v, want nil (an existing project is not ErrProjectNotFound)", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("ListByProject(project without stories) = %#v, want no stories", got)
+	}
+}
+
+func TestStoryRepositoryListByProjectRejectsMissingProject(t *testing.T) {
+	pool := storyDatabase(t)
+	insertProject(t, pool, projectID)
+	seedBacklog(t, pool, backlogStory(storyID, projectID, "alta", "Historia existente"))
+
+	got, err := listStories(t, pool, missingProjectID)
+
+	if !errors.Is(err, application.ErrProjectNotFound) {
+		t.Errorf("ListByProject(missing project) error = %v, want ErrProjectNotFound", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("ListByProject(missing project) = %#v, want no stories", got)
+	}
+}
+
+func TestStoryRepositoryListByProjectReturnsCreationOrderNotPriorityOrIDOrder(t *testing.T) {
+	pool := storyDatabase(t)
+	insertProject(t, pool, projectID)
+	seedBacklog(t, pool,
+		backlogStory(firstSeededID, projectID, "baja", "Primera"),
+		backlogStory(secondSeededID, projectID, "alta", "Segunda"),
+		backlogStory(thirdSeededID, projectID, "media", "Tercera"),
+	)
+
+	got, err := listStories(t, pool, projectID)
+
+	if err != nil {
+		t.Fatalf("ListByProject() error = %v", err)
+	}
+	want := []string{firstSeededID, secondSeededID, thirdSeededID}
+	if !reflect.DeepEqual(storyIDs(got), want) {
+		t.Errorf("ListByProject() ids = %v, want creation order %v (not priority nor id order)", storyIDs(got), want)
+	}
+}
+
+func TestStoryRepositoryListByProjectReturnsOnlyTheQueriedProject(t *testing.T) {
+	pool := storyDatabase(t)
+	insertProject(t, pool, projectID)
+	insertProject(t, pool, otherProjectID)
+	insertProject(t, pool, emptyProjectID)
+	seedBacklog(t, pool,
+		backlogStory(firstSeededID, projectID, "alta", "De A uno"),
+		backlogStory(secondSeededID, otherProjectID, "alta", "De B uno"),
+		backlogStory(thirdSeededID, projectID, "baja", "De A dos"),
+		backlogStory("20000000-0000-4000-8000-000000000004", otherProjectID, "media", "De B dos"),
+	)
+
+	forA, err := listStories(t, pool, projectID)
+	if err != nil {
+		t.Fatalf("ListByProject(A) error = %v", err)
+	}
+	if want := []string{firstSeededID, thirdSeededID}; !reflect.DeepEqual(storyIDs(forA), want) {
+		t.Errorf("ListByProject(A) ids = %v, want only A's stories %v", storyIDs(forA), want)
+	}
+	for _, story := range forA {
+		if story.ProjectID != projectID {
+			t.Errorf("ListByProject(A) returned story %s of project %s", story.ID, story.ProjectID)
+		}
+	}
+
+	forEmpty, err := listStories(t, pool, emptyProjectID)
+	if err != nil {
+		t.Fatalf("ListByProject(empty project) error = %v", err)
+	}
+	if len(forEmpty) != 0 {
+		t.Errorf("ListByProject(empty project) = %v, want no stories while other projects have some", storyIDs(forEmpty))
+	}
+}
+
+func TestStoryRepositoryListByProjectMapsEveryField(t *testing.T) {
+	pool := storyDatabase(t)
+	insertProject(t, pool, projectID)
+	estimated := backlogStory(firstSeededID, projectID, "alta", "Estimada")
+	estimated.Status = "en_progreso"
+	estimated.AcceptanceCriteria = []string{"Tercero", " Primero ", "Segundo"}
+	unestimated := backlogStory(secondSeededID, projectID, "baja", "Sin estimar")
+	seedStory(t, pool, estimated, intPtr(8), "8.50")
+	seedStory(t, pool, unestimated, nil, "")
+
+	got, err := listStories(t, pool, projectID)
+
+	if err != nil {
+		t.Fatalf("ListByProject() error = %v", err)
+	}
+	estimated.StoryPoints, estimated.EstimatedHours = intPtr(8), hoursPtr(8.5)
+	want := []domain.Story{estimated, unestimated}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ListByProject() = %#v, want %#v (NULL story_points and estimated_hours as nil)", got, want)
+	}
+}
+
+func TestStoryRepositoryUpdateDoesNotChangeCreationSequence(t *testing.T) {
+	pool := storyDatabase(t)
+	insertProject(t, pool, projectID)
+	repository := storypostgres.NewPostgresStoryRepository(pool)
+	for _, story := range []domain.Story{
+		backlogStory(firstSeededID, projectID, "baja", "Primera"),
+		backlogStory(secondSeededID, projectID, "alta", "Segunda"),
+		backlogStory(thirdSeededID, projectID, "media", "Tercera"),
+	} {
+		if err := repository.Create(context.Background(), story); err != nil {
+			t.Fatalf("Create(%s) error = %v", story.ID, err)
+		}
+	}
+	sequencesBefore := sequenceByStory(t, pool)
+	edited := backlogStory(firstSeededID, projectID, "alta", "Primera editada")
+	edited.Status = "completada"
+
+	if _, err := repository.Update(context.Background(), edited); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+
+	if after := sequenceByStory(t, pool); !reflect.DeepEqual(after, sequencesBefore) {
+		t.Errorf("creation sequence after Update = %v, want unchanged %v", after, sequencesBefore)
+	}
+	got, err := listStories(t, pool, projectID)
+	if err != nil {
+		t.Fatalf("ListByProject() error = %v", err)
+	}
+	want := []string{firstSeededID, secondSeededID, thirdSeededID}
+	if !reflect.DeepEqual(storyIDs(got), want) {
+		t.Errorf("ListByProject() ids after Update = %v, want creation order %v", storyIDs(got), want)
+	}
+	if got[0].Title != "Primera editada" || got[0].Status != "completada" || got[0].Priority != "alta" {
+		t.Errorf("first story after Update = %#v, want the edited content in its original position", got[0])
+	}
+}
+
+func TestStoryRepositoryListByProjectDoesNotWrite(t *testing.T) {
+	pool := storyDatabase(t)
+	insertProject(t, pool, projectID)
+	insertProject(t, pool, emptyProjectID)
+	seedBacklog(t, pool,
+		backlogStory(firstSeededID, projectID, "baja", "Primera"),
+		backlogStory(secondSeededID, projectID, "alta", "Segunda"),
+	)
+	before := tableSnapshot(t, pool)
+
+	for round := 0; round < 3; round++ {
+		if got, err := listStories(t, pool, projectID); err != nil || len(got) != 2 {
+			t.Fatalf("ListByProject(populated) = %d stories, %v; want 2, nil", len(got), err)
+		}
+		if _, err := listStories(t, pool, emptyProjectID); err != nil {
+			t.Fatalf("ListByProject(empty) error = %v", err)
+		}
+		if _, err := listStories(t, pool, missingProjectID); !errors.Is(err, application.ErrProjectNotFound) {
+			t.Fatalf("ListByProject(missing) error = %v, want ErrProjectNotFound", err)
+		}
+	}
+
+	if after := tableSnapshot(t, pool); after != before {
+		t.Errorf("tables changed after read-only queries:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+func TestStoriesCreationSequenceIsAnImmutableUniqueIdentity(t *testing.T) {
+	pool := storyDatabase(t)
+	insertProject(t, pool, projectID)
+	seedBacklog(t, pool, backlogStory(storyID, projectID, "media", "Existente"))
+
+	var definition string
+	err := pool.QueryRow(context.Background(), `
+		SELECT pg_get_constraintdef(oid) FROM pg_constraint
+		WHERE conrelid = 'stories'::regclass AND conname = 'stories_project_id_seq_key'
+	`).Scan(&definition)
+	if err != nil {
+		t.Fatalf("named constraint stories_project_id_seq_key missing: %v", err)
+	}
+	if definition != "UNIQUE (project_id, seq)" {
+		t.Errorf("stories_project_id_seq_key = %q, want UNIQUE (project_id, seq)", definition)
+	}
+
+	var generation, nullable, dataType string
+	err = pool.QueryRow(context.Background(), `
+		SELECT identity_generation, is_nullable, data_type FROM information_schema.columns
+		WHERE table_name = 'stories' AND column_name = 'seq'
+	`).Scan(&generation, &nullable, &dataType)
+	if err != nil {
+		t.Fatalf("read seq column metadata: %v", err)
+	}
+	if generation != "ALWAYS" || nullable != "NO" || dataType != "bigint" {
+		t.Errorf("seq column = (%s, nullable %s, %s), want (ALWAYS, nullable NO, bigint)", generation, nullable, dataType)
+	}
+
+	for _, tc := range []struct {
+		name      string
+		statement string
+	}{
+		{name: "explicit seq on insert", statement: `
+			INSERT INTO stories (id, project_id, title, description, priority, status, acceptance_criteria, seq)
+			VALUES ('331a7ff5-12eb-4b2d-83fd-b51fd77e413d', '` + projectID + `', 't', 'd', 'alta', 'pendiente', ARRAY['c'], 99)`},
+		{name: "explicit seq on update", statement: "UPDATE stories SET seq = 99"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := pool.Exec(context.Background(), tc.statement)
+			assertDatabaseError(t, err, "428C9", "")
+		})
+	}
+}
+
+func TestStoryRepositoryListByProjectDoesNotReinterpretDatabaseErrors(t *testing.T) {
+	pool := storyDatabase(t)
+	insertProject(t, pool, projectID)
+	seedBacklog(t, pool, backlogStory(storyID, projectID, "media", "Existente"))
+	if _, err := pool.Exec(context.Background(), "ALTER TABLE stories RENAME COLUMN seq TO seq_renamed"); err != nil {
+		t.Fatalf("rename seq column: %v", err)
+	}
+
+	got, err := listStories(t, pool, projectID)
+
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "42703" {
+		t.Errorf("ListByProject() error = %v, want the untranslated PostgreSQL undefined_column error", err)
+	}
+	if errors.Is(err, application.ErrProjectNotFound) {
+		t.Errorf("database error mislabeled as missing project: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("ListByProject() = %#v, want no stories on error", got)
+	}
+}
+
+func TestStoriesCreationSequenceMigrationRoundTripsWithoutLosingData(t *testing.T) {
+	pool := storyDatabase(t)
+	insertProject(t, pool, projectID)
+	seedBacklog(t, pool,
+		backlogStory(firstSeededID, projectID, "baja", "Primera"),
+		backlogStory(secondSeededID, projectID, "alta", "Segunda"),
+	)
+	rowsBefore := []storedRow{readRow(t, pool, firstSeededID), readRow(t, pool, secondSeededID)}
+
+	applyStoryMigration(t, pool, "000004_add_story_creation_sequence.down.sql")
+
+	var columns, constraints int
+	if err := pool.QueryRow(context.Background(), `
+		SELECT (SELECT count(*) FROM information_schema.columns WHERE table_name = 'stories' AND column_name = 'seq'),
+		       (SELECT count(*) FROM pg_constraint WHERE conname = 'stories_project_id_seq_key')
+	`).Scan(&columns, &constraints); err != nil {
+		t.Fatalf("inspect schema after down: %v", err)
+	}
+	if columns != 0 || constraints != 0 {
+		t.Errorf("after down: seq columns = %d, constraints = %d, want 0 and 0", columns, constraints)
+	}
+	rowsAfterDown := []storedRow{readRow(t, pool, firstSeededID), readRow(t, pool, secondSeededID)}
+	if !reflect.DeepEqual(rowsAfterDown, rowsBefore) {
+		t.Errorf("rows after down = %#v, want business values intact %#v", rowsAfterDown, rowsBefore)
+	}
+
+	applyStoryMigration(t, pool, "000004_add_story_creation_sequence.up.sql")
+
+	sequences := sequenceByStory(t, pool)
+	if len(sequences) != 2 || sequences[firstSeededID] == sequences[secondSeededID] {
+		t.Errorf("sequences after up = %v, want one distinct seq per existing row", sequences)
+	}
+	if got, err := listStories(t, pool, projectID); err != nil || len(got) != 2 {
+		t.Errorf("ListByProject() after up = %d stories, %v; want 2, nil", len(got), err)
+	}
+}
+
+func TestStoryRepositoryListByProjectKeepsCreationOrderWithinEqualPriority(t *testing.T) {
+	pool := storyDatabase(t)
+	insertProject(t, pool, projectID)
+	repository := storypostgres.NewPostgresStoryRepository(pool)
+	created := []string{thirdSeededID, firstSeededID, secondSeededID, "20000000-0000-4000-8000-000000000004"}
+	for _, id := range created {
+		if err := repository.Create(context.Background(), backlogStory(id, projectID, "media", "Igual "+id)); err != nil {
+			t.Fatalf("Create(%s) error = %v", id, err)
+		}
+	}
+
+	first, err := listStories(t, pool, projectID)
+	if err != nil {
+		t.Fatalf("first ListByProject() error = %v", err)
+	}
+	second, err := listStories(t, pool, projectID)
+	if err != nil {
+		t.Fatalf("second ListByProject() error = %v", err)
+	}
+
+	if !reflect.DeepEqual(storyIDs(first), created) {
+		t.Errorf("ListByProject() ids = %v, want creation order %v", storyIDs(first), created)
+	}
+	if !reflect.DeepEqual(first, second) {
+		t.Errorf("consecutive ListByProject() differ: %v vs %v", storyIDs(first), storyIDs(second))
+	}
+}
+
+// The unique index on (project_id, seq) can hand rows back in seq order on its own, which
+// would hide a missing ORDER BY. Disabling index access and inserting rows whose physical
+// order is the reverse of their seq makes the statement's own ordering observable.
+func TestStoryRepositoryListByProjectOrdersBySequenceItself(t *testing.T) {
+	pool := storyDatabase(t)
+	insertProject(t, pool, projectID)
+	for _, row := range []struct {
+		id  string
+		seq int
+	}{{firstSeededID, 20}, {secondSeededID, 10}, {thirdSeededID, 30}} {
+		_, err := pool.Exec(context.Background(), `
+			INSERT INTO stories (id, project_id, title, description, priority, status, acceptance_criteria, seq)
+			OVERRIDING SYSTEM VALUE
+			VALUES ($1, $2, 'Titulo', 'Detalle', 'media', 'pendiente', ARRAY['c'], $3)
+		`, row.id, projectID, row.seq)
+		if err != nil {
+			t.Fatalf("seed story with explicit seq: %v", err)
+		}
+	}
+	config := pool.Config()
+	config.ConnConfig.RuntimeParams = map[string]string{
+		"enable_indexscan": "off", "enable_indexonlyscan": "off", "enable_bitmapscan": "off",
+	}
+	scanPool, err := pgxpool.NewWithConfig(context.Background(), config)
+	if err != nil {
+		t.Fatalf("open pool without index access: %v", err)
+	}
+	t.Cleanup(scanPool.Close)
+
+	got, err := listStories(t, scanPool, projectID)
+
+	if err != nil {
+		t.Fatalf("ListByProject() error = %v", err)
+	}
+	want := []string{secondSeededID, firstSeededID, thirdSeededID}
+	if !reflect.DeepEqual(storyIDs(got), want) {
+		t.Errorf("ListByProject() ids = %v, want seq order %v (physical order is the reverse)", storyIDs(got), want)
+	}
+}
+
 func validStory(project string) domain.Story {
 	return domain.Story{
 		ID: storyID, ProjectID: project, Title: "  Registro  ", Description: "Detalle original",
@@ -756,16 +1182,23 @@ func storyDatabase(t *testing.T) *pgxpool.Pool {
 		"000001_create_projects.up.sql",
 		"000002_create_stories.up.sql",
 		"000003_add_story_estimated_hours.up.sql",
+		"000004_add_story_creation_sequence.up.sql",
 	} {
-		migration, err := os.ReadFile(filepath.Join(storyModuleRoot(t), "internal", "project", "infrastructure", "postgres", "migrations", name))
-		if err != nil {
-			t.Fatalf("read migration %s: %v", name, err)
-		}
-		if _, err := pool.Exec(ctx, string(migration)); err != nil {
-			t.Fatalf("apply migration %s: %v", name, err)
-		}
+		applyStoryMigration(t, pool, name)
 	}
 	return pool
+}
+
+// applyStoryMigration executes one migration file from the shared migrations directory.
+func applyStoryMigration(t *testing.T, pool *pgxpool.Pool, name string) {
+	t.Helper()
+	migration, err := os.ReadFile(filepath.Join(storyModuleRoot(t), "internal", "project", "infrastructure", "postgres", "migrations", name))
+	if err != nil {
+		t.Fatalf("read migration %s: %v", name, err)
+	}
+	if _, err := pool.Exec(context.Background(), string(migration)); err != nil {
+		t.Fatalf("apply migration %s: %v", name, err)
+	}
 }
 
 func storyModuleRoot(t *testing.T) string {

@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/valerubio7/software-metrics-and-estimation/internal/api"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/application"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/domain"
+	storyapplication "github.com/valerubio7/software-metrics-and-estimation/internal/story/application"
 	storydomain "github.com/valerubio7/software-metrics-and-estimation/internal/story/domain"
 )
 
@@ -66,6 +68,163 @@ func newStoryHandler(stories *fakeStoryRepository, updater *fakeStoryUpdater) ht
 	return api.NewHTTPHandler(&fakeProjectRepository{}, func() string { return updateProjectID }, dependencies)
 }
 
+// fakeStoryLister records the reads it receives. It exposes reading only, like the port it stands for.
+type fakeStoryLister struct {
+	calls   int
+	lastID  string
+	stories []storydomain.Story
+	err     error
+}
+
+func (l *fakeStoryLister) ListByProject(_ context.Context, projectID string) ([]storydomain.Story, error) {
+	l.calls++
+	l.lastID = projectID
+	return l.stories, l.err
+}
+
+// newBacklogHandler composes creation, update and the backlog query, like schema version 4.
+func newBacklogHandler(stories *fakeStoryRepository, updater *fakeStoryUpdater, lister *fakeStoryLister) http.Handler {
+	return api.NewHTTPHandler(&fakeProjectRepository{}, func() string { return updateProjectID }, api.StoryDependencies{
+		Repository: stories,
+		GenerateID: func() string { return updateStoryID },
+		Updater:    updater,
+		Lister:     lister,
+	})
+}
+
+func backlogStories() []storydomain.Story {
+	return []storydomain.Story{
+		{ID: "11111111-1111-4111-8111-111111111111", ProjectID: updateProjectID, Title: "Primera", Description: "d", Priority: "baja", Status: "pendiente", AcceptanceCriteria: []string{"a"}},
+		{ID: "22222222-2222-4222-8222-222222222222", ProjectID: updateProjectID, Title: "Segunda", Description: "d", Priority: "alta", Status: "en_progreso", AcceptanceCriteria: []string{"a"}},
+		{ID: "33333333-3333-4333-8333-333333333333", ProjectID: updateProjectID, Title: "Tercera", Description: "d", Priority: "media", Status: "completada", AcceptanceCriteria: []string{"a"}},
+	}
+}
+
+func TestBacklogCompositionServesTheOrderedContainerOnCollectionGet(t *testing.T) {
+	lister := &fakeStoryLister{stories: backlogStories()}
+	handler := newBacklogHandler(&fakeStoryRepository{}, &fakeStoryUpdater{}, lister)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/projects/"+strings.ToUpper(updateProjectID)+"/stories", nil))
+	if response.Code != http.StatusOK || lister.calls != 1 {
+		t.Fatalf("GET status = %d, reads = %d; body = %s", response.Code, lister.calls, response.Body.String())
+	}
+	var body struct {
+		ProjectID string `json:"project_id"`
+		Stories   []struct {
+			Title string `json:"title"`
+		} `json:"stories"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	var titles []string
+	for _, story := range body.Stories {
+		titles = append(titles, story.Title)
+	}
+	if body.ProjectID != updateProjectID || lister.lastID != updateProjectID || strings.Join(titles, ",") != "Segunda,Tercera,Primera" {
+		t.Errorf("project_id = %q, read id = %q, titles = %v; want the canonical id and alta, media, baja", body.ProjectID, lister.lastID, titles)
+	}
+}
+
+func TestBacklogCompositionMapsCollectionGetErrors(t *testing.T) {
+	tests := []struct {
+		name      string
+		projectID string
+		err       error
+		status    int
+		reads     int
+		code      string
+	}{
+		{"unknown project", updateProjectID, storyapplication.ErrProjectNotFound, http.StatusNotFound, 1, `"error":"project_not_found"`},
+		{"malformed identifier", "not-a-uuid", nil, http.StatusUnprocessableEntity, 0, `"error":"validation_failed"`},
+		{"unexpected failure", updateProjectID, errors.New("connection refused: host=db"), http.StatusInternalServerError, 1, `"error":"internal_error"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lister := &fakeStoryLister{err: tt.err}
+			handler := newBacklogHandler(&fakeStoryRepository{}, &fakeStoryUpdater{}, lister)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/projects/"+tt.projectID+"/stories", nil))
+			if response.Code != tt.status || lister.calls != tt.reads || !strings.Contains(response.Body.String(), tt.code) ||
+				strings.Contains(response.Body.String(), `"stories"`) || strings.Contains(response.Body.String(), "connection refused") {
+				t.Errorf("GET = %d (reads %d) %s; want %d with %d reads, %s and no stories or internal detail",
+					response.Code, lister.calls, response.Body.String(), tt.status, tt.reads, tt.code)
+			}
+		})
+	}
+}
+
+func TestBacklogCompositionKeepsTheRouteBoundaries(t *testing.T) {
+	collection := "/projects/" + updateProjectID + "/stories"
+	item := collection + "/" + updateStoryID
+	creationBody := `{"title":"Registro","description":"Crear historia","priority":"media","acceptance_criteria":["Listo"]}`
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+		status int
+		reads  int
+		writes int
+	}{
+		{"collection HEAD", http.MethodHead, collection, "", http.StatusOK, 1, 0},
+		{"collection POST", http.MethodPost, collection, creationBody, http.StatusCreated, 0, 1},
+		{"collection PUT", http.MethodPut, collection, updateBody, http.StatusMethodNotAllowed, 0, 0},
+		{"collection DELETE", http.MethodDelete, collection, "", http.StatusMethodNotAllowed, 0, 0},
+		{"collection PATCH", http.MethodPatch, collection, "", http.StatusMethodNotAllowed, 0, 0},
+		{"item GET", http.MethodGet, item, "", http.StatusMethodNotAllowed, 0, 0},
+		{"trailing slash GET", http.MethodGet, collection + "/", "", http.StatusNotFound, 0, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stories, updater, lister := &fakeStoryRepository{}, &fakeStoryUpdater{}, &fakeStoryLister{stories: backlogStories()}
+			handler := newBacklogHandler(stories, updater, lister)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body)))
+			if response.Code != tt.status || lister.calls != tt.reads || len(stories.stories) != tt.writes || len(updater.updates) != 0 {
+				t.Errorf("%s %s = %d, reads = %d, creations = %d, updates = %d; want %d, %d reads and %d creations",
+					tt.method, tt.path, response.Code, lister.calls, len(stories.stories), len(updater.updates), tt.status, tt.reads, tt.writes)
+			}
+		})
+	}
+}
+
+func TestBacklogCompositionKeepsStoryUpdateWorking(t *testing.T) {
+	updater := &fakeStoryUpdater{}
+	handler := newBacklogHandler(&fakeStoryRepository{}, updater, &fakeStoryLister{})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPut,
+		"/projects/"+updateProjectID+"/stories/"+updateStoryID, strings.NewReader(updateBody)))
+	if response.Code != http.StatusOK || len(updater.updates) != 1 {
+		t.Errorf("PUT status = %d, updates = %d; body = %s", response.Code, len(updater.updates), response.Body.String())
+	}
+}
+
+// TestCompositionWithoutListerDoesNotExposeTheBacklog covers the schema versions below 4 (creation
+// and update, or creation only): the collection route only admits POST, so GET stays 405.
+func TestCompositionWithoutListerDoesNotExposeTheBacklog(t *testing.T) {
+	collection := "/projects/" + updateProjectID + "/stories"
+	for name, updater := range map[string]*fakeStoryUpdater{"creation and update": {}, "creation only": nil} {
+		t.Run(name, func(t *testing.T) {
+			handler := newStoryHandler(&fakeStoryRepository{}, updater)
+			for _, method := range []string{http.MethodGet, http.MethodHead} {
+				response := httptest.NewRecorder()
+				handler.ServeHTTP(response, httptest.NewRequest(method, collection, nil))
+				if response.Code != http.StatusMethodNotAllowed || strings.Contains(response.Body.String(), "project_id") {
+					t.Errorf("%s without a lister = %d %s, want 405 without a backlog", method, response.Code, response.Body.String())
+				}
+			}
+		})
+	}
+
+	projectsOnly := api.NewHTTPHandler(&fakeProjectRepository{}, func() string { return updateProjectID })
+	response := httptest.NewRecorder()
+	projectsOnly.ServeHTTP(response, httptest.NewRequest(http.MethodGet, collection, nil))
+	if response.Code != http.StatusNotFound {
+		t.Errorf("project-only GET = %d, want 404 because no story route exists", response.Code)
+	}
+}
+
 func TestNewHTTPHandlerRegistersStoryUpdateRouteWhenUpdaterIsPresent(t *testing.T) {
 	updater := &fakeStoryUpdater{}
 	handler := newStoryHandler(&fakeStoryRepository{}, updater)
@@ -104,6 +263,7 @@ func TestNewHTTPHandlerWithoutUpdaterDoesNotExposeStoryUpdate(t *testing.T) {
 }
 
 func TestStoryRoutingPreservesCollectionAndItemBoundaries(t *testing.T) {
+	// No lister is composed here (schema below version 4), so GET on the collection stays 405.
 	updater := &fakeStoryUpdater{}
 	handler := newStoryHandler(&fakeStoryRepository{}, updater)
 	collection := "/projects/" + updateProjectID + "/stories"
@@ -170,6 +330,7 @@ func TestNewHTTPHandlerRegistersStoryAndPreservesProjects(t *testing.T) {
 		t.Errorf("story response = %v", result)
 	}
 
+	// No lister is composed here (schema below version 4), so GET on the collection stays 405.
 	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(method, "/projects/"+projectID+"/stories", strings.NewReader(body)))

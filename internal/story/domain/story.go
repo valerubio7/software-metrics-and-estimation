@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -15,6 +16,15 @@ const (
 )
 
 const (
+	// PriorityHigh is the highest priority of the backlog.
+	PriorityHigh = "alta"
+	// PriorityMedium is the intermediate priority of the backlog.
+	PriorityMedium = "media"
+	// PriorityLow is the lowest priority of the backlog.
+	PriorityLow = "baja"
+)
+
+const (
 	maxEstimatedHours        = 99999.99
 	maxEstimatedHoursDecimal = 2
 	estimatedHoursMessage    = "must be greater than 0, at most 99999.99 and have at most 2 decimals"
@@ -23,6 +33,12 @@ const (
 // AllowedStatuses returns a copy of the closed set of statuses, in order.
 func AllowedStatuses() []string {
 	return []string{StatusPending, StatusInProgress, StatusCompleted}
+}
+
+// AllowedPriorities returns a copy of the closed set of priorities, from highest to
+// lowest precedence.
+func AllowedPriorities() []string {
+	return []string{PriorityHigh, PriorityMedium, PriorityLow}
 }
 
 // Story is work registered in a project's backlog before estimation.
@@ -134,8 +150,8 @@ func validateStoryContent(fields map[string]string, title, description, priority
 	if strings.TrimSpace(description) == "" {
 		fields["description"] = "is required"
 	}
-	if priority != "alta" && priority != "media" && priority != "baja" {
-		fields["priority"] = "must be alta, media or baja"
+	if !slices.Contains(AllowedPriorities(), priority) {
+		fields["priority"] = "must be " + PriorityHigh + ", " + PriorityMedium + " or " + PriorityLow
 	}
 	if len(criteria) == 0 {
 		fields["acceptance_criteria"] = "must contain at least one non-blank criterion"

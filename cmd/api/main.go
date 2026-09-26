@@ -30,17 +30,22 @@ func main() {
 		log.Fatalf("ping PostgreSQL: %v", err)
 	}
 
-	// Story creation needs schema version 2 and story update version 3; both require a clean
-	// externally managed migration state.
+	// Story creation needs schema version 2, story update version 3 and the backlog query
+	// version 4; all of them require a clean externally managed migration state.
 	var version int
 	var dirty bool
 	migrationErr := pool.QueryRow(ctx, "SELECT version, dirty FROM schema_migrations").Scan(&version, &dirty)
 	projects := projectpostgres.NewPostgresProjectRepository(pool)
 	var handler http.Handler
 	switch {
+	case migrationErr == nil && !dirty && version >= 4:
+		stories := storypostgres.NewPostgresStoryRepository(pool)
+		log.Printf("story creation, update and backlog available (schema version=%d)", version)
+		handler = api.NewHTTPHandler(projects, api.NewProjectID,
+			api.StoryDependencies{Repository: stories, GenerateID: api.NewProjectID, Updater: stories, Lister: stories})
 	case migrationErr == nil && !dirty && version >= 3:
 		stories := storypostgres.NewPostgresStoryRepository(pool)
-		log.Printf("story creation and update available (schema version=%d)", version)
+		log.Printf("story backlog unavailable until migration 000004 is clean (version=%d)", version)
 		handler = api.NewHTTPHandler(projects, api.NewProjectID,
 			api.StoryDependencies{Repository: stories, GenerateID: api.NewProjectID, Updater: stories})
 	case migrationErr == nil && !dirty && version >= 2:
