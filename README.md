@@ -1,6 +1,6 @@
 # Métricas de software y estimación
 
-Este servicio permite crear proyectos (US-01), crear historias en el Product Backlog de un proyecto conocido (US-05) y modificarlas (US-06) mediante una API HTTP respaldada por PostgreSQL.
+Este servicio permite crear proyectos (US-01), crear historias en el Product Backlog de un proyecto conocido (US-05), modificarlas (US-06) y consultar el Product Backlog ordenado (US-07) mediante una API HTTP respaldada por PostgreSQL.
 
 ## Requisitos previos
 
@@ -8,7 +8,7 @@ Este servicio permite crear proyectos (US-01), crear historias en el Product Bac
 - PostgreSQL, con una base de datos disponible para la aplicación
 - La CLI de [`golang-migrate`](https://github.com/golang-migrate/migrate) instalada y disponible como `migrate`
 
-La aplicación **no** ejecuta las migraciones automáticamente y este repositorio no instala una herramienta de migración. Aplique `000001` antes de crear proyectos, `000002_create_stories.up.sql` antes de habilitar o publicar la ruta de creación de historias y `000003_add_story_estimated_hours.up.sql` antes de habilitar o publicar la ruta de modificación.
+La aplicación **no** ejecuta las migraciones automáticamente y este repositorio no instala una herramienta de migración. Aplique `000001` antes de crear proyectos, `000002_create_stories.up.sql` antes de habilitar o publicar la ruta de creación de historias `000003_add_story_estimated_hours.up.sql` antes de habilitar o publicar la ruta de modificación y `000004_add_story_creation_sequence.up.sql` antes de habilitar o publicar la consulta del Product Backlog.
 
 ## Ejecutar localmente
 
@@ -24,7 +24,7 @@ La aplicación **no** ejecuta las migraciones automáticamente y este repositori
    migrate -path internal/project/infrastructure/postgres/migrations -database "$DATABASE_URL" up
    ```
 
-   Esto aplica `000001_create_projects.up.sql`, `000002_create_stories.up.sql` y `000003_add_story_estimated_hours.up.sql`, que crean `projects` y `stories` con su clave foránea y agregan la estimación de horas y la restricción del estado. La ejecución de migraciones es externa a la API: con solo `000001` la creación de proyectos sigue disponible, pero la ruta de creación de historias no se registra hasta que la versión 2 esté aplicada sin estado `dirty`, y la ruta de modificación no se registra hasta que la versión 3 esté aplicada sin estado `dirty`. Con el esquema en versión 2 la creación de historias sigue funcionando y `PUT /projects/{project_id}/stories/{story_id}` responde `404` porque la ruta no existe. Un error al consultar la versión tampoco habilita historias. No publique las rutas nuevas antes de aplicar `000002` (creación) y `000003` (modificación); el log de arranque indica cuál de los tres casos quedó activo.
+   Esto aplica `000001_create_projects.up.sql`, `000002_create_stories.up.sql`, `000003_add_story_estimated_hours.up.sql` y `000004_add_story_creation_sequence.up.sql`, que crean `projects` y `stories` con su clave foránea, agregan la estimación de horas y la restricción del estado, y agregan la secuencia de creación que desempata el orden del Product Backlog. La ejecución de migraciones es externa a la API: con solo `000001` la creación de proyectos sigue disponible, pero la ruta de creación de historias no se registra hasta que la versión 2 esté aplicada sin estado `dirty`, la ruta de modificación no se registra hasta que la versión 3 esté aplicada sin estado `dirty` y la consulta del Product Backlog no se registra hasta que la versión 4 esté aplicada sin estado `dirty`. Con el esquema en versión 2 la creación de historias sigue funcionando y `PUT /projects/{project_id}/stories/{story_id}` responde `404` porque la ruta no existe; con el esquema en versión 2 o 3, `GET /projects/{project_id}/stories` responde `405` porque esa ruta solo admite la creación. Un error al consultar la versión tampoco habilita historias. No publique las rutas nuevas antes de aplicar `000002` (creación), `000003` (modificación) y `000004` (consulta); el log de arranque indica cuál de los cuatro casos quedó activo.
 
 3. De forma opcional, elija la dirección de escucha HTTP. Su valor predeterminado es `:8080` cuando `HTTP_ADDR` no está configurada:
 
@@ -91,6 +91,29 @@ La respuesta `200 OK` devuelve la historia completa tal como quedó almacenada, 
 - **Errores**: `400 invalid_request` (JSON malformado, cuerpo vacío o que no es un objeto, más de un valor, claves desconocidas o de identidad, tipos incorrectos), `404 story_not_found` (la historia no existe o pertenece a otro proyecto; ambos casos son indistinguibles), `405` (método no admitido sobre la ruta), `422 validation_failed` con el detalle en `fields` (identificadores que no son UUID, claves ausentes, contenido, estado o estimación inválidos) y `500 internal_error` sin detalles internos.
 - **Concurrencia**: la última escritura gana. No hay versionado ni control de concurrencia optimista: dos modificaciones simultáneas se aplican en orden de llegada y la segunda reemplaza a la primera sin aviso.
 - **Reversión de la migración `000003`**: su `down` elimina la columna `estimated_hours` (se pierden todas las estimaciones) y la restricción del estado. Exporte las estimaciones y devuelva deliberadamente a `pendiente` las historias `en_progreso` o `completada` antes de ejecutarlo.
+
+## Consultar el Product Backlog
+
+`GET /projects/{project_id}/stories` devuelve el Product Backlog completo de un proyecto existente. Solo está disponible con el esquema en versión 4 o superior sin estado `dirty` (migración `000004`); con una versión inferior la ruta de colección solo admite la creación y `GET` responde `405`. La consulta es de solo lectura, no recibe cuerpo ni parámetros y `HEAD` también se admite. `project_id` debe ser un UUID.
+
+```sh
+curl -i http://localhost:8080/projects/5c21cbd4-d9a7-42df-9c3a-c0866f058746/stories
+```
+
+La respuesta `200 OK` es un contenedor con el identificador canónico del proyecto (en minúsculas) y la lista de historias, cada una con los mismos nueve campos que devuelve la modificación:
+
+```json
+{"project_id":"5c21cbd4-d9a7-42df-9c3a-c0866f058746","stories":[{"id":"e99c05a4-03ea-4c19-8f59-286dd59e7aa1","project_id":"5c21cbd4-d9a7-42df-9c3a-c0866f058746","title":"Login con email","description":"Iniciar sesión con email y contraseña","priority":"alta","status":"en_progreso","story_points":null,"acceptance_criteria":["Valida el email"],"estimated_hours":8.5}]}
+```
+
+- **Orden**: por prioridad (`alta`, luego `media`, luego `baja`) y, a igual prioridad, por orden de creación (la más antigua primero). El orden es estable entre consultas y modificar una historia, incluso su prioridad, no cambia su posición de creación: solo la reubica entre las de su nueva prioridad. La secuencia de creación es un dato interno y no aparece en la respuesta.
+- **Proyecto sin historias**: `200` con `"stories":[]` (nunca `null`). Un proyecto vacío se distingue de uno inexistente.
+- **Errores**: `404 project_not_found` (el proyecto no existe; el cuerpo no incluye `stories`), `422 validation_failed` con `fields.project_id` (identificador que no es un UUID) y `500 internal_error` sin detalles internos.
+- **Sin paginación ni filtros**: la respuesta incluye todas las historias del proyecto y no tiene límite. Con proyectos muy grandes la respuesta crece sin cota; el contenedor `{"project_id", "stories"}` permite agregar paginación de forma aditiva más adelante.
+- **Migración `000004`**: agrega la columna `seq` (`BIGINT GENERATED ALWAYS AS IDENTITY`) y la restricción única `stories_project_id_seq_key` sobre `(project_id, seq)`. Orden de despliegue: aplique `000004` y luego reinicie la API, que lee la versión del esquema al arrancar; el log indica `story creation, update and backlog available` cuando la consulta quedó activa y `story backlog unavailable` cuando falta.
+- **Bloqueo exclusivo al migrar**: agregar la columna de identidad reescribe la tabla `stories` bajo un bloqueo `ACCESS EXCLUSIVE`, que bloquea lecturas y escrituras mientras dura. Con el volumen actual es instantáneo; en entornos con muchas historias, aplique `000004` en una ventana de mantenimiento.
+- **Limitación del orden de las filas previas**: al aplicar `000004`, PostgreSQL asigna `seq` a las historias ya existentes en el orden físico de la tabla, porque no hay ningún dato previo del cual reconstruir el orden real de creación. Para esas historias el desempate cronológico dentro de una misma prioridad **no** está garantizado; queda fijo y es determinista desde entonces. El orden por prioridad rige igual para todas, y las historias creadas después de la migración sí conservan su orden de creación.
+- **Reversión de la migración `000004`**: su `down` elimina la restricción y la columna `seq`; solo se pierde la secuencia de desempate, ningún dato de negocio. Volver a aplicar `000004` asigna una nueva secuencia arbitraria a las historias existentes.
 
 ## Pruebas
 
