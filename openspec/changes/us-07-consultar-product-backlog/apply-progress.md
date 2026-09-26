@@ -76,3 +76,58 @@ Work Unit Evidence (Unidad 1):
 | Comando focalizado y resultado | `go test ./tests/unit/story/domain/... -count=1` → `ok` (12 tests previos + 7 nuevos de nivel superior) |
 | Arnés de ejecución | N/A: funciones puras sin frontera de proceso; la evidencia es la suite unitaria |
 | Frontera de rollback | `internal/story/domain/story.go`, `internal/story/domain/backlog.go`, `tests/unit/story/domain/backlog_test.go` |
+
+Commit de la Unidad 1: `5b49131` `feat(story): order the product backlog by priority`.
+
+### Unidad 2: Aplicación (`ListStoriesUseCase`)
+
+Ciclo TDD observado:
+
+- **Red de seguridad** (no se modifican archivos existentes; solo se agregan): `go test
+  ./tests/unit/story/application/...` sin el archivo nuevo → `ok`, 13 tests de nivel superior pasando.
+- **RED**: `tests/unit/story/application/list_stories_test.go` con un fake de `StoryLister` escrito a mano
+  (contador de llamadas, `projectID` capturado, solo lectura). Falla observada (error de compilación):
+  `undefined: application.NewListStoriesUseCase` y `undefined: application.ListStoriesQuery` → `FAIL ... [build
+  failed]`. Desvío menor de proceso: el archivo se escribió de una vez con los casos base (2.1) **y** los de
+  triangulación (2.3, 2.4); el RED observado cubre todo el archivo, y el GREEN se limitó a la implementación
+  mínima del diseño, sin agregar lógica que los casos base no exigieran.
+- **GREEN**: `internal/story/application/list_stories.go` con `ListStoriesQuery`, `StoryLister`,
+  `ListStoriesUseCase`, `NewListStoriesUseCase` y `Execute` (`uuid.Parse` antes del puerto; identificador
+  canónico al puerto; error del puerto con `domain.Backlog{}`; `domain.NewBacklog` sobre el resultado).
+  `ErrProjectNotFound` se reutiliza sin modificar `create_story.go`. Resultado: los seis tests nuevos pasan.
+- **TRIANGULATE**: tabla de identificadores hostiles (`no-es-uuid`, `abc`, `123`, UUID truncado, vacío) con
+  cero llamadas; UUID en mayúsculas → una llamada con el canónico y `Backlog.ProjectID` canónico;
+  `ErrProjectNotFound` y error inesperado propagados con `errors.Is` y `Backlog{}` aunque el fake devuelva
+  historias junto al error; proyecto sin historias (`nil`) sin error. Sin cambios de producción necesarios.
+- **Prueba de mutación manual** (para verificar que las aserciones muerden): se cambió temporalmente el retorno
+  de error para devolver el `Backlog` parcial → `TestListStoriesPropagatesPortErrorsWithoutPartialBacklog`
+  falló en sus dos subtests; se restauró el código y volvió a `ok`.
+- **REFACTOR**: sin cambios necesarios (una sola función corta, sin duplicación real). `go test
+  ./tests/unit/story/application/...` verde antes y después; `go test ./tests/unit/...` verde.
+- Verificación: `go vet ./...` limpio; formato normalizado sin diferencias; `create_story_test.go`,
+  `handler_test.go` y `main_test.go` siguen compilando y pasando sin modificaciones (el puerto es independiente
+  de `StoryRepository`). La integración quedó como en la línea base (fallas de entorno preexistentes).
+
+Work Unit Evidence (Unidad 2):
+
+| Evidencia | Valor |
+|---|---|
+| Comando focalizado y resultado | `go test ./tests/unit/story/application/... -count=1` → `ok` (13 tests previos + 6 nuevos de nivel superior) |
+| Arnés de ejecución | N/A: caso de uso sobre fake, sin frontera de proceso ni de red |
+| Frontera de rollback | `internal/story/application/list_stories.go`, `tests/unit/story/application/list_stories_test.go` |
+
+## Tabla de evidencia TDD (lote 1)
+
+| Tarea | Archivo de test | Capa | Red de seguridad | RED | GREEN | TRIANGULATE | REFACTOR |
+|-------|-----------------|------|------------------|-----|-------|-------------|----------|
+| 1.1–1.2 | `tests/unit/story/domain/backlog_test.go` | Unitario | 12/12 | Escrito; build failed (símbolos indefinidos) | Pasó | ver 1.4 | ver 1.5 |
+| 1.3–1.4 | `tests/unit/story/domain/backlog_test.go` | Unitario | 12/12 | (ver arriba) | Pasó (7 tests) | 4 casos extra, pasaron | — |
+| 1.5 | `tests/unit/story/domain/story_test.go` (existente) | Unitario | 12/12 antes | N/A (refactor) | N/A | N/A | `validateStoryContent` sobre `AllowedPriorities()`, 12/12 después |
+| 2.1–2.2 | `tests/unit/story/application/list_stories_test.go` | Unitario | 13/13 | Escrito; build failed | Pasó (6 tests) | — | — |
+| 2.3–2.4 | `tests/unit/story/application/list_stories_test.go` | Unitario | 13/13 | (escritos junto a 2.1) | Pasaron sin cambiar producción | 5 ids hostiles, mayúsculas, 2 errores, vacío | Sin cambios necesarios |
+
+## Estado del lote 1
+
+Tareas completadas: 0.1–0.3, 1.1–1.7 y 2.1–2.7 (17 de las 17 asignadas en las unidades 0–2). Pendientes: unidades 3–6
+(la unidad 3 y el arranque real de la 5 requieren Docker; en la línea base la integración muestra fallas de
+entorno preexistentes, ver 0.2).

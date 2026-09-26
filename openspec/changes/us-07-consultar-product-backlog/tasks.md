@@ -143,25 +143,25 @@ mayúsculas) y solo lectura.
 
 ### RED
 
-- [ ] 2.1 RED comportamiento base: crear `tests/unit/story/application/list_stories_test.go` con un fake de `StoryLister` escrito a mano (contador de llamadas y `projectID` capturado; expone únicamente lectura). Tests: `project_id` inválido → `*domain.ValidationError` con `fields.project_id` y `lister.calls == 0`; UUID válido → exactamente una llamada y `domain.Backlog` ordenado a partir de un fake en orden de creación. Ejecutar `go test ./tests/unit/story/application/...` y observar la falla (símbolos `NewListStoriesUseCase`, `ListStoriesQuery` y `StoryLister` indefinidos).
+- [x] 2.1 RED comportamiento base: crear `tests/unit/story/application/list_stories_test.go` con un fake de `StoryLister` escrito a mano (contador de llamadas y `projectID` capturado; expone únicamente lectura). Tests: `project_id` inválido → `*domain.ValidationError` con `fields.project_id` y `lister.calls == 0`; UUID válido → exactamente una llamada y `domain.Backlog` ordenado a partir de un fake en orden de creación. Ejecutar `go test ./tests/unit/story/application/...` y observar la falla (símbolos `NewListStoriesUseCase`, `ListStoriesQuery` y `StoryLister` indefinidos).
 
 ### GREEN
 
-- [ ] 2.2 GREEN: crear `internal/story/application/list_stories.go` con `ListStoriesQuery`, la interfaz `StoryLister`, `ListStoriesUseCase`, `NewListStoriesUseCase` y `Execute` (`uuid.Parse` antes del puerto con el error `must be a valid UUID`; llamada con el UUID canónico; error del puerto propagado con `domain.Backlog{}`; `domain.NewBacklog` sobre el resultado). Reutilizar `ErrProjectNotFound` de `internal/story/application/create_story.go` (sin modificarlo). Implementación mínima que pase 2.1. Ejecutar `go test ./tests/unit/story/application/...` y observar el pase.
+- [x] 2.2 GREEN: crear `internal/story/application/list_stories.go` con `ListStoriesQuery`, la interfaz `StoryLister`, `ListStoriesUseCase`, `NewListStoriesUseCase` y `Execute` (`uuid.Parse` antes del puerto con el error `must be a valid UUID`; llamada con el UUID canónico; error del puerto propagado con `domain.Backlog{}`; `domain.NewBacklog` sobre el resultado). Reutilizar `ErrProjectNotFound` de `internal/story/application/create_story.go` (sin modificarlo). Implementación mínima que pase 2.1. Ejecutar `go test ./tests/unit/story/application/...` y observar el pase.
 
 ### TRIANGULATE
 
-- [ ] 2.3 TRIANGULATE identificadores hostiles: en `tests/unit/story/application/list_stories_test.go` tabla de `project_id` inválidos (`"no-es-uuid"`, `"abc"`, `"123"`, UUID truncado, `""`), todos con `lister.calls == 0`; UUID en mayúsculas → una llamada con el UUID canónico en minúsculas y `Backlog.ProjectID` canónico.
-- [ ] 2.4 TRIANGULATE errores: `ErrProjectNotFound` se propaga con `errors.Is` y devuelve `domain.Backlog{}`; un error inesperado se propaga tal cual y no se confunde con `ErrProjectNotFound`; un fake que devuelve historias **junto con** un error produce igualmente `domain.Backlog{}` (sin lista parcial); un proyecto sin historias (fake devuelve `nil`) no es un error y produce un `Backlog` sin historias. Ejecutar y observar el pase; corregir `Execute` si algún caso falla.
+- [x] 2.3 TRIANGULATE identificadores hostiles: en `tests/unit/story/application/list_stories_test.go` tabla de `project_id` inválidos (`"no-es-uuid"`, `"abc"`, `"123"`, UUID truncado, `""`), todos con `lister.calls == 0`; UUID en mayúsculas → una llamada con el UUID canónico en minúsculas y `Backlog.ProjectID` canónico.
+- [x] 2.4 TRIANGULATE errores: `ErrProjectNotFound` se propaga con `errors.Is` y devuelve `domain.Backlog{}`; un error inesperado se propaga tal cual y no se confunde con `ErrProjectNotFound`; un fake que devuelve historias **junto con** un error produce igualmente `domain.Backlog{}` (sin lista parcial); un proyecto sin historias (fake devuelve `nil`) no es un error y produce un `Backlog` sin historias. Ejecutar y observar el pase; corregir `Execute` si algún caso falla.
 
 ### REFACTOR
 
-- [ ] 2.5 REFACTOR: solo si los tests muestran duplicación real en `internal/story/application/list_stories.go`; si no la hay, registrar "REFACTOR: sin cambios necesarios" en lugar de inventar uno. Ejecutar `go test ./tests/unit/story/application/...` antes y después (verde) y `go test ./...` completo.
+- [x] 2.5 REFACTOR: solo si los tests muestran duplicación real en `internal/story/application/list_stories.go`; si no la hay, registrar "REFACTOR: sin cambios necesarios" en lugar de inventar uno. Ejecutar `go test ./tests/unit/story/application/...` antes y después (verde) y `go test ./...` completo.
 
 ### Verificación y commit
 
-- [ ] 2.6 Verificar la unidad: `gofmt -l .` sin salida, `go vet ./...` limpio, `go test ./...` en verde, y comprobar que `tests/unit/story/application/create_story_test.go`, `tests/unit/story/transport/http/handler_test.go` y `tests/unit/cmd/api/main_test.go` siguen compilando sin cambios (el puerto es separado de `StoryRepository`).
-- [ ] 2.7 COMMIT de la unidad 2 (un único commit): `feat(story): add the list stories use case`. Cuerpo de 5–8 líneas según la Regla de commits. Rollback: revertir solo este commit.
+- [x] 2.6 Verificar la unidad: `gofmt -l .` sin salida, `go vet ./...` limpio, `go test ./...` en verde, y comprobar que `tests/unit/story/application/create_story_test.go`, `tests/unit/story/transport/http/handler_test.go` y `tests/unit/cmd/api/main_test.go` siguen compilando sin cambios (el puerto es separado de `StoryRepository`).
+- [x] 2.7 COMMIT de la unidad 2 (un único commit): `feat(story): add the list stories use case`. Cuerpo de 5–8 líneas según la Regla de commits. Rollback: revertir solo este commit.
 
 ## Unidad 3: Almacenamiento y migración `000004` (commit 3, **requiere Docker**)
 
