@@ -30,17 +30,26 @@ func main() {
 		log.Fatalf("ping PostgreSQL: %v", err)
 	}
 
-	// Only expose stories after the externally managed migration is clean.
+	// Story creation needs schema version 2 and story update version 3; both require a clean
+	// externally managed migration state.
 	var version int
 	var dirty bool
 	migrationErr := pool.QueryRow(ctx, "SELECT version, dirty FROM schema_migrations").Scan(&version, &dirty)
+	projects := projectpostgres.NewPostgresProjectRepository(pool)
 	var handler http.Handler
-	if migrationErr == nil && !dirty && version >= 2 {
-		handler = api.NewHTTPHandler(projectpostgres.NewPostgresProjectRepository(pool), api.NewProjectID,
+	switch {
+	case migrationErr == nil && !dirty && version >= 3:
+		stories := storypostgres.NewPostgresStoryRepository(pool)
+		log.Printf("story creation and update available (schema version=%d)", version)
+		handler = api.NewHTTPHandler(projects, api.NewProjectID,
+			api.StoryDependencies{Repository: stories, GenerateID: api.NewProjectID, Updater: stories})
+	case migrationErr == nil && !dirty && version >= 2:
+		log.Printf("story update unavailable until migration 000003 is clean (version=%d)", version)
+		handler = api.NewHTTPHandler(projects, api.NewProjectID,
 			api.StoryDependencies{Repository: storypostgres.NewPostgresStoryRepository(pool), GenerateID: api.NewProjectID})
-	} else {
+	default:
 		log.Printf("story creation unavailable until migration 000002 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
-		handler = api.NewHTTPHandler(projectpostgres.NewPostgresProjectRepository(pool), api.NewProjectID)
+		handler = api.NewHTTPHandler(projects, api.NewProjectID)
 	}
 	server := &http.Server{Addr: config.Address, Handler: handler}
 
