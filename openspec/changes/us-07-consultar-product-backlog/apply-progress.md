@@ -352,3 +352,59 @@ Work Unit Evidence (Unidad 5):
 | 5.3–5.4 | `tests/integration/story/postgres/http_integration_test.go` | Integración | N/A (escenarios nuevos; los existentes no cambian de aserción) | `build failed`; luego `version_three` y `version_four` en `FAIL` con `main.go` sin actualizar | 8 subtests de arranque y el test de punta a punta en `PASS` con `main.go` | Proyecto ajeno, vacío, inexistente, inválido, consultas idénticas, S3 sube, S1 renombrada | Sin cambios necesarios |
 | 5.5–5.6 | `api.go`, `main.go` | — | 13/13 | (ver arriba) | Ver arriba | — | — |
 | 5.8–5.9 | `README.md`, `tasks.md` | Docs | N/A | N/A | N/A | N/A | N/A |
+
+### Unidad 6: Cierre y verificación completa
+
+- **6.1 README**: revisado; **README completo**. La sección "Consultar el Product Backlog" documenta la consulta y su
+  ejemplo, el orden, la lista vacía `[]`, los errores (`404`, `422`, `500`), la ausencia de paginación y filtros
+  (y de límite en la respuesta), la migración `000004` y su gate `>= 4`, el orden de despliegue, el bloqueo
+  `ACCESS EXCLUSIVE`, la limitación del orden de las filas previas y la reversión. No hizo falta un commit
+  `docs(readme)`.
+- **6.2 Verificación completa** (con Docker, sobre el árbol del commit `ca3cdec`):
+  - `go vet ./...` → sin salida, código de salida 0.
+  - `go test -count=1 ./...` → **todos `ok`**: `tests/integration/project/postgres` (29 s),
+    `tests/integration/story/postgres` (246 s), `tests/unit/cmd/api`, `tests/unit/project/{application,domain,
+    transport/http}` y `tests/unit/story/{application,domain,transport/http}`; los paquetes `internal/...` y
+    `cmd/api` no tienen archivos de prueba.
+  - Una segunda corrida completa con `-v` para contar resultados: `--- PASS` 384 (tests y subtests), `--- SKIP`
+    **0**, `--- FAIL` 1. La única falla fue `TestPostgresProjectRepositoryUpdateChangesBasicFieldsOnly` con
+    `failed to receive message: unexpected EOF` al conectar al contenedor (la falla transitoria de entorno ya
+    conocida, en un paquete que US-07 no toca); `go test -count=1 ./tests/integration/project/...` → `ok` (17 s)
+    al reintentar. **Límite de entorno**, no resultado de US-07. Ninguna prueba se saltó.
+  - Formato: `tr -d '\r' | gofmt -l` sobre todos los `.go` versionados solo lista
+    `tests/unit/project/domain/project_test.go` y `tests/unit/story/transport/http/handler_test.go`, ambos
+    **sin cambios respecto de `main`** (deriva de formato preexistente, fuera de alcance; los archivos tocados por
+    US-07 están limpios).
+- **6.3 Criterios de éxito de `proposal.md` contra la evidencia observada**:
+
+| Criterio | Evidencia |
+|---|---|
+| `200` con el contenedor y la representación completa | `TestListStoriesReturnsTheOrderedBacklogInsideTheContainer` (Unidad 4), nueve claves exactas; `assertBacklogRoute` y `TestBacklogHTTPOrdersByPriorityThenCreationEndToEnd` contra PostgreSQL |
+| Orden por prioridad y creación, contra PostgreSQL | Unidad 1 (dominio, S1…S5), Unidad 3 (`ORDER BY s.seq`, con la mutación detectada) y Unidad 5 (`S2, S5, S1, S3, S4` y `S2, S3, S5, S1, S4` de punta a punta) |
+| Proyecto vacío → `"stories":[]` | `TestListStoriesRespondsWithAnEmptyArrayNeverNull` (fake `nil`) y el test de punta a punta (proyecto vacío real) |
+| `404` / `422` / `500` | Unidades 2 y 4 (cero lecturas ante `422`, `500` sin el texto interno), Unidad 3 (error de base no reinterpretado) y Unidad 5 (`404` sin `stories`, `422`) |
+| Solo lectura | Unidad 3: instantánea con `xmin` y `to_jsonb` idéntica antes y después; fake de solo lectura en las Unidades 2 y 4 |
+| Aislamiento entre proyectos | Unidad 3 (dos proyectos) y Unidad 5 (proyecto ajeno con historia; su backlog contiene solo la suya) |
+| Gate `>= 4` y rutas vecinas | `TestAPIStartupRoutesFollowMigrationState` (`version_three` sin consulta con `405`, `version_four` con consulta, `dirty_version_four` sin rutas), `PUT`/`DELETE` colección `405` y `GET` ítem `405`, creación y modificación con esquema 3 y 4 |
+
+  `git log` de la rama: `8159ccf` (planificación), `5b49131`, `a39f3ae`, `0a9ebe9`, `386d8ab` y `ca3cdec`
+  (unidades 1 a 5). Cada commit de código tiene un cuerpo de 6 líneas no vacías (título `TDD trace`, 4 viñetas y
+  `Refs: #35`), el de planificación 3, y **ninguno** contiene `Co-Authored-By` ni atribución de IA.
+
+### Riesgos y notas para el archivado
+
+- **Tamaño**: el commit de la Unidad 5 suma 483 inserciones y 31 eliminaciones (514 líneas) frente a las ~260
+  estimadas, porque `assertBacklogRoute`, el test de punta a punta y la sección del README crecieron más que el
+  pronóstico; la rama completa frente a `main` es de ~3640 líneas incluyendo los documentos de planificación.
+  Cubierto por la excepción `size:exception` aceptada en 0.1; el PR debe declararla.
+- **Redacción de la spec**: precisión pendiente para el archivado (ver 5.9): con versión 1, `dirty` o error de
+  lectura la ruta de colección responde `404` (no hay ruta de historias) y solo con versión 2 o 3 sin `dirty`
+  responde `405`.
+- **Límites de entorno**: falla transitoria `unexpected EOF` al conectar al contenedor en `project/postgres` (pasa
+  al reintentar); CRLF en el árbol de trabajo (`core.autocrlf=true`), por lo que el formato se verifica con
+  `tr -d '\r' | gofmt -l`.
+
+## Estado final (lotes 1, 2 y 3)
+
+Tareas completadas: **todas** (0.1–0.3, 1.1–1.7, 2.1–2.7, 3.1–3.19, 4.1–4.8, 5.1–5.12 y 6.1–6.3). Sin tareas
+pendientes. Siguiente fase recomendada: `sdd-archive` (la verificación es opcional).

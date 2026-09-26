@@ -288,9 +288,9 @@ requisito "con esquema inferior a 4, `GET` sobre la colección responde `405`".
 
 ## Unidad 6: Cierre y verificación completa
 
-- [ ] 6.1 Revisar que el `README.md` final documenta la consulta, el orden, la lista vacía, los errores, la ausencia de paginación, la migración `000004` y su gate `>= 4` (criterio de éxito de la propuesta). Si falta algo, corregirlo en un commit `docs(readme)` de una sola línea de cuerpo; de lo contrario registrar "README completo" en `apply-progress.md`.
-- [ ] 6.2 Verificación completa final: `gofmt -l .` sin salida, `go vet ./...` limpio y `go test ./...` en verde **con Docker**. Registrar en `apply-progress.md` el resultado observado, los tests de integración corridos o saltados y cualquier límite de entorno; nunca declarar verificado lo que se saltó.
-- [ ] 6.3 Confirmar los criterios de éxito de `proposal.md` contra la evidencia observada (orden verificado contra PostgreSQL, lista vacía sin `null`, `404`/`422`/`500`, solo lectura, aislamiento entre proyectos, gate `>= 4`) y verificar que `git log` muestra los cinco commits de unidad de trabajo (más el de planificación) con cuerpos de 5 a 8 líneas y sin líneas de co-autoría.
+- [x] 6.1 Revisar que el `README.md` final documenta la consulta, el orden, la lista vacía, los errores, la ausencia de paginación, la migración `000004` y su gate `>= 4` (criterio de éxito de la propuesta). Si falta algo, corregirlo en un commit `docs(readme)` de una sola línea de cuerpo; de lo contrario registrar "README completo" en `apply-progress.md`.
+- [x] 6.2 Verificación completa final: `gofmt -l .` sin salida, `go vet ./...` limpio y `go test ./...` en verde **con Docker**. Registrar en `apply-progress.md` el resultado observado, los tests de integración corridos o saltados y cualquier límite de entorno; nunca declarar verificado lo que se saltó.
+- [x] 6.3 Confirmar los criterios de éxito de `proposal.md` contra la evidencia observada (orden verificado contra PostgreSQL, lista vacía sin `null`, `404`/`422`/`500`, solo lectura, aislamiento entre proyectos, gate `>= 4`) y verificar que `git log` muestra los cinco commits de unidad de trabajo (más el de planificación) con cuerpos de 5 a 8 líneas y sin líneas de co-autoría.
 
 ## Trazabilidad de requisitos de la spec a tareas
 
