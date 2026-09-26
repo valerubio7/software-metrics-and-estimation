@@ -39,3 +39,40 @@ declarar `size:exception` en su descripción.
     (`core.autocrlf=true`; el repositorio guarda LF). Es ruido preexistente. La verificación de formato de
     este lote se hace normalizando el fin de línea (`tr -d '\r' | gofmt -l`) sobre los archivos tocados.
   - `go vet ./...` limpio.
+
+#### 0.3 Commit de planificación
+
+Commit `8159ccf` `docs(sdd): add US-07 planning artifacts for backlog query` (solo archivos bajo `openspec/changes/us-07-consultar-product-backlog/`).
+
+### Unidad 1: Dominio (precedencia de prioridad y `Backlog`)
+
+Ciclo TDD observado (todo ejecutado de verdad):
+
+- **Red de seguridad** (archivos existentes tocados: `story.go`): `go test ./tests/unit/story/domain/...` antes
+  de tocar nada → `ok`, 12 tests de nivel superior pasando.
+- **RED**: `tests/unit/story/domain/backlog_test.go` con `TestNewBacklogOrdersByPriority`,
+  `TestNewBacklogIsStableForEqualPriorities`, `TestNewBacklogDoesNotMutateInput`,
+  `TestNewBacklogPreservesProjectID`, `TestNewBacklogHandlesNilAndEmpty` y
+  `TestAllowedPrioritiesReturnsOrderedCopy`. Falla observada (error de compilación): `undefined:
+  domain.NewBacklog` y `undefined: domain.AllowedPriorities` → `FAIL ... [build failed]`.
+- **GREEN**: constantes `PriorityHigh/Medium/Low` y `AllowedPriorities()` en `story.go`; `backlog.go` con
+  `Backlog`, `NewBacklog` (`slices.Clone` + `slices.SortStableFunc`) y `priorityRank`. Resultado: `ok`, los seis
+  tests pasan (incluido el escenario S1…S5 → S2, S5, S1, S3, S4).
+- **TRIANGULATE**: `TestNewBacklogTriangulatesSpecScenarios` con misma prioridad (tres `media`), reubicación por
+  prioridad (S1 `media`, S2 `alta`, S3 `alta` → S2, S3, S1), prioridad desconocida al final conservando el
+  orden de entrada (`urgente`, `critica`) y una sola historia. Resultado: `ok` sin cambios de producción
+  (la implementación ya generalizaba).
+- **REFACTOR**: `validateStoryContent` valida ahora con `slices.Contains(AllowedPriorities(), priority)` y arma
+  el mismo mensaje `must be alta, media or baja` con las constantes. Suite de dominio verde antes (12/12) y
+  después; el resto de `go test ./tests/unit/...` verde.
+- Verificación: `go vet ./...` limpio; formato normalizado sin diferencias; `go test ./tests/unit/...` verde.
+  La integración quedó como en la línea base (fallas de entorno preexistentes descritas arriba); la unidad no
+  toca almacenamiento ni composición.
+
+Work Unit Evidence (Unidad 1):
+
+| Evidencia | Valor |
+|---|---|
+| Comando focalizado y resultado | `go test ./tests/unit/story/domain/... -count=1` → `ok` (12 tests previos + 7 nuevos de nivel superior) |
+| Arnés de ejecución | N/A: funciones puras sin frontera de proceso; la evidencia es la suite unitaria |
+| Frontera de rollback | `internal/story/domain/story.go`, `internal/story/domain/backlog.go`, `tests/unit/story/domain/backlog_test.go` |

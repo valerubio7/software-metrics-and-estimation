@@ -102,7 +102,7 @@ Refs: #35
 
 - [x] 0.1 **COMPUERTA BLOQUEANTE.** Obtener la confirmación explícita del usuario de la excepción `size:exception` para el único PR (~1080 líneas frente al presupuesto de 400). No asumirla aceptada. Si el usuario no la acepta, detenerse y volver a la fase de tareas para dividir el trabajo según el corte sugerido del Forecast. Verificación: la confirmación queda registrada en `openspec/changes/us-07-consultar-product-backlog/apply-progress.md`.
 - [x] 0.2 Confirmar que la rama actual es `feat/us07-consultar-product-backlog` (`git branch --show-current`) y registrar la línea base: `go test ./...` en verde antes de tocar nada, anotando si los tests de integración corrieron o se saltaron por falta de Docker (`docker info`). Resultado en `apply-progress.md`.
-- [ ] 0.3 Commit de los documentos de planificación existentes: los archivos bajo `openspec/changes/us-07-consultar-product-backlog/` (`exploration.md`, `proposal.md`, `design.md`, `specs/historia/spec.md` y `tasks.md`). Mensaje: `docs(sdd): add US-07 planning artifacts for backlog query`, con un cuerpo de 1–2 líneas (sin ciclo TDD: no hay código). Verificación: `git show --stat HEAD` lista solo archivos bajo esa carpeta.
+- [x] 0.3 Commit de los documentos de planificación existentes: los archivos bajo `openspec/changes/us-07-consultar-product-backlog/` (`exploration.md`, `proposal.md`, `design.md`, `specs/historia/spec.md` y `tasks.md`). Mensaje: `docs(sdd): add US-07 planning artifacts for backlog query`, con un cuerpo de 1–2 líneas (sin ciclo TDD: no hay código). Verificación: `git show --stat HEAD` lista solo archivos bajo esa carpeta.
 
 ## Unidad 1: Dominio — precedencia de prioridad y `Backlog` (commit 1, sin Docker)
 
@@ -112,25 +112,25 @@ prioridad). La precedencia vive en un solo lugar: `AllowedPriorities()`.
 
 ### RED
 
-- [ ] 1.1 RED precedencia: crear `tests/unit/story/domain/backlog_test.go` con `TestNewBacklogOrdersByPriority` (tabla con `t.Run`): entrada `baja, alta, media` → `alta, media, baja`; escenario de la spec S1 `media`, S2 `alta`, S3 `media`, S4 `baja`, S5 `alta` → S2, S5, S1, S3, S4. Ejecutar `go test ./tests/unit/story/domain/...` y observar la falla (símbolos `NewBacklog` y `domain.Backlog` indefinidos). Registrar el nombre del test y la falla.
-- [ ] 1.2 RED estabilidad y contrato: en `tests/unit/story/domain/backlog_test.go` agregar `TestNewBacklogIsStableForEqualPriorities` (tres `media` en orden de entrada no alfabético conservan ese orden; `id` que ordenan al revés respecto de la entrada no alteran el resultado), `TestNewBacklogDoesNotMutateInput` (la entrada conserva su orden original), `TestNewBacklogPreservesProjectID`, `TestNewBacklogHandlesNilAndEmpty` y `TestAllowedPrioritiesReturnsOrderedCopy` (mutar el resultado no altera una segunda llamada; orden `alta`, `media`, `baja`). Ejecutar y observar la falla.
+- [x] 1.1 RED precedencia: crear `tests/unit/story/domain/backlog_test.go` con `TestNewBacklogOrdersByPriority` (tabla con `t.Run`): entrada `baja, alta, media` → `alta, media, baja`; escenario de la spec S1 `media`, S2 `alta`, S3 `media`, S4 `baja`, S5 `alta` → S2, S5, S1, S3, S4. Ejecutar `go test ./tests/unit/story/domain/...` y observar la falla (símbolos `NewBacklog` y `domain.Backlog` indefinidos). Registrar el nombre del test y la falla.
+- [x] 1.2 RED estabilidad y contrato: en `tests/unit/story/domain/backlog_test.go` agregar `TestNewBacklogIsStableForEqualPriorities` (tres `media` en orden de entrada no alfabético conservan ese orden; `id` que ordenan al revés respecto de la entrada no alteran el resultado), `TestNewBacklogDoesNotMutateInput` (la entrada conserva su orden original), `TestNewBacklogPreservesProjectID`, `TestNewBacklogHandlesNilAndEmpty` y `TestAllowedPrioritiesReturnsOrderedCopy` (mutar el resultado no altera una segunda llamada; orden `alta`, `media`, `baja`). Ejecutar y observar la falla.
 
 ### GREEN
 
-- [ ] 1.3 GREEN: en `internal/story/domain/story.go` agregar las constantes `PriorityHigh`/`PriorityMedium`/`PriorityLow` y `AllowedPriorities()` (copia, de mayor a menor precedencia); crear `internal/story/domain/backlog.go` con `Backlog{ProjectID, Stories}`, `NewBacklog` (copia + `slices.SortStableFunc` por rango) y `priorityRank` no exportada (prioridad desconocida → `len(AllowedPriorities())`). Implementación mínima que pase 1.1 y 1.2. Ejecutar `go test ./tests/unit/story/domain/...` y observar el pase.
+- [x] 1.3 GREEN: en `internal/story/domain/story.go` agregar las constantes `PriorityHigh`/`PriorityMedium`/`PriorityLow` y `AllowedPriorities()` (copia, de mayor a menor precedencia); crear `internal/story/domain/backlog.go` con `Backlog{ProjectID, Stories}`, `NewBacklog` (copia + `slices.SortStableFunc` por rango) y `priorityRank` no exportada (prioridad desconocida → `len(AllowedPriorities())`). Implementación mínima que pase 1.1 y 1.2. Ejecutar `go test ./tests/unit/story/domain/...` y observar el pase.
 
 ### TRIANGULATE
 
-- [ ] 1.4 TRIANGULATE: en `tests/unit/story/domain/backlog_test.go` agregar los escenarios de la spec "todas las historias con la misma prioridad conservan el orden de creación" (tres `media`), "cambiar la prioridad reubica la historia" (S1 `media`, S2 `alta`, S3 `alta` → S2, S3, S1), una prioridad desconocida que queda al final conservando su orden de entrada, y una entrada con una sola historia. Ejecutar y observar el pase; si algún caso falla, corregir `backlog.go` y repetir.
+- [x] 1.4 TRIANGULATE: en `tests/unit/story/domain/backlog_test.go` agregar los escenarios de la spec "todas las historias con la misma prioridad conservan el orden de creación" (tres `media`), "cambiar la prioridad reubica la historia" (S1 `media`, S2 `alta`, S3 `alta` → S2, S3, S1), una prioridad desconocida que queda al final conservando su orden de entrada, y una entrada con una sola historia. Ejecutar y observar el pase; si algún caso falla, corregir `backlog.go` y repetir.
 
 ### REFACTOR
 
-- [ ] 1.5 REFACTOR: en `internal/story/domain/story.go` hacer que `validateStoryContent` valide la prioridad contra `AllowedPriorities()` en lugar de comparar literales, con el mismo mensaje `must be alta, media or baja`. Sin cambio de comportamiento. Ejecutar `go test ./tests/unit/story/domain/...` **antes** (verde) y **después** (verde): la suite existente de `NewStory`/`NewStoryUpdate` es la red de seguridad. Ejecutar además `go test ./...` completo y registrar el resultado observado.
+- [x] 1.5 REFACTOR: en `internal/story/domain/story.go` hacer que `validateStoryContent` valide la prioridad contra `AllowedPriorities()` en lugar de comparar literales, con el mismo mensaje `must be alta, media or baja`. Sin cambio de comportamiento. Ejecutar `go test ./tests/unit/story/domain/...` **antes** (verde) y **después** (verde): la suite existente de `NewStory`/`NewStoryUpdate` es la red de seguridad. Ejecutar además `go test ./...` completo y registrar el resultado observado.
 
 ### Verificación y commit
 
-- [ ] 1.6 Verificar la unidad: `gofmt -l .` sin salida, `go vet ./...` limpio y `go test ./...` en verde (anotar los tests de integración como corridos o saltados). Volcar el detalle de la evidencia en `apply-progress.md`.
-- [ ] 1.7 COMMIT de la unidad 1 (un único commit, tests incluidos): `feat(story): order the product backlog by priority`. Cuerpo de 5–8 líneas según la Regla de commits. Rollback: revertir solo este commit.
+- [x] 1.6 Verificar la unidad: `gofmt -l .` sin salida, `go vet ./...` limpio y `go test ./...` en verde (anotar los tests de integración como corridos o saltados). Volcar el detalle de la evidencia en `apply-progress.md`.
+- [x] 1.7 COMMIT de la unidad 1 (un único commit, tests incluidos): `feat(story): order the product backlog by priority`. Cuerpo de 5–8 líneas según la Regla de commits. Rollback: revertir solo este commit.
 
 ## Unidad 2: Aplicación — `ListStoriesUseCase` (commit 2, sin Docker)
 
