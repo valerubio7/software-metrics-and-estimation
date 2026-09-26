@@ -28,26 +28,29 @@ func TestAPIStartupRoutesFollowMigrationState(t *testing.T) {
 		migration string
 		storyCode int
 		updates   bool
+		lists     bool
 		logged    string
 	}{
-		{"version one", `DROP TABLE stories; ` + schemaTable + `INSERT INTO schema_migrations VALUES (1, false)`, http.StatusNotFound, false, "story creation unavailable"},
-		{"version two", schemaTable + `INSERT INTO schema_migrations VALUES (2, false)`, http.StatusCreated, false, "story update unavailable"},
-		{"version three", schemaTable + `INSERT INTO schema_migrations VALUES (3, false)`, http.StatusCreated, true, "story creation and update available"},
-		{"dirty", schemaTable + `INSERT INTO schema_migrations VALUES (2, true)`, http.StatusNotFound, false, "story creation unavailable"},
-		{"dirty version three", schemaTable + `INSERT INTO schema_migrations VALUES (3, true)`, http.StatusNotFound, false, "story creation unavailable"},
-		{"lookup error", `SELECT 1`, http.StatusNotFound, false, "story creation unavailable"},
+		{"version one", `DROP TABLE stories; ` + schemaTable + `INSERT INTO schema_migrations VALUES (1, false)`, http.StatusNotFound, false, false, "story creation unavailable"},
+		{"version two", schemaTable + `INSERT INTO schema_migrations VALUES (2, false)`, http.StatusCreated, false, false, "story update unavailable"},
+		{"version three", schemaTable + `INSERT INTO schema_migrations VALUES (3, false)`, http.StatusCreated, true, false, "story backlog unavailable"},
+		{"version four", schemaTable + `INSERT INTO schema_migrations VALUES (4, false)`, http.StatusCreated, true, true, "story creation, update and backlog available"},
+		{"dirty", schemaTable + `INSERT INTO schema_migrations VALUES (2, true)`, http.StatusNotFound, false, false, "story creation unavailable"},
+		{"dirty version three", schemaTable + `INSERT INTO schema_migrations VALUES (3, true)`, http.StatusNotFound, false, false, "story creation unavailable"},
+		{"dirty version four", schemaTable + `INSERT INTO schema_migrations VALUES (4, true)`, http.StatusNotFound, false, false, "story creation unavailable"},
+		{"lookup error", `SELECT 1`, http.StatusNotFound, false, false, "story creation unavailable"},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			pool := storyDatabase(t)
 			if _, err := pool.Exec(context.Background(), scenario.migration); err != nil {
 				t.Fatalf("prepare migration state: %v", err)
 			}
-			testAPIStartupRoutes(t, pool.Config().ConnString(), scenario.storyCode, scenario.updates, scenario.logged)
+			testAPIStartupRoutes(t, pool.Config().ConnString(), scenario.storyCode, scenario.updates, scenario.lists, scenario.logged)
 		})
 	}
 }
 
-func testAPIStartupRoutes(t *testing.T, databaseURL string, storyCode int, updates bool, logged string) {
+func testAPIStartupRoutes(t *testing.T, databaseURL string, storyCode int, updates, lists bool, logged string) {
 	t.Helper()
 	name := "api"
 	if runtime.GOOS == "windows" {
@@ -131,6 +134,7 @@ func testAPIStartupRoutes(t *testing.T, databaseURL string, storyCode int, updat
 				created.ID = "9b6847be-c44c-47e8-a91d-69aa2874a80f"
 			}
 			assertStoryUpdateRoute(t, client, "http://"+address+"/projects/"+project.ID+"/stories/", project.ID, created.ID, updates)
+			assertBacklogRoute(t, client, "http://"+address+"/projects/"+project.ID+"/stories", project.ID, created.ID, storyCode == http.StatusCreated, lists)
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -197,6 +201,171 @@ func assertStoryUpdateRoute(t *testing.T, client *http.Client, storiesURL, proje
 		if response.StatusCode != http.StatusMethodNotAllowed {
 			t.Errorf("%s on the item route = %d, want 405", method, response.StatusCode)
 		}
+	}
+}
+
+// assertBacklogRoute checks GET on the collection route: the backlog when the query is composed, 405
+// when only creation exists on that path, and the mux 404 when no story route exists at all. It runs
+// after the update assertions, so a composed query must return the story as it was last modified.
+func assertBacklogRoute(t *testing.T, client *http.Client, collectionURL, projectID, storyID string, creates, lists bool) {
+	t.Helper()
+	send := func(method, url string) (int, string) {
+		request, err := http.NewRequest(method, url, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := client.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		var payload bytes.Buffer
+		if _, err := payload.ReadFrom(response.Body); err != nil {
+			t.Fatal(err)
+		}
+		return response.StatusCode, payload.String()
+	}
+
+	code, body := send(http.MethodGet, collectionURL)
+	if !lists {
+		want := http.StatusNotFound
+		if creates {
+			want = http.StatusMethodNotAllowed
+		}
+		if code != want || strings.Contains(body, `"stories"`) {
+			t.Errorf("GET collection without the query = %d %q, want %d and no backlog", code, body, want)
+		}
+		return
+	}
+	var backlog struct {
+		ProjectID string `json:"project_id"`
+		Stories   []struct {
+			ID     string `json:"id"`
+			Title  string `json:"title"`
+			Status string `json:"status"`
+		} `json:"stories"`
+	}
+	if code != http.StatusOK || json.Unmarshal([]byte(body), &backlog) != nil || backlog.ProjectID != projectID ||
+		len(backlog.Stories) != 1 || backlog.Stories[0].ID != storyID ||
+		backlog.Stories[0].Title != "Modificada" || backlog.Stories[0].Status != "completada" {
+		t.Fatalf("GET collection = %d %s; want the modified story in the container of project %s", code, body, projectID)
+	}
+	if code, body = send(http.MethodHead, collectionURL); code != http.StatusOK || body != "" {
+		t.Errorf("HEAD collection = %d %q, want 200 without a body", code, body)
+	}
+	for _, method := range []string{http.MethodPut, http.MethodDelete} {
+		if code, _ = send(method, collectionURL); code != http.StatusMethodNotAllowed {
+			t.Errorf("%s collection = %d, want 405", method, code)
+		}
+	}
+	if code, _ = send(http.MethodGet, collectionURL+"/"); code != http.StatusNotFound {
+		t.Errorf("GET collection with a trailing slash = %d, want 404", code)
+	}
+	unknown := strings.Replace(collectionURL, projectID, "9b6847be-c44c-47e8-a91d-69aa2874a80f", 1)
+	if code, body = send(http.MethodGet, unknown); code != http.StatusNotFound ||
+		!strings.Contains(body, `"error":"project_not_found"`) || strings.Contains(body, `"stories"`) {
+		t.Errorf("GET unknown project = %d %s, want 404 project_not_found without stories", code, body)
+	}
+	invalid := strings.Replace(collectionURL, projectID, "not-a-uuid", 1)
+	if code, body = send(http.MethodGet, invalid); code != http.StatusUnprocessableEntity ||
+		!strings.Contains(body, `"error":"validation_failed"`) {
+		t.Errorf("GET malformed project = %d %s, want 422 validation_failed", code, body)
+	}
+}
+
+// TestBacklogHTTPOrdersByPriorityThenCreationEndToEnd runs the real handler over the real repository
+// and follows the spec scenario S1..S5 through creation, modification and consultation.
+func TestBacklogHTTPOrdersByPriorityThenCreationEndToEnd(t *testing.T) {
+	const (
+		otherProjectID = "c0a80121-7ac0-4e8e-8f3e-0a4c1b5d2f10"
+		emptyProjectID = "1b4e28ba-2fa1-41d2-883f-0016d3cca427"
+	)
+	pool := storyDatabase(t)
+	insertProject(t, pool, projectID)
+	insertProject(t, pool, otherProjectID)
+	insertProject(t, pool, emptyProjectID)
+	stories := storypostgres.NewPostgresStoryRepository(pool)
+	handler := api.NewHTTPHandler(projectpostgres.NewPostgresProjectRepository(pool), api.NewProjectID,
+		api.StoryDependencies{Repository: stories, GenerateID: api.NewProjectID, Updater: stories, Lister: stories})
+	serve := func(method, path, body string) *httptest.ResponseRecorder {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(method, path, strings.NewReader(body)))
+		return response
+	}
+	create := func(project, title, priority string) string {
+		response := serve(http.MethodPost, "/projects/"+project+"/stories",
+			`{"title":"`+title+`","description":"Descripción","priority":"`+priority+`","acceptance_criteria":["Listo"]}`)
+		var story struct {
+			ID string `json:"id"`
+		}
+		if response.Code != http.StatusCreated || json.Unmarshal(response.Body.Bytes(), &story) != nil || story.ID == "" {
+			t.Fatalf("create %s = %d; body = %s", title, response.Code, response.Body.String())
+		}
+		return story.ID
+	}
+	modify := func(project, id, title, priority, status string) {
+		response := serve(http.MethodPut, "/projects/"+project+"/stories/"+id,
+			`{"title":"`+title+`","description":"Descripción","priority":"`+priority+`","status":"`+status+`","acceptance_criteria":["Listo"],"estimated_hours":null}`)
+		if response.Code != http.StatusOK {
+			t.Fatalf("modify %s = %d; body = %s", title, response.Code, response.Body.String())
+		}
+	}
+	backlog := func(project string) (string, []string) {
+		response := serve(http.MethodGet, "/projects/"+project+"/stories", "")
+		var body struct {
+			ProjectID string `json:"project_id"`
+			Stories   []struct {
+				Title string `json:"title"`
+			} `json:"stories"`
+		}
+		if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &body) != nil || body.ProjectID != project {
+			t.Fatalf("GET backlog of %s = %d; body = %s", project, response.Code, response.Body.String())
+		}
+		titles := make([]string, 0, len(body.Stories))
+		for _, story := range body.Stories {
+			titles = append(titles, story.Title)
+		}
+		return response.Body.String(), titles
+	}
+
+	// Another project with stories must never leak into the queried backlog.
+	create(otherProjectID, "Ajena", "alta")
+	ids := map[string]string{}
+	for _, story := range [][2]string{{"S1", "media"}, {"S2", "alta"}, {"S3", "media"}, {"S4", "baja"}, {"S5", "alta"}} {
+		ids[story[0]] = create(projectID, story[0], story[1])
+	}
+
+	body, titles := backlog(projectID)
+	if want := []string{"S2", "S5", "S1", "S3", "S4"}; !reflect.DeepEqual(titles, want) {
+		t.Fatalf("initial backlog = %v, want %v", titles, want)
+	}
+	if again, _ := backlog(projectID); again != body {
+		t.Errorf("two consecutive queries returned different bodies:\n%s\n%s", body, again)
+	}
+
+	modify(projectID, ids["S3"], "S3", "alta", "pendiente")
+	if _, titles = backlog(projectID); !reflect.DeepEqual(titles, []string{"S2", "S3", "S5", "S1", "S4"}) {
+		t.Errorf("backlog after raising S3 = %v, want S2, S3, S5, S1, S4", titles)
+	}
+	modify(projectID, ids["S1"], "S1 renombrada", "media", "completada")
+	if _, titles = backlog(projectID); !reflect.DeepEqual(titles, []string{"S2", "S3", "S5", "S1 renombrada", "S4"}) {
+		t.Errorf("backlog after renaming S1 = %v, want S1 to keep its position", titles)
+	}
+	if _, titles = backlog(otherProjectID); !reflect.DeepEqual(titles, []string{"Ajena"}) {
+		t.Errorf("other project backlog = %v, want only its own story", titles)
+	}
+
+	if response := serve(http.MethodGet, "/projects/"+emptyProjectID+"/stories", ""); response.Code != http.StatusOK ||
+		!strings.Contains(response.Body.String(), `"stories":[]`) || strings.Contains(response.Body.String(), `"stories":null`) {
+		t.Errorf("empty project = %d %s, want 200 with an empty array", response.Code, response.Body.String())
+	}
+	if response := serve(http.MethodGet, "/projects/9b6847be-c44c-47e8-a91d-69aa2874a80f/stories", ""); response.Code != http.StatusNotFound ||
+		!strings.Contains(response.Body.String(), `"error":"project_not_found"`) || strings.Contains(response.Body.String(), `"stories"`) {
+		t.Errorf("unknown project = %d %s, want 404 without stories", response.Code, response.Body.String())
+	}
+	if response := serve(http.MethodGet, "/projects/not-a-uuid/stories", ""); response.Code != http.StatusUnprocessableEntity ||
+		!strings.Contains(response.Body.String(), `"error":"validation_failed"`) {
+		t.Errorf("malformed project = %d %s, want 422", response.Code, response.Body.String())
 	}
 }
 

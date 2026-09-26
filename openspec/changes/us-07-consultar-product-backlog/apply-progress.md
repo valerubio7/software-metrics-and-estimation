@@ -264,4 +264,91 @@ Work Unit Evidence (Unidad 4):
 
 Tareas completadas: 0.1–0.3, 1.1–1.7, 2.1–2.7, 3.1–3.19 y 4.1–4.8. Pendientes: Unidad 5 (composición, arranque y
 README; requiere Docker) y Unidad 6 (cierre). Commits de unidad: `5b49131` (1), `a39f3ae` (2), `0a9ebe9` (3) y
-el de la Unidad 4 (ver el historial de la rama).
+`386d8ab` (4).
+
+## Lote 3: Unidades 5 y 6
+
+Continuidad: los lotes 1 y 2 (commits `8159ccf`, `5b49131`, `a39f3ae`, `0a9ebe9`, `386d8ab`) se leyeron y se
+conservan sin cambios. La excepción `size:exception` (0.1) sigue vigente para el PR único.
+
+### Unidad 5: Composición, arranque y documentación (requiere Docker)
+
+Ciclo TDD observado:
+
+- **Red de seguridad** (se modifican `api.go`, `main.go` y `main_test.go`): `go test -count=1
+  ./tests/unit/cmd/api/...` antes de tocar nada → `ok`, 13 tests de nivel superior en verde.
+- **RED 5.1–5.2 (unitario)**: en `tests/unit/cmd/api/main_test.go` se agregaron `fakeStoryLister`,
+  `newBacklogHandler` (sin tocar `newStoryHandler`) y cinco tests: `TestBacklogCompositionServesTheOrderedContainer
+  OnCollectionGet` (200, `project_id` canónico aunque la ruta lleve mayúsculas, orden `alta, media, baja`),
+  `...MapsCollectionGetErrors` (404 sin `stories`, 422 con cero lecturas, 500 sin el texto interno),
+  `...KeepsTheRouteBoundaries` (`HEAD` 200, `POST` 201, `PUT`/`DELETE`/`PATCH` colección 405, `GET` ítem 405,
+  `/stories/` 404, cero lecturas donde no corresponde), `...KeepsStoryUpdateWorking` y
+  `TestCompositionWithoutListerDoesNotExposeTheBacklog` (sin `Lister`: `GET`/`HEAD` 405 con y sin `Updater`; solo
+  proyectos: `GET` 404). Se agregó un comentario de una línea en los tests existentes (líneas ~117 y ~173) que
+  explica que representan composiciones sin consulta; **sus aserciones no cambiaron** (Decisión 8). Falla
+  observada (error de compilación): `unknown field Lister in struct literal of type api.StoryDependencies` →
+  `FAIL ... [build failed]`. Nota de proceso: los tests de 5.2 (sin `Lister`) ya se cumplían por diseño; su RED
+  es el mismo error de compilación del archivo y actúan como guarda de regresión, no como comportamiento nuevo.
+- **RED 5.3–5.4 (integración)**: en `tests/integration/story/postgres/http_integration_test.go` se agregaron los
+  escenarios `version four` y `dirty version four`, el log esperado de `version three` pasó a `story backlog
+  unavailable`, `testAPIStartupRoutes` recibió el parámetro `lists` y se escribió `assertBacklogRoute`, más el
+  test de punta a punta `TestBacklogHTTPOrdersByPriorityThenCreationEndToEnd`. Falla observada primero como error
+  de compilación (`unknown field Lister`).
+- **GREEN 5.5 (`api.go`)**: campo aditivo `Lister` en `StoryDependencies` y registro condicional de `GET
+  /projects/{project_id}/stories` con `NewListStoriesHandler`; comentarios actualizados con `000004`. Resultado:
+  `go test -count=1 ./tests/unit/cmd/api/...` → `ok`, 18 tests de nivel superior (13 previos + 5 nuevos).
+- **RED de comportamiento real (entre 5.5 y 5.6)**: con `api.go` listo y `main.go` **sin** actualizar, `go test
+  -count=1 ./tests/integration/story/postgres/... -run "TestAPIStartup|TestBacklogHTTP" -v` mostró la falla
+  esperada: `version_three` (log `story creation and update available` en lugar de `story backlog unavailable`)
+  y `version_four` (log sin `backlog` y `GET collection = 405`) en `FAIL`; `version_one`, `version_two`, `dirty`,
+  `dirty_version_three`, `dirty_version_four` y `lookup_error` en `PASS`, y el test de punta a punta en `PASS`
+  (el handler en proceso ya funcionaba con `Lister`).
+- **GREEN 5.6 (`main.go`)**: rama `err == nil && !dirty && version >= 4` con el mismo `*PostgresStoryRepository`
+  como `Repository`, `Updater` y `Lister` y log `story creation, update and backlog available (schema
+  version=%d)`; el log de la rama `>= 3` pasó a `story backlog unavailable until migration 000004 is clean
+  (version=%d)`; comentario del gate actualizado. Resultado: **PASS real** del arranque:
+  `TestAPIStartupRoutesFollowMigrationState` con sus ocho subtests (`version_one`, `version_two`,
+  `version_three`, `version_four`, `dirty`, `dirty_version_three`, `dirty_version_four`, `lookup_error`) y
+  `TestBacklogHTTPOrdersByPriorityThenCreationEndToEnd`, sin `SKIP` (71 s).
+- **TRIANGULATE 5.7**: cubierto por los escenarios anteriores y por `assertBacklogRoute`: con la consulta
+  disponible, `GET` `200` con la historia modificada (`Modificada`, `completada`) y `project_id` del proyecto,
+  `HEAD` `200` sin cuerpo, `PUT`/`DELETE` colección `405`, `/stories/` `404`, proyecto desconocido `404
+  project_not_found` sin `stories`, identificador inválido `422`; `GET` del ítem `405` (ya en
+  `assertStoryUpdateRoute`); creación y modificación siguen funcionando con esquema 3 y 4; versión 4 `dirty` no
+  expone rutas de historia; el test de punta a punta crea un proyecto ajeno con una historia y comprueba que su
+  backlog contiene solo su historia y que no se filtra al del proyecto consultado. Orden de punta a punta: S1…S5
+  → `S2, S5, S1, S3, S4`; S3 a `alta` → `S2, S3, S5, S1, S4`; renombrar S1 y pasarla a `completada` no cambia su
+  posición; proyecto vacío → `"stories":[]`; inexistente → 404 sin `stories`; inválido → 422; dos `GET`
+  consecutivos con cuerpos idénticos.
+- **5.8 README**: nueva sección "Consultar el Product Backlog" (operación y ejemplo, orden, lista vacía, errores,
+  ausencia de paginación y filtros y respuesta sin límite, migración `000004` y gate `>= 4`, orden de
+  despliegue, nota del bloqueo `ACCESS EXCLUSIVE` al agregar la columna de identidad, limitación del orden de
+  las filas previas y reversión); se actualizaron la introducción, los requisitos previos y el paso de
+  migraciones (ahora incluyen `000004` y el caso `405` con esquema 2 o 3).
+- **5.9 delta de la spec**: el delta describe lo implementado y no se modificó. **Precisión de redacción
+  pendiente para el archivado** (sin cambiar el comportamiento): el requisito de disponibilidad dice que con
+  versión inferior a 4 o `dirty` `GET` sobre la colección responde `405`; en realidad responde `405` solo con
+  versión 2 o 3 sin `dirty`, y `404` sin ninguna ruta de historias (versión 1, `dirty` o error de lectura). La
+  sugerencia de redacción quedó anotada en `tasks.md` (5.9).
+- **REFACTOR 5.10**: sin cambios necesarios. Las cuatro ramas de `main.go` son la tabla explícita del diseño
+  (Decisión 7); unificarlas con `if` anidados sobre la versión ocultaría el gate y solo ahorraría un literal de
+  `StoryDependencies`. Suite unitaria de `cmd/api` verde antes y después.
+- **Verificación 5.11**: `go vet ./...` limpio; formato normalizado (`tr -d '\r' | gofmt -l`) sin diferencias en
+  los cuatro archivos `.go` tocados; `go test -count=1 ./...` con Docker todo `ok` (ver Unidad 6).
+
+Work Unit Evidence (Unidad 5):
+
+| Evidencia | Valor |
+|---|---|
+| Comando focalizado y resultado | `go test -count=1 ./tests/unit/cmd/api/...` → `ok` (13 tests previos + 5 nuevos de nivel superior) |
+| Arnés de ejecución | Binario compilado por el propio test contra PostgreSQL real (Testcontainers `postgres:16-alpine`): `go test -count=1 ./tests/integration/story/postgres/... -run "TestAPIStartup\|TestBacklogHTTP" -v` → `PASS` (8 subtests de arranque + 1 test de punta a punta, sin `SKIP`) |
+| Frontera de rollback | `internal/api/api.go`, `cmd/api/main.go`, `tests/unit/cmd/api/main_test.go`, `tests/integration/story/postgres/http_integration_test.go` y `README.md`. Revertir el commit quita la ruta y deja creación y modificación intactas; el esquema puede quedar en versión 4 |
+
+## Tabla de evidencia TDD (lote 3)
+
+| Tarea | Archivo de test | Capa | Red de seguridad | RED | GREEN | TRIANGULATE | REFACTOR |
+|-------|-----------------|------|------------------|-----|-------|-------------|----------|
+| 5.1–5.2 | `tests/unit/cmd/api/main_test.go` | Unitario | 13/13 | Escritos; `build failed` (`Lister` indefinido) | Pasaron (5 nuevos, 18/18) con `api.go` | Errores 404/422/500, métodos, `HEAD`, `/stories/`, ítem, sin `Lister` con y sin `Updater` | Sin cambios necesarios (5.10) |
+| 5.3–5.4 | `tests/integration/story/postgres/http_integration_test.go` | Integración | N/A (escenarios nuevos; los existentes no cambian de aserción) | `build failed`; luego `version_three` y `version_four` en `FAIL` con `main.go` sin actualizar | 8 subtests de arranque y el test de punta a punta en `PASS` con `main.go` | Proyecto ajeno, vacío, inexistente, inválido, consultas idénticas, S3 sube, S1 renombrada | Sin cambios necesarios |
+| 5.5–5.6 | `api.go`, `main.go` | — | 13/13 | (ver arriba) | Ver arriba | — | — |
+| 5.8–5.9 | `README.md`, `tasks.md` | Docs | N/A | N/A | N/A | N/A | N/A |

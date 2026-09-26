@@ -39,17 +39,20 @@ func NewProjectID() string {
 }
 
 // StoryDependencies enables story creation after the story migration is available.
-// Updater is optional: the update route is registered only when it is supplied, which
-// the caller does after verifying migration 000003.
+// Updater and Lister are optional: the update route is registered only when Updater is
+// supplied and the backlog query only when Lister is supplied, which the caller does
+// after verifying migrations 000003 and 000004 respectively.
 type StoryDependencies struct {
 	Repository storyapplication.StoryRepository
 	GenerateID storyapplication.IDGenerator
 	Updater    storyapplication.StoryUpdater
+	Lister     storyapplication.StoryLister // nil: GET on the collection is not registered (the mux answers 405)
 }
 
 // NewHTTPHandler builds the HTTP handler; existing project-only callers remain valid.
-// The caller must verify migration 000002 before supplying story dependencies and
-// migration 000003 before supplying StoryDependencies.Updater.
+// The caller must verify migration 000002 before supplying story dependencies,
+// migration 000003 before supplying StoryDependencies.Updater and migration 000004
+// before supplying StoryDependencies.Lister.
 func NewHTTPHandler(repository application.ProjectRepository, generateID application.IDGenerator, stories ...StoryDependencies) http.Handler {
 	useCase := application.NewCreateProjectUseCase(repository, generateID)
 	updateUseCase := application.NewUpdateProjectUseCase(repository)
@@ -62,6 +65,10 @@ func NewHTTPHandler(repository application.ProjectRepository, generateID applica
 		if stories[0].Updater != nil {
 			updateStoryUseCase := storyapplication.NewUpdateStoryUseCase(stories[0].Updater)
 			mux.Handle("PUT /projects/{project_id}/stories/{story_id}", storyhttp.NewUpdateStoryHandler(updateStoryUseCase))
+		}
+		if stories[0].Lister != nil {
+			listStoriesUseCase := storyapplication.NewListStoriesUseCase(stories[0].Lister)
+			mux.Handle("GET /projects/{project_id}/stories", storyhttp.NewListStoriesHandler(listStoriesUseCase))
 		}
 	}
 	return mux
