@@ -175,42 +175,42 @@ posicional `$1`.
 
 ### Preparación
 
-- [ ] 3.1 **Confirmar que Docker está disponible** (`docker info`). Si no lo está, registrarlo en `apply-progress.md` y detenerse: esta unidad no puede declararse verificada ni hecha sin contenedor.
+- [x] 3.1 **Confirmar que Docker está disponible** (`docker info`). Si no lo está, registrarlo en `apply-progress.md` y detenerse: esta unidad no puede declararse verificada ni hecha sin contenedor.
 
 ### RED (antes de escribir cualquier implementación; el primero resuelve el único riesgo técnico nuevo)
 
-- [ ] 3.2 RED migraciones: en `tests/integration/story/postgres/repository_integration_test.go` agregar `000004_add_story_creation_sequence.up.sql` a la lista de migraciones de `storyDatabase` (línea ~758). Ejecutar `go test ./tests/integration/story/postgres/... -run "TestStoryRepository" -v` y observar la falla (el archivo de migración no existe todavía).
-- [ ] 3.3 RED proyecto existente sin historias (riesgo técnico: escaneo de `NULL` del `LEFT JOIN` en destinos anulables): `TestStoryRepositoryListByProjectReturnsEmptyForProjectWithoutStories` en `tests/integration/story/postgres/repository_integration_test.go` → slice vacío y `nil` (no `ErrProjectNotFound`). Observar la falla (símbolo `ListByProject` indefinido).
-- [ ] 3.4 RED proyecto inexistente: UUID válido sin proyecto → `application.ErrProjectNotFound` y ninguna historia devuelta.
-- [ ] 3.5 RED orden de creación: historias sembradas con prioridades `baja`, `alta`, `media` e `id` que ordenan alfabéticamente al revés de la siembra → devueltas en orden de siembra (orden de creación, no de prioridad ni de `id`).
-- [ ] 3.6 RED aislamiento entre proyectos (amenaza: datos de otros proyectos): con dos proyectos A y B poblados, la consulta de A devuelve solo las historias de A; con A vacío y B con dos historias, la consulta de A devuelve una lista vacía.
-- [ ] 3.7 RED mapeo completo: `story_points` `8`, `estimated_hours` `8.50`, estado `en_progreso` y criterios en orden almacenado; y `NULL` → `nil` en ambos anulables (`story_points` y `estimated_hours`).
-- [ ] 3.8 RED la modificación no altera `seq`: tras `Update` de una historia (cambio de título, estado y prioridad), su posición de creación y el orden devuelto por `ListByProject` se conservan.
-- [ ] 3.9 RED solo lectura (amenaza: solo lectura): instantánea textual de `stories` y `projects` con `xmin` y `to_jsonb` (consultas del diseño, "Instantánea de solo lectura") idéntica byte a byte antes y después de consultar un proyecto con historias, uno vacío y uno inexistente, varias veces.
-- [ ] 3.10 RED esquema por catálogo: `stories_project_id_seq_key` existe con la definición esperada (`pg_constraint`); `seq` es identidad `ALWAYS` (`information_schema.columns`); un `INSERT` con `seq` explícito falla con SQLSTATE `428C9`.
-- [ ] 3.11 RED error no reinterpretado (amenaza: fuga de información): con la columna `seq` renombrada, `ListByProject` falla, el error no es `ErrProjectNotFound` y no devuelve historias.
+- [x] 3.2 RED migraciones: en `tests/integration/story/postgres/repository_integration_test.go` agregar `000004_add_story_creation_sequence.up.sql` a la lista de migraciones de `storyDatabase` (línea ~758). Ejecutar `go test ./tests/integration/story/postgres/... -run "TestStoryRepository" -v` y observar la falla (el archivo de migración no existe todavía).
+- [x] 3.3 RED proyecto existente sin historias (riesgo técnico: escaneo de `NULL` del `LEFT JOIN` en destinos anulables): `TestStoryRepositoryListByProjectReturnsEmptyForProjectWithoutStories` en `tests/integration/story/postgres/repository_integration_test.go` → slice vacío y `nil` (no `ErrProjectNotFound`). Observar la falla (símbolo `ListByProject` indefinido).
+- [x] 3.4 RED proyecto inexistente: UUID válido sin proyecto → `application.ErrProjectNotFound` y ninguna historia devuelta.
+- [x] 3.5 RED orden de creación: historias sembradas con prioridades `baja`, `alta`, `media` e `id` que ordenan alfabéticamente al revés de la siembra → devueltas en orden de siembra (orden de creación, no de prioridad ni de `id`).
+- [x] 3.6 RED aislamiento entre proyectos (amenaza: datos de otros proyectos): con dos proyectos A y B poblados, la consulta de A devuelve solo las historias de A; con A vacío y B con dos historias, la consulta de A devuelve una lista vacía.
+- [x] 3.7 RED mapeo completo: `story_points` `8`, `estimated_hours` `8.50`, estado `en_progreso` y criterios en orden almacenado; y `NULL` → `nil` en ambos anulables (`story_points` y `estimated_hours`).
+- [x] 3.8 RED la modificación no altera `seq`: tras `Update` de una historia (cambio de título, estado y prioridad), su posición de creación y el orden devuelto por `ListByProject` se conservan.
+- [x] 3.9 RED solo lectura (amenaza: solo lectura): instantánea textual de `stories` y `projects` con `xmin` y `to_jsonb` (consultas del diseño, "Instantánea de solo lectura") idéntica byte a byte antes y después de consultar un proyecto con historias, uno vacío y uno inexistente, varias veces.
+- [x] 3.10 RED esquema por catálogo: `stories_project_id_seq_key` existe con la definición esperada (`pg_constraint`); `seq` es identidad `ALWAYS` (`information_schema.columns`); un `INSERT` con `seq` explícito falla con SQLSTATE `428C9`.
+- [x] 3.11 RED error no reinterpretado (amenaza: fuga de información): con la columna `seq` renombrada, `ListByProject` falla, el error no es `ErrProjectNotFound` y no devuelve historias.
 
 Ejecutar `go test ./tests/integration/story/postgres/... -run "TestStoryRepository" -v` y registrar la falla observada de cada grupo.
 
 ### GREEN
 
-- [ ] 3.12 GREEN migración: crear `internal/project/infrastructure/postgres/migrations/000004_add_story_creation_sequence.up.sql` (`ADD COLUMN seq BIGINT GENERATED ALWAYS AS IDENTITY` y `stories_project_id_seq_key UNIQUE (project_id, seq)`) y `internal/project/infrastructure/postgres/migrations/000004_add_story_creation_sequence.down.sql` (elimina la constraint y luego la columna).
-- [ ] 3.13 GREEN `ListByProject`: en `internal/story/infrastructure/postgres/repository.go` agregar `ListByProject(ctx, projectID string) ([]domain.Story, error)` con la única sentencia `SELECT ... FROM projects p LEFT JOIN stories s ON s.project_id = p.id WHERE p.id = $1 ORDER BY s.seq`, fila privada con destinos anulables, cero filas → `application.ErrProjectNotFound`, fila con `s.id` nulo → slice vacío, `rows.Err()` consultado antes de devolver y `nil` ante cualquier error. Agregar la aserción de compilación `_ application.StoryLister = (*PostgresStoryRepository)(nil)`. Ejecutar `go test ./tests/integration/story/postgres/... -run "TestStoryRepository" -v` y observar el pase.
-- [ ] 3.14 Escalera de fallback (solo si 3.3 falla, en orden, registrando en `apply-progress.md` y en una línea del commit qué paso hizo falta): (1) destinos `*string` directos (default de 3.13); (2) `s.id::text` en el `SELECT`; (3) `pgtype.UUID`/`pgtype.Text` con conversión explícita. Ninguno cambia el esquema. Si no se necesita, registrar "paso 1 suficiente".
+- [x] 3.12 GREEN migración: crear `internal/project/infrastructure/postgres/migrations/000004_add_story_creation_sequence.up.sql` (`ADD COLUMN seq BIGINT GENERATED ALWAYS AS IDENTITY` y `stories_project_id_seq_key UNIQUE (project_id, seq)`) y `internal/project/infrastructure/postgres/migrations/000004_add_story_creation_sequence.down.sql` (elimina la constraint y luego la columna).
+- [x] 3.13 GREEN `ListByProject`: en `internal/story/infrastructure/postgres/repository.go` agregar `ListByProject(ctx, projectID string) ([]domain.Story, error)` con la única sentencia `SELECT ... FROM projects p LEFT JOIN stories s ON s.project_id = p.id WHERE p.id = $1 ORDER BY s.seq`, fila privada con destinos anulables, cero filas → `application.ErrProjectNotFound`, fila con `s.id` nulo → slice vacío, `rows.Err()` consultado antes de devolver y `nil` ante cualquier error. Agregar la aserción de compilación `_ application.StoryLister = (*PostgresStoryRepository)(nil)`. Ejecutar `go test ./tests/integration/story/postgres/... -run "TestStoryRepository" -v` y observar el pase.
+- [x] 3.14 Escalera de fallback (solo si 3.3 falla, en orden, registrando en `apply-progress.md` y en una línea del commit qué paso hizo falta): (1) destinos `*string` directos (default de 3.13); (2) `s.id::text` en el `SELECT`; (3) `pgtype.UUID`/`pgtype.Text` con conversión explícita. Ninguno cambia el esquema. Si no se necesita, registrar "paso 1 suficiente".
 
 ### TRIANGULATE
 
-- [ ] 3.15 TRIANGULATE `down`/`up`: `down` sobre una base con historias elimina la columna y la constraint sin perder filas ni valores de negocio; aplicar `up` de nuevo asigna `seq` a todas las filas.
-- [ ] 3.16 TRIANGULATE en `tests/integration/story/postgres/repository_integration_test.go`: dos consultas consecutivas devuelven el mismo orden; una historia creada después de otra siempre aparece después dentro de una misma prioridad (creación por el repositorio real); las pruebas de creación y modificación existentes siguen pasando con `000004` aplicada. Ejecutar y observar el pase.
+- [x] 3.15 TRIANGULATE `down`/`up`: `down` sobre una base con historias elimina la columna y la constraint sin perder filas ni valores de negocio; aplicar `up` de nuevo asigna `seq` a todas las filas.
+- [x] 3.16 TRIANGULATE en `tests/integration/story/postgres/repository_integration_test.go`: dos consultas consecutivas devuelven el mismo orden; una historia creada después de otra siempre aparece después dentro de una misma prioridad (creación por el repositorio real); las pruebas de creación y modificación existentes siguen pasando con `000004` aplicada. Ejecutar y observar el pase.
 
 ### REFACTOR
 
-- [ ] 3.17 REFACTOR: extraer el escaneo de las 9 columnas a un helper interno de `internal/story/infrastructure/postgres/repository.go` solo si `Update` y `ListByProject` lo justifican; de lo contrario registrar "sin cambios necesarios". Ejecutar `go test ./tests/integration/story/postgres/... -v` antes y después (verde) y `go test ./...` completo.
+- [x] 3.17 REFACTOR: extraer el escaneo de las 9 columnas a un helper interno de `internal/story/infrastructure/postgres/repository.go` solo si `Update` y `ListByProject` lo justifican; de lo contrario registrar "sin cambios necesarios". Ejecutar `go test ./tests/integration/story/postgres/... -v` antes y después (verde) y `go test ./...` completo.
 
 ### Verificación y commit
 
-- [ ] 3.18 Verificar la unidad: `gofmt -l .` sin salida, `go vet ./...` limpio, `go test ./...` en verde **con Docker** (los tests de integración deben mostrar `PASS`, no `SKIP`). Si algún test se saltó por falta de Docker, registrarlo como saltado y no declarar la unidad verificada.
-- [ ] 3.19 COMMIT de la unidad 3 (un único commit): `feat(story): list project stories in creation order`. Cuerpo de 5–8 líneas según la Regla de commits, incluyendo (si aplica) el paso de la escalera usado y, en una sola línea, si la integración se corrió o no. Rollback: revertir solo este commit; si `000004` ya fue aplicada en algún entorno, ejecutar el `down` (solo se pierde la secuencia de desempate).
+- [x] 3.18 Verificar la unidad: `gofmt -l .` sin salida, `go vet ./...` limpio, `go test ./...` en verde **con Docker** (los tests de integración deben mostrar `PASS`, no `SKIP`). Si algún test se saltó por falta de Docker, registrarlo como saltado y no declarar la unidad verificada.
+- [x] 3.19 COMMIT de la unidad 3 (un único commit): `feat(story): list project stories in creation order`. Cuerpo de 5–8 líneas según la Regla de commits, incluyendo (si aplica) el paso de la escalera usado y, en una sola línea, si la integración se corrió o no. Rollback: revertir solo este commit; si `000004` ya fue aplicada en algún entorno, ejecutar el `down` (solo se pierde la secuencia de desempate).
 
 ## Unidad 4: Handler HTTP — `ListStoriesHandler` (commit 4, sin Docker)
 

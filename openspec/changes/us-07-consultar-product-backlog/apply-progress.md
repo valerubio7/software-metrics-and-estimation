@@ -131,3 +131,72 @@ Work Unit Evidence (Unidad 2):
 Tareas completadas: 0.1–0.3, 1.1–1.7 y 2.1–2.7 (17 de las 17 asignadas en las unidades 0–2). Pendientes: unidades 3–6
 (la unidad 3 y el arranque real de la 5 requieren Docker; en la línea base la integración muestra fallas de
 entorno preexistentes, ver 0.2).
+
+## Lote 2: Unidades 3 y 4
+
+Continuidad: el lote 1 (Unidades 0-2, commits `8159ccf`, `5b49131`, `a39f3ae`) se leyó y se conserva sin cambios.
+Este lote agrega las Unidades 3 y 4. La excepción `size:exception` (0.1) sigue vigente para el PR único.
+
+### Unidad 3: Almacenamiento y migración `000004` (requiere Docker)
+
+#### 3.1 Docker
+
+`docker info` responde (servidor 28.0.4, Docker Desktop). Los tests de integración **corrieron de verdad**
+(Testcontainers `postgres:16-alpine`); ninguno se saltó. Las fallas transitorias del lote 1 (arranque de
+Docker) no reaparecieron.
+
+#### Ciclo TDD observado
+
+- **Red de seguridad** (se modifica `repository_integration_test.go` y `repository.go`):
+  `go test -count=1 ./tests/integration/story/postgres/... -run "TestStoryRepository|TestStories"` antes de
+  tocar nada → `ok` (114 s), con los tests de creación, FK, concurrencia y modificación en verde.
+- **RED 3.2 (migraciones)**: se agregó `000004_add_story_creation_sequence.up.sql` a la lista de
+  `storyDatabase` y se ejecutó `TestStoryRepositoryStoresLinkedUnestimatedStory` → `FAIL`: `read migration
+  000004_add_story_creation_sequence.up.sql: ... The system cannot find the file specified` (el contenedor
+  arrancó y la falla es la del archivo inexistente, no del entorno). Se extrajo el helper de test
+  `applyStoryMigration` (sin cambio de comportamiento) para reutilizarlo en la prueba de `down`/`up`.
+- **RED 3.3–3.11**: se escribieron los tests del grupo (proyecto vacío —el riesgo del `NULL` con pgx—,
+  inexistente, orden de creación con `id` y prioridad desalineados, aislamiento entre proyectos, mapeo
+  completo con `NULL`, `Update` no altera `seq`, instantánea de solo lectura con `xmin`, catálogo
+  `stories_project_id_seq_key` + identidad `ALWAYS` + `428C9`, y error no reinterpretado con `seq`
+  renombrada). Falla observada: error de compilación `PostgresStoryRepository does not implement
+  application.StoryLister (missing method ListByProject)` → `FAIL ... [build failed]`. Desvío menor de
+  proceso: como el paquete de integración es uno solo, el RED de todo el grupo se observó como un único fallo
+  de compilación (no una falla de ejecución por test).
+- **GREEN 3.12–3.13**: migraciones `000004` `up` (columna `seq BIGINT GENERATED ALWAYS AS IDENTITY` y
+  `stories_project_id_seq_key UNIQUE (project_id, seq)`) y `down` (constraint y luego columna);
+  `ListByProject` con la sentencia única `projects LEFT JOIN stories ... ORDER BY s.seq`, fila privada
+  `listedStory` con destinos anulables, `rows.Err()` antes de devolver, `nil` ante cualquier error y la
+  aserción de compilación `application.StoryLister`. Resultado: los 11 tests del grupo pasan a la primera
+  (`-v`: todos `PASS`, 50 s).
+- **3.14 Escalera de fallback**: **paso 1 suficiente**. El escaneo de `NULL` del `LEFT JOIN` en destinos
+  `*string` funcionó con pgx sin necesidad de `s.id::text` ni de `pgtype`; `TestStoryRepositoryListByProject
+  ReturnsEmptyForProjectWithoutStories` (el primer riesgo técnico) pasó tal cual.
+- **TRIANGULATE 3.15–3.16**: `TestStoriesCreationSequenceMigrationRoundTripsWithoutLosingData` (`down` sobre una
+  base con dos historias elimina columna y constraint sin perder filas ni valores; `up` de nuevo asigna un
+  `seq` distinto a cada fila) y `TestStoryRepositoryListByProjectKeepsCreationOrderWithinEqualPriority` (cuatro
+  historias de igual prioridad creadas por el repositorio real conservan el orden de creación; dos consultas
+  consecutivas idénticas). Pasaron sin cambios de producción.
+- **Prueba de mutación manual (hallazgo)**: al quitar temporalmente `ORDER BY s.seq`, los tests de orden
+  **seguían pasando**: el índice `UNIQUE (project_id, seq)` devuelve por sí solo las filas en orden de `seq`,
+  de modo que la sentencia parecía correcta sin su propio `ORDER BY`. Se agregó
+  `TestStoryRepositoryListByProjectOrdersBySequenceItself`: siembra filas con `seq` explícito
+  (`OVERRIDING SYSTEM VALUE`) cuyo orden físico es el inverso de su `seq` y consulta por un pool con
+  `enable_indexscan`, `enable_indexonlyscan` y `enable_bitmapscan` desactivados. Con la mutación el test
+  **falla**; con `ORDER BY s.seq` restaurado, **pasa**. El código de producción quedó idéntico al original.
+- **REFACTOR 3.17**: sin cambios necesarios. `Update` escanea 9 columnas no anulables directo sobre
+  `domain.Story` y `ListByProject` usa destinos anulables por la fila de relleno del `LEFT JOIN`; un helper
+  compartido no reduciría duplicación real. La suite completa quedó verde antes y después.
+- **Verificación 3.18**: `go vet ./...` limpio; formato normalizado (`tr -d '\r' | gofmt -l`) sin
+  diferencias; `go test ./tests/unit/...` verde; `go test -count=1 -v ./tests/integration/...` con Docker:
+  `ok` en `project/postgres` (29 s) y `ok` en `story/postgres` (284 s), **31 tests de nivel superior y 29
+  subtests en `PASS`, 0 `FAIL`, 0 `SKIP`**, incluido `TestAPIStartupRoutesFollowMigrationState` con sus seis
+  subtests (que en el lote 1 mostraba fallas transitorias de Docker).
+
+Work Unit Evidence (Unidad 3):
+
+| Evidencia | Valor |
+|---|---|
+| Comando focalizado y resultado | `go test -count=1 ./tests/integration/story/postgres/... -run "TestStoryRepositoryListByProject\|TestStoriesCreationSequence\|TestStoryRepositoryUpdateDoesNotChangeCreationSequence" -v` → `PASS` los 12 tests nuevos (el 12.º, `...OrdersBySequenceItself`, ejecutado aparte) |
+| Arnés de ejecución | PostgreSQL real vía Testcontainers `postgres:16-alpine` con migraciones `000001`–`000004`; suite completa de integración `PASS`, sin saltos |
+| Frontera de rollback | migraciones `000004` (`up`/`down`), `ListByProject` en `internal/story/infrastructure/postgres/repository.go` y los tests de `tests/integration/story/postgres/repository_integration_test.go`. Si `000004` ya se aplicó en un entorno, ejecutar el `down` (solo se pierde la secuencia de desempate) |
