@@ -40,6 +40,78 @@ type fakeStoryRepository struct {
 	stories []storydomain.Story
 }
 
+type fakeSprintRepository struct {
+	sprints []sprintdomain.Sprint
+}
+
+func (r *fakeSprintRepository) Create(_ context.Context, sprint sprintdomain.Sprint) error {
+	r.sprints = append(r.sprints, sprint)
+	return nil
+}
+
+func TestSprintCompositionIsOptionalAndPreservesExistingRoutes(t *testing.T) {
+	projectID := "5c21cbd4-d9a7-42df-9c3a-c0866f058746"
+	projects := &fakeProjectRepository{}
+	stories := &fakeStoryRepository{}
+	sprints := &fakeSprintRepository{}
+	projectGenerator := func() string { return projectID }
+	withoutSprint := api.NewHTTPHandlerWithDependencies(projects, projectGenerator, api.HTTPDependencies{
+		Stories: &api.StoryDependencies{Repository: stories, GenerateID: projectGenerator},
+	})
+	response := httptest.NewRecorder()
+	withoutSprint.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/projects/"+projectID+"/sprints", strings.NewReader(`{"sprint_goal":"Deliver"}`)))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("sprint route without dependencies = %d", response.Code)
+	}
+
+	handler := api.NewHTTPHandlerWithDependencies(projects, projectGenerator, api.HTTPDependencies{
+		Stories: &api.StoryDependencies{Repository: stories, GenerateID: projectGenerator},
+		Sprints: &api.SprintDependencies{Repository: sprints, GenerateID: projectGenerator},
+	})
+	created := httptest.NewRecorder()
+	handler.ServeHTTP(created, httptest.NewRequest(http.MethodPost, "/projects/"+projectID+"/sprints", strings.NewReader(`{"sprint_goal":"Deliver"}`)))
+	if created.Code != http.StatusCreated || len(sprints.sprints) != 1 {
+		t.Fatalf("sprint status=%d writes=%d body=%s", created.Code, len(sprints.sprints), created.Body.String())
+	}
+	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(method, "/projects/"+projectID+"/sprints", strings.NewReader(`{"sprint_goal":"Must not write"}`)))
+		if response.Code != http.StatusMethodNotAllowed || len(sprints.sprints) != 1 {
+			t.Errorf("%s status=%d writes=%d", method, response.Code, len(sprints.sprints))
+		}
+	}
+	story := httptest.NewRecorder()
+	handler.ServeHTTP(story, httptest.NewRequest(http.MethodPost, "/projects/"+projectID+"/stories", strings.NewReader(`{"title":"Registro","description":"Crear historia","priority":"media","acceptance_criteria":["Listo"]}`)))
+	project := httptest.NewRecorder()
+	handler.ServeHTTP(project, httptest.NewRequest(http.MethodPost, "/projects", strings.NewReader(`{"name":"Metrics portal","start_date":"2026-03-01","planned_finish_date":"2026-06-30"}`)))
+	if story.Code != http.StatusCreated || len(stories.stories) != 1 || project.Code != http.StatusCreated || len(projects.projects) != 1 {
+		t.Fatalf("preserved composition: story=%d/%d project=%d/%d", story.Code, len(stories.stories), project.Code, len(projects.projects))
+	}
+}
+
+func TestMigrationReadinessSelectsRoutesIndependently(t *testing.T) {
+	for _, scenario := range []struct {
+		name    string
+		version int
+		dirty   bool
+		lookup  error
+		stories bool
+		sprints bool
+	}{
+		{name: "clean v2", version: 2, stories: true},
+		{name: "clean v3", version: 3, stories: true, sprints: true},
+		{name: "dirty v3", version: 3, dirty: true},
+		{name: "lookup error", lookup: context.DeadlineExceeded},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			readiness := api.ResolveMigrationReadiness(scenario.version, scenario.dirty, scenario.lookup)
+			if readiness.Stories != scenario.stories || readiness.Sprints != scenario.sprints || !readiness.Projects {
+				t.Fatalf("readiness = %+v", readiness)
+			}
+		})
+	}
+}
+
 func (r *fakeStoryRepository) Create(_ context.Context, story storydomain.Story) error {
 	r.stories = append(r.stories, story)
 	return nil

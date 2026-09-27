@@ -18,6 +18,7 @@ import (
 
 	"github.com/valerubio7/software-metrics-and-estimation/internal/api"
 	projectpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/project/infrastructure/postgres"
+	sprintpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/sprint/infrastructure/postgres"
 	storypostgres "github.com/valerubio7/software-metrics-and-estimation/internal/story/infrastructure/postgres"
 )
 

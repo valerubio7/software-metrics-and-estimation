@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/api"
 	projectpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/project/infrastructure/postgres"
+	sprintpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/sprint/infrastructure/postgres"
 	storypostgres "github.com/valerubio7/software-metrics-and-estimation/internal/story/infrastructure/postgres"
 )
 
@@ -56,6 +57,12 @@ func main() {
 		log.Printf("story creation unavailable until migration 000002 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 		handler = api.NewHTTPHandler(projects, api.NewProjectID)
 	}
+	if readiness.Sprints {
+		dependencies.Sprints = &api.SprintDependencies{Repository: sprintpostgres.NewPostgresSprintRepository(pool), GenerateID: api.NewProjectID}
+	} else {
+		log.Printf("sprint creation unavailable until migration 000003 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
+	}
+	var handler http.Handler = api.NewHTTPHandlerWithDependencies(projectpostgres.NewPostgresProjectRepository(pool), api.NewProjectID, dependencies)
 	server := &http.Server{Addr: config.Address, Handler: handler}
 
 	log.Printf("API listening on %s", config.Address)

@@ -8,6 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/application"
 	transporthttp "github.com/valerubio7/software-metrics-and-estimation/internal/project/transport/http"
+	sprintapplication "github.com/valerubio7/software-metrics-and-estimation/internal/sprint/application"
+	sprinthttp "github.com/valerubio7/software-metrics-and-estimation/internal/sprint/transport/http"
 	storyapplication "github.com/valerubio7/software-metrics-and-estimation/internal/story/application"
 	storyhttp "github.com/valerubio7/software-metrics-and-estimation/internal/story/transport/http"
 )
@@ -49,11 +51,50 @@ type StoryDependencies struct {
 	Lister     storyapplication.StoryLister // nil: GET on the collection is not registered (the mux answers 405)
 }
 
+// SprintDependencies enables sprint creation after migration 000003 is clean.
+type SprintDependencies struct {
+	Repository sprintapplication.SprintRepository
+	GenerateID sprintapplication.IDGenerator
+}
+
+// HTTPDependencies contains optional migration-backed API modules.
+type HTTPDependencies struct {
+	Stories *StoryDependencies
+	Sprints *SprintDependencies
+}
+
+// MigrationReadiness describes which handlers are safe to compose for a schema state.
+type MigrationReadiness struct {
+	Projects bool
+	Stories  bool
+	Sprints  bool
+}
+
+// ResolveMigrationReadiness keeps project creation available while gating schema-backed routes.
+func ResolveMigrationReadiness(version int, dirty bool, lookupErr error) MigrationReadiness {
+	readiness := MigrationReadiness{Projects: true}
+	if lookupErr != nil || dirty {
+		return readiness
+	}
+	readiness.Stories = version >= 2
+	readiness.Sprints = version >= 3
+	return readiness
+}
+
 // NewHTTPHandler builds the HTTP handler; existing project-only callers remain valid.
 // The caller must verify migration 000002 before supplying story dependencies,
 // migration 000003 before supplying StoryDependencies.Updater and migration 000004
 // before supplying StoryDependencies.Lister.
 func NewHTTPHandler(repository application.ProjectRepository, generateID application.IDGenerator, stories ...StoryDependencies) http.Handler {
+	dependencies := HTTPDependencies{}
+	if len(stories) > 0 {
+		dependencies.Stories = &stories[0]
+	}
+	return NewHTTPHandlerWithDependencies(repository, generateID, dependencies)
+}
+
+// NewHTTPHandlerWithDependencies adds optional feature routes while preserving the legacy constructor.
+func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, generateID application.IDGenerator, dependencies HTTPDependencies) http.Handler {
 	useCase := application.NewCreateProjectUseCase(repository, generateID)
 	updateUseCase := application.NewUpdateProjectUseCase(repository)
 	mux := http.NewServeMux()
@@ -70,6 +111,10 @@ func NewHTTPHandler(repository application.ProjectRepository, generateID applica
 			listStoriesUseCase := storyapplication.NewListStoriesUseCase(stories[0].Lister)
 			mux.Handle("GET /projects/{project_id}/stories", storyhttp.NewListStoriesHandler(listStoriesUseCase))
 		}
+	}
+	if dependencies.Sprints != nil {
+		sprintUseCase := sprintapplication.NewCreateSprintUseCase(dependencies.Sprints.Repository, dependencies.Sprints.GenerateID)
+		mux.Handle("POST /projects/{project_id}/sprints", sprinthttp.NewCreateSprintHandler(sprintUseCase))
 	}
 	return mux
 }
