@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/valerubio7/software-metrics-and-estimation/internal/project/application"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/domain"
 	projectpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/project/infrastructure/postgres"
 )
@@ -54,6 +55,41 @@ func TestPostgresProjectRepositoryCreatePersistsProject(t *testing.T) {
 	}
 	if gotPlannedFinishDate.Format("2006-01-02") != "2026-06-30" {
 		t.Errorf("planned_finish_date = %s, want 2026-06-30", gotPlannedFinishDate.Format("2006-01-02"))
+	}
+}
+
+func TestPostgresProjectRepositoryUpdateChangesBasicFieldsOnly(t *testing.T) {
+	pool := newPostgresPool(t)
+	applyProjectsMigration(t, pool)
+	applyStoriesMigration(t, pool)
+	projectID := "dc46073f-51fb-4393-8e80-6b7f84201cc1"
+	if _, err := pool.Exec(context.Background(), `INSERT INTO projects (id, name, start_date, planned_finish_date) VALUES ($1, 'Original', '2026-01-01', '2026-12-31')`, projectID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(context.Background(), `INSERT INTO stories (id, project_id, title, description, priority, status, acceptance_criteria) VALUES ($1, $2, 'Story', 'Details', 'media', 'pendiente', ARRAY['Done'])`, "e99c05a4-03ea-4c19-8f59-286dd59e7aa1", projectID); err != nil {
+		t.Fatal(err)
+	}
+
+	repository := projectpostgres.NewPostgresProjectRepository(pool)
+	updated := domain.Project{ID: projectID, Name: "Updated", StartDate: time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC), PlannedFinishDate: time.Date(2026, time.June, 30, 0, 0, 0, 0, time.UTC)}
+	if err := repository.Update(context.Background(), updated); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	var id, name, title, description, priority, status string
+	var startDate, finishDate time.Time
+	var criteria []string
+	if err := pool.QueryRow(context.Background(), `SELECT p.id::text, p.name, p.start_date, p.planned_finish_date, s.title, s.description, s.priority, s.status, s.acceptance_criteria FROM projects p JOIN stories s ON s.project_id = p.id WHERE p.id = $1`, projectID).Scan(&id, &name, &startDate, &finishDate, &title, &description, &priority, &status, &criteria); err != nil {
+		t.Fatal(err)
+	}
+	if id != projectID || name != "Updated" || startDate.Format("2006-01-02") != "2026-03-01" || finishDate.Format("2006-01-02") != "2026-06-30" {
+		t.Errorf("project result = %q, %q, %s, %s", id, name, startDate.Format("2006-01-02"), finishDate.Format("2006-01-02"))
+	}
+	if title != "Story" || description != "Details" || priority != "media" || status != "pendiente" || len(criteria) != 1 || criteria[0] != "Done" {
+		t.Errorf("story changed during project update: %q %q %q %q %v", title, description, priority, status, criteria)
+	}
+	err := repository.Update(context.Background(), domain.Project{ID: "a8de48f0-692e-4f30-bfa3-1fd7d1cbe5dc", Name: "Missing", StartDate: updated.StartDate, PlannedFinishDate: updated.PlannedFinishDate})
+	if !errors.Is(err, application.ErrProjectNotFound) {
+		t.Errorf("Update(missing) error = %v, want ErrProjectNotFound", err)
 	}
 }
 
@@ -135,6 +171,17 @@ func applyProjectsMigration(t *testing.T, pool *pgxpool.Pool) {
 	}
 	if _, err := pool.Exec(context.Background(), string(migration)); err != nil {
 		t.Fatalf("apply projects migration: %v", err)
+	}
+}
+
+func applyStoriesMigration(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	migration, err := os.ReadFile(filepath.Join(moduleRoot(t), "internal", "project", "infrastructure", "postgres", "migrations", "000002_create_stories.up.sql"))
+	if err != nil {
+		t.Fatalf("read stories migration: %v", err)
+	}
+	if _, err := pool.Exec(context.Background(), string(migration)); err != nil {
+		t.Fatalf("apply stories migration: %v", err)
 	}
 }
 

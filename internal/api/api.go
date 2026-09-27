@@ -41,9 +41,14 @@ func NewProjectID() string {
 }
 
 // StoryDependencies enables story creation after the story migration is available.
+// Updater and Lister are optional: the update route is registered only when Updater is
+// supplied and the backlog query only when Lister is supplied, which the caller does
+// after verifying migrations 000003 and 000004 respectively.
 type StoryDependencies struct {
 	Repository storyapplication.StoryRepository
 	GenerateID storyapplication.IDGenerator
+	Updater    storyapplication.StoryUpdater
+	Lister     storyapplication.StoryLister // nil: GET on the collection is not registered (the mux answers 405)
 }
 
 // SprintDependencies enables sprint creation after migration 000003 is clean.
@@ -77,7 +82,9 @@ func ResolveMigrationReadiness(version int, dirty bool, lookupErr error) Migrati
 }
 
 // NewHTTPHandler builds the HTTP handler; existing project-only callers remain valid.
-// The caller must verify migration 000002 before supplying story dependencies.
+// The caller must verify migration 000002 before supplying story dependencies,
+// migration 000003 before supplying StoryDependencies.Updater and migration 000004
+// before supplying StoryDependencies.Lister.
 func NewHTTPHandler(repository application.ProjectRepository, generateID application.IDGenerator, stories ...StoryDependencies) http.Handler {
 	dependencies := HTTPDependencies{}
 	if len(stories) > 0 {
@@ -89,11 +96,21 @@ func NewHTTPHandler(repository application.ProjectRepository, generateID applica
 // NewHTTPHandlerWithDependencies adds optional feature routes while preserving the legacy constructor.
 func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, generateID application.IDGenerator, dependencies HTTPDependencies) http.Handler {
 	useCase := application.NewCreateProjectUseCase(repository, generateID)
+	updateUseCase := application.NewUpdateProjectUseCase(repository)
 	mux := http.NewServeMux()
 	mux.Handle("POST /projects", transporthttp.NewCreateProjectHandler(useCase))
-	if dependencies.Stories != nil {
-		storyUseCase := storyapplication.NewCreateStoryUseCase(dependencies.Stories.Repository, dependencies.Stories.GenerateID)
+	mux.Handle("PUT /projects/{project_id}", transporthttp.NewUpdateProjectHandler(updateUseCase))
+	if len(stories) != 0 {
+		storyUseCase := storyapplication.NewCreateStoryUseCase(stories[0].Repository, stories[0].GenerateID)
 		mux.Handle("POST /projects/{project_id}/stories", storyhttp.NewCreateStoryHandler(storyUseCase))
+		if stories[0].Updater != nil {
+			updateStoryUseCase := storyapplication.NewUpdateStoryUseCase(stories[0].Updater)
+			mux.Handle("PUT /projects/{project_id}/stories/{story_id}", storyhttp.NewUpdateStoryHandler(updateStoryUseCase))
+		}
+		if stories[0].Lister != nil {
+			listStoriesUseCase := storyapplication.NewListStoriesUseCase(stories[0].Lister)
+			mux.Handle("GET /projects/{project_id}/stories", storyhttp.NewListStoriesHandler(listStoriesUseCase))
+		}
 	}
 	if dependencies.Sprints != nil {
 		sprintUseCase := sprintapplication.NewCreateSprintUseCase(dependencies.Sprints.Repository, dependencies.Sprints.GenerateID)

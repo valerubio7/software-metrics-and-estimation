@@ -7,13 +7,29 @@ project:
 sdd:
   artifact_store: openspec
   execution_mode: interactive
-  delivery_strategy: ask-on-risk
+  delivery_strategy: single-pr
   review_budget_lines: 400
   strict_tdd: true
   test_command: go test ./...
 
+testing:
+  projects:
+    - path: .
+      stack: Go
+      test_command: go test ./...
+      test_layers:
+        - layer: integration
+          framework: Testcontainers
+          prerequisites:
+            - Docker
+      coverage_command: null
+      quality_tools:
+        linter: null
+        type_checker: null
+        formatter: null
+
 conventions:
-  technical_artifacts_language: en
+  technical_artifacts_language: es
   source_control:
     commit_style: conventional-commits
 

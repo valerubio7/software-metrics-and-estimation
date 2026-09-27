@@ -45,6 +45,9 @@ func TestCreateStoryPersistsOnceAndReturnsGeneratedStory(t *testing.T) {
 	if story.Status != "pendiente" || story.StoryPoints != nil || !reflect.DeepEqual(story.AcceptanceCriteria, []string{" Primero ", "Segundo"}) {
 		t.Errorf("initial state/criteria = %#v, want pending, nil points and ordered criteria", story)
 	}
+	if story.EstimatedHours != nil || repo.stored.EstimatedHours != nil {
+		t.Errorf("estimated hours = %v/%v, want nil in the returned and persisted story", story.EstimatedHours, repo.stored.EstimatedHours)
+	}
 }
 
 func TestCreateStoryDoesNotWriteInvalidInput(t *testing.T) {

@@ -80,9 +80,11 @@ func TestCreateStoryReturnsPendingUnestimatedStory(t *testing.T) {
 	for key, want := range map[string]string{
 		"id": `"` + storyID + `"`, "project_id": `"5c21cbd4-d9a7-42df-9c3a-c0866f058746"`,
 		"title": `" Registro "`, "description": `"Descripción"`, "priority": `"media"`,
-		"status": `"pendiente"`, "story_points": "null",
+		"status": `"pendiente"`, "story_points": "null", "estimated_hours": "null",
 	} {
-		if string(body[key]) != want {
+		if _, present := body[key]; !present {
+			t.Errorf("%s is missing from the response, want %s", key, want)
+		} else if string(body[key]) != want {
 			t.Errorf("%s = %s, want %s", key, body[key], want)
 		}
 	}
