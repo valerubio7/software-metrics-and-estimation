@@ -6,10 +6,14 @@
 - Artifact store: OpenSpec
 - Mode: Strict TDD
 - Delivery: accepted `size:exception`; one PR boundary from `feat/us-08-create-sprint` to `main`, no child branches
-- Work units: Unit 1 — Sprint domain/application contracts; Unit 2 — PostgreSQL schema and persistence
-- Tasks complete: 1.1–1.6, 2.1–2.4 (10 of 24 total)
+- Work units: Units 1–3 — Sprint domain/application contracts; PostgreSQL schema and persistence; HTTP contract, compatible composition, and readiness
+- Tasks complete: 1.1–4.3 (24 of 24 total)
 - Unit 1 commit: `e9dd5ff feat(sprint): add domain and creation use case`
-- Unit 1 commit review-budget impact: 283 authored lines added, 0 deleted. The maintainer-approved `size:exception` remains the delivery mode for the aggregate PR.
+- Unit 1 commit review-budget impact: 283 authored changed lines (283 additions, 0 deletions).
+- Unit 2 commit: `ed8aac9 feat(sprint): persist sprints in PostgreSQL` — 302 authored changed lines (298 additions, 4 deletions).
+- Unit 3 commit: `d616714 feat(sprint): expose sprint creation over HTTP` — 576 authored changed lines (540 additions, 36 deletions).
+- Aggregate actual authored changed lines: 1,161 additions plus deletions, versus the original 550–750-line forecast. The forecast remains a forecast; `size:exception` was explicitly accepted for one PR from `feat/us-08-create-sprint` to `main`, without reducing scope or tests.
+- Verification: worker and parent independently ran `DOCKER_HOST=unix:///run/user/1000/docker.sock go test ./...` successfully (exit 0); all unit and integration packages passed, with integrations not skipped. Parent `git diff --check` also passed.
 
 ## TDD Cycle Evidence
 
@@ -34,7 +38,7 @@
 ## Deviations and Issues
 
 - None. The implementation preserves the original Sprint Goal, rejects only empty/whitespace-only goals, validates before ID generation and persistence, and performs one repository write.
-- Unit 2 is recorded below; Unit 3 was not performed.
+- Unit 2 and Unit 3 evidence are recorded below; all three work units are complete.
 
 ## Unit 2 — PostgreSQL Schema and Persistence
 
@@ -99,9 +103,19 @@ The initial test-first attempt established only a structural compile/setup RED: 
 | Full suite command and exact result | `DOCKER_HOST=unix:///run/user/1000/docker.sock go test ./...` — exit 0; all unit and integration packages passed; integration packages were not skipped. |
 | Rollback boundary | Revert `internal/sprint/transport/http/`, `internal/api/api.go`, `cmd/api/main.go`, `tests/unit/sprint/transport/`, the Unit 3 changes in `tests/unit/cmd/api/main_test.go`, `tests/integration/sprint/postgres/http_integration_test.go`, the readiness/Sprint scenarios in `tests/integration/story/postgres/http_integration_test.go`, and the new Sprint README section/migration wording. Preserve `000003_create_sprints` and any persisted Sprint data; do not run migration down automatically. |
 | Authored changed-line impact | 576 authored changed lines: 540 additions and 36 deletions, counting tracked diff plus the three new handler/test files. `size:exception` was explicitly accepted for one PR to `main`; no content was compressed or omitted to meet the default 400-line budget. |
-| Commit identity | This evidence is included in the single Unit 3 Conventional Commit; its verified short ID is returned with the implementation report. No remote operations were authorized or performed. |
+| Commit identity | `d616714 feat(sprint): expose sprint creation over HTTP` on `feat/us-08-create-sprint`; local commit only. No remote operations were authorized or performed. |
 
 ### Deviations and Issues — Unit 3
 
 - None from the approved behavior/design. The unit-level RED executions initially failed structurally because the new Sprint handler/composition API did not exist; no behavioral assertion was claimed until the package compiled. One first GREEN integration attempt used a fixed generated Sprint UUID for both create and missing-project requests, which correctly triggered the primary-key constraint before the project FK; the integration harness was corrected to generate unique UUIDs per request, then passed.
 - Migration readiness selection is a pure helper in `internal/api` and is exercised at both unit and real process/PostgreSQL integration layers. The process integration tests construct the required v3 schema directly for controlled readiness states; Sprint persistence integration applies the versioned 000001–000003 SQL migrations.
+- The first Unit 3 test runs failed structurally because the new handler/composition APIs did not exist; no behavioral RED is claimed for those runs. The corrected Docker-backed integration runs and the full suite passed after implementation.
+
+## Final Reconciliation
+
+- All 24 of 24 SDD tasks and all three work units are complete. Final status reports `applyState: all_done`, `nextRecommended: archive`, and no blockers.
+- Aggregate actual authored changed lines across the three work-unit commits are 1,161 (283 + 302 + 576), exceeding the original 550–750 forecast; the approved `size:exception` and single-PR boundary remain unchanged.
+- The parent independently reran `DOCKER_HOST=unix:///run/user/1000/docker.sock go test ./...` (exit 0, all unit/integration packages passed; integrations were not skipped) and `git diff --check` (passed).
+- Rollback boundary remains conservative: do not run migration down automatically; it can delete persisted Sprint data. Only disposable local Testcontainers databases were used; no persistent database or migration down was involved.
+- The three commits are local to `feat/us-08-create-sprint`. No push, PR creation, or other remote operation occurred.
+- Next recommended phase: native SDD archive. Archive has not been performed.

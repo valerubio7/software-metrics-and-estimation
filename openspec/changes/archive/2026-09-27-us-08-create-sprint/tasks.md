@@ -4,7 +4,7 @@
 
 | Campo | Valor |
 |-------|-------|
-| Líneas modificadas estimadas | 550–750 líneas agregadas y eliminadas |
+| Líneas modificadas estimadas | 550–750 líneas agregadas y eliminadas (pronóstico original; actual: 1,161) |
 | Riesgo del límite de 400 líneas | High |
 | Se recomiendan PR encadenados | No |
 | División sugerida | Un único PR con todas las unidades de trabajo; `feat/us-08-create-sprint` → `main` |
@@ -16,7 +16,7 @@ Chained PRs recommended: No
 Chain strategy: size-exception
 400-line budget risk: High
 
-La estimación de 550–750 líneas cruza dominio, aplicación, persistencia, migración, transporte HTTP, composición y arranque, además de pruebas unitarias, pruebas con PostgreSQL real y documentación. Se acepta `size:exception` para entregar todo en un único PR, sin reducir pruebas ni alcance. La decisión sobre el presupuesto de entrega está resuelta; el GO explícito para iniciar la implementación sigue pendiente de la revisión de estos artefactos.
+La estimación original de 550–750 líneas cruzaba dominio, aplicación, persistencia, migración, transporte HTTP, composición y arranque, además de pruebas unitarias, pruebas con PostgreSQL real y documentación. El resultado final suma 1,161 líneas autoradas agregadas y eliminadas: Unidad 1, 283; Unidad 2, 302; Unidad 3, 576. Se acepta `size:exception` para entregar todo en un único PR, sin reducir pruebas ni alcance. El pronóstico original se conserva como pronóstico, no como conteo real.
 
 ### Unidades de trabajo sugeridas
 
@@ -26,7 +26,7 @@ La estimación de 550–750 líneas cruza dominio, aplicación, persistencia, mi
 | 2 | Añadir el esquema 000003 y persistencia PostgreSQL con FK y traducción selectiva de la constraint. | PR único; head: `feat/us-08-create-sprint`; base: `main` | `go test ./tests/integration/sprint/postgres -run 'TestSprintRepository'` | `go test ./tests/integration/sprint/postgres -run 'TestSprintRepository'` con Docker/Testcontainers y PostgreSQL 16. | Revertir el repositorio y sus pruebas; conservar la migración aplicada y sus datos. Ejecutar el down solo con aprobación explícita porque elimina Sprints. |
 | 3 | Exponer y habilitar Sprint de manera compatible, probar escenarios HTTP/versionado y documentar la operación. | PR único; head: `feat/us-08-create-sprint`; base: `main` | `go test ./tests/unit/sprint/transport/http ./tests/unit/cmd/api ./tests/integration/sprint/postgres ./tests/integration/story/postgres` | Pruebas de integración con Docker/Testcontainers para PostgreSQL 16 y harness de proceso API de readiness ya usado por las pruebas existentes. | Retirar la ruta Sprint, la nueva composición/gating, las pruebas asociadas y la sección nueva del README; dejar el esquema y los datos intactos. |
 
-No habrá ramas hijas ni PR hijos: todo el trabajo se entregará en un único PR desde `feat/us-08-create-sprint` directamente a `main`. No se requiere tracker ni diagrama de dependencias de PR hijos. El usuario revisó los artefactos y autorizó explícitamente iniciar `sdd-apply` con la excepción de tamaño aceptada.
+No habrá ramas hijas ni PR hijos: todo el trabajo se entregará en un único PR desde `feat/us-08-create-sprint` directamente a `main`. No se requiere tracker ni diagrama de dependencias de PR hijos. El usuario autorizó explícitamente la excepción de tamaño. El apply está completo; el archive nativo es el siguiente paso recomendado y aún no se realizó.
 
 ## Fase 1: Contratos y lógica de dominio/aplicación
 
