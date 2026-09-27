@@ -128,7 +128,7 @@ func sprintDatabase(t *testing.T) *pgxpool.Pool {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	for _, name := range []string{"000001_create_projects.up.sql", "000003_create_sprints.up.sql"} {
+	for _, name := range []string{"000001_create_projects.up.sql", "000002_create_stories.up.sql", "000003_create_sprints.up.sql"} {
 		migration, err := os.ReadFile(filepath.Join(sprintModuleRoot(t), "internal", "project", "infrastructure", "postgres", "migrations", name))
 		if err != nil {
 			t.Fatalf("read migration %s: %v", name, err)

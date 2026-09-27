@@ -8,7 +8,7 @@ Este servicio permite crear proyectos (US-01) e historias en el Product Backlog 
 - PostgreSQL, con una base de datos disponible para la aplicación
 - La CLI de [`golang-migrate`](https://github.com/golang-migrate/migrate) instalada y disponible como `migrate`
 
-La aplicación **no** ejecuta las migraciones automáticamente y este repositorio no instala una herramienta de migración. Aplique `000001` antes de crear proyectos y `000002_create_stories.up.sql` antes de habilitar o publicar la ruta de historias.
+La aplicación **no** ejecuta las migraciones automáticamente y este repositorio no instala una herramienta de migración. Aplique `000001` antes de crear proyectos, `000002_create_stories.up.sql` antes de habilitar historias y `000003_create_sprints.up.sql` antes de habilitar Sprints.
 
 ## Ejecutar localmente
 
@@ -24,7 +24,7 @@ La aplicación **no** ejecuta las migraciones automáticamente y este repositori
    migrate -path internal/project/infrastructure/postgres/migrations -database "$DATABASE_URL" up
    ```
 
-   Esto aplica `000001_create_projects.up.sql` y `000002_create_stories.up.sql`, que crean `projects` y `stories` con su clave foránea. La ejecución de migraciones es externa a la API: con solo `000001` la creación de proyectos sigue disponible, pero la ruta de historias no se registra hasta que la versión 2 esté aplicada sin estado `dirty`. Un error al consultar la versión tampoco habilita historias. No publique la ruta nueva antes de aplicar `000002`.
+   Esto aplica `000001_create_projects.up.sql`, `000002_create_stories.up.sql` y `000003_create_sprints.up.sql`. La ejecución de migraciones es externa a la API: con solo `000001` la creación de proyectos sigue disponible; una versión 2 limpia habilita historias, y una versión 3 limpia habilita historias y Sprints. Un estado `dirty` o un error al consultar la versión no habilita rutas que dependen de migraciones. Aplique cada migración antes de publicar su ruta.
 
 3. De forma opcional, elija la dirección de escucha HTTP. Su valor predeterminado es `:8080` cuando `HTTP_ADDR` no está configurada:
 
@@ -73,6 +73,18 @@ La respuesta `201 Created` tiene esta forma (el `id` se genera en el servidor):
 ```
 
 Una forma JSON inválida devuelve `400`, datos inválidos `422` y un proyecto inexistente `404`; los fallos inesperados devuelven `500` sin detalles internos. La FK impide historias huérfanas. Antes de revertir la migración `000002` evalúe y preserve los datos existentes: su `down` elimina la tabla `stories` y todas las historias almacenadas, no los proyectos.
+
+## Crear un Sprint
+
+La ruta `POST /projects/{project_id}/sprints` crea un Sprint para un proyecto existente. Requiere `000003_create_sprints.up.sql` aplicada y limpia; con versión 2 limpia la API conserva historias, pero no registra esta ruta. Envíe únicamente `sprint_goal`; el UUID se genera en el servidor y la operación no asigna historias.
+
+```sh
+curl -i -X POST http://localhost:8080/projects/5c21cbd4-d9a7-42df-9c3a-c0866f058746/sprints \
+  -H 'Content-Type: application/json' \
+  -d '{"sprint_goal":"Entregar el flujo inicial de métricas"}'
+```
+
+La respuesta `201 Created` contiene `id`, `project_id` y `sprint_goal`. JSON malformado o con campos desconocidos devuelve `400`; UUID inválido o Sprint Goal ausente/blanco devuelve `422`; proyecto inexistente devuelve `404`; fallos inesperados devuelven `500` sin detalles internos. El Sprint Goal se guarda tal como fue enviado. No ejecute `000003_create_sprints.down.sql` como rollback automático: elimina la tabla `sprints` y todos los Sprints persistidos.
 
 ## Pruebas
 

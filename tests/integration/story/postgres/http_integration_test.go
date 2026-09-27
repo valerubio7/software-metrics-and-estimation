@@ -17,31 +17,34 @@ import (
 
 	"github.com/valerubio7/software-metrics-and-estimation/internal/api"
 	projectpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/project/infrastructure/postgres"
+	sprintpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/sprint/infrastructure/postgres"
 	storypostgres "github.com/valerubio7/software-metrics-and-estimation/internal/story/infrastructure/postgres"
 )
 
 func TestAPIStartupRoutesFollowMigrationState(t *testing.T) {
 	for _, scenario := range []struct {
-		name      string
-		migration string
-		storyCode int
+		name       string
+		migration  string
+		storyCode  int
+		sprintCode int
 	}{
-		{"version one", `DROP TABLE stories; CREATE TABLE schema_migrations (version bigint NOT NULL, dirty boolean NOT NULL); INSERT INTO schema_migrations VALUES (1, false)`, http.StatusNotFound},
-		{"version two", `CREATE TABLE schema_migrations (version bigint NOT NULL, dirty boolean NOT NULL); INSERT INTO schema_migrations VALUES (2, false)`, http.StatusCreated},
-		{"dirty", `CREATE TABLE schema_migrations (version bigint NOT NULL, dirty boolean NOT NULL); INSERT INTO schema_migrations VALUES (2, true)`, http.StatusNotFound},
-		{"lookup error", `SELECT 1`, http.StatusNotFound},
+		{"version one", `DROP TABLE stories; CREATE TABLE schema_migrations (version bigint NOT NULL, dirty boolean NOT NULL); INSERT INTO schema_migrations VALUES (1, false)`, http.StatusNotFound, http.StatusNotFound},
+		{"version two", `CREATE TABLE schema_migrations (version bigint NOT NULL, dirty boolean NOT NULL); INSERT INTO schema_migrations VALUES (2, false)`, http.StatusCreated, http.StatusNotFound},
+		{"version three", `CREATE TABLE sprints (id UUID PRIMARY KEY, project_id UUID NOT NULL CONSTRAINT sprints_project_id_fkey REFERENCES projects(id) ON DELETE RESTRICT, sprint_goal TEXT NOT NULL); CREATE TABLE schema_migrations (version bigint NOT NULL, dirty boolean NOT NULL); INSERT INTO schema_migrations VALUES (3, false)`, http.StatusCreated, http.StatusCreated},
+		{"dirty", `CREATE TABLE schema_migrations (version bigint NOT NULL, dirty boolean NOT NULL); INSERT INTO schema_migrations VALUES (3, true)`, http.StatusNotFound, http.StatusNotFound},
+		{"lookup error", `SELECT 1`, http.StatusNotFound, http.StatusNotFound},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			pool := storyDatabase(t)
 			if _, err := pool.Exec(context.Background(), scenario.migration); err != nil {
 				t.Fatalf("prepare migration state: %v", err)
 			}
-			testAPIStartupRoutes(t, pool.Config().ConnString(), scenario.storyCode)
+			testAPIStartupRoutes(t, pool.Config().ConnString(), scenario.storyCode, scenario.sprintCode)
 		})
 	}
 }
 
-func testAPIStartupRoutes(t *testing.T, databaseURL string, storyCode int) {
+func testAPIStartupRoutes(t *testing.T, databaseURL string, storyCode, sprintCode int) {
 	t.Helper()
 	binary := filepath.Join(t.TempDir(), "api")
 	build := exec.Command("go", "build", "-o", binary, "./cmd/api")
@@ -105,11 +108,39 @@ func testAPIStartupRoutes(t *testing.T, databaseURL string, storyCode int) {
 			if story.StatusCode != storyCode {
 				t.Errorf("story status = %d, want %d", story.StatusCode, storyCode)
 			}
+			sprint, err := client.Post("http://"+address+"/projects/"+project.ID+"/sprints", "application/json", strings.NewReader(`{"sprint_goal":"Release metrics"}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			sprint.Body.Close()
+			if sprint.StatusCode != sprintCode {
+				t.Errorf("sprint status = %d, want %d", sprint.StatusCode, sprintCode)
+			}
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatal("API did not serve projects for migration state")
+}
+
+func TestSprintHTTPWithMigratedPostgres(t *testing.T) {
+	pool := storyDatabase(t)
+	if _, err := pool.Exec(context.Background(), `CREATE TABLE sprints (id UUID PRIMARY KEY, project_id UUID NOT NULL CONSTRAINT sprints_project_id_fkey REFERENCES projects(id) ON DELETE RESTRICT, sprint_goal TEXT NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	insertProject(t, pool, projectID)
+	handler := api.NewHTTPHandlerWithDependencies(projectpostgres.NewPostgresProjectRepository(pool), api.NewProjectID, api.HTTPDependencies{
+		Stories: &api.StoryDependencies{Repository: storypostgres.NewPostgresStoryRepository(pool), GenerateID: api.NewProjectID},
+		Sprints: &api.SprintDependencies{Repository: sprintpostgres.NewPostgresSprintRepository(pool), GenerateID: api.NewProjectID},
+	})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/projects/"+projectID+"/sprints", strings.NewReader(`{"sprint_goal":"Deliver"}`)))
+	if response.Code != http.StatusCreated {
+		t.Fatalf("sprint status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if got := storyCount(t, pool); got != 0 {
+		t.Errorf("creating sprint assigned %d stories", got)
+	}
 }
 
 func TestStoryHTTPWithMigratedPostgres(t *testing.T) {
