@@ -100,15 +100,15 @@ func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, ge
 	mux := http.NewServeMux()
 	mux.Handle("POST /projects", transporthttp.NewCreateProjectHandler(useCase))
 	mux.Handle("PUT /projects/{project_id}", transporthttp.NewUpdateProjectHandler(updateUseCase))
-	if len(stories) != 0 {
-		storyUseCase := storyapplication.NewCreateStoryUseCase(stories[0].Repository, stories[0].GenerateID)
+	if dependencies.Stories != nil {
+		storyUseCase := storyapplication.NewCreateStoryUseCase(dependencies.Stories.Repository, dependencies.Stories.GenerateID)
 		mux.Handle("POST /projects/{project_id}/stories", storyhttp.NewCreateStoryHandler(storyUseCase))
-		if stories[0].Updater != nil {
-			updateStoryUseCase := storyapplication.NewUpdateStoryUseCase(stories[0].Updater)
+		if dependencies.Stories.Updater != nil {
+			updateStoryUseCase := storyapplication.NewUpdateStoryUseCase(dependencies.Stories.Updater)
 			mux.Handle("PUT /projects/{project_id}/stories/{story_id}", storyhttp.NewUpdateStoryHandler(updateStoryUseCase))
 		}
-		if stories[0].Lister != nil {
-			listStoriesUseCase := storyapplication.NewListStoriesUseCase(stories[0].Lister)
+		if dependencies.Stories.Lister != nil {
+			listStoriesUseCase := storyapplication.NewListStoriesUseCase(dependencies.Stories.Lister)
 			mux.Handle("GET /projects/{project_id}/stories", storyhttp.NewListStoriesHandler(listStoriesUseCase))
 		}
 	}
