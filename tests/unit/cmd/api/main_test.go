@@ -12,6 +12,7 @@ import (
 	"github.com/valerubio7/software-metrics-and-estimation/internal/api"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/application"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/domain"
+	sprintdomain "github.com/valerubio7/software-metrics-and-estimation/internal/sprint/domain"
 	storyapplication "github.com/valerubio7/software-metrics-and-estimation/internal/story/application"
 	storydomain "github.com/valerubio7/software-metrics-and-estimation/internal/story/domain"
 )
