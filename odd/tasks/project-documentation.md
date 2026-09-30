@@ -47,7 +47,7 @@ Documentar la arquitectura y las seis US implementadas, el equipo confirmado, la
   - Issue aprobada: [#67](https://github.com/valerubio7/software-metrics-and-estimation/issues/67); creación y cuerpo confirmados por lectura posterior.
   - Estrategia elegida por el usuario: `exception-ok`, PR único a main con `type:docs` y `size:exception`; la consigna original de 400 líneas explica gran parte del tamaño.
   - Aceptación: cambios exactos guardados, rama publicada, PR enlazado a #67; no merge ni borrado de rama.
-  - Estado: en curso.
+  - Estado: en curso; primer commit `1d92cb6` (+740/−3). Verificador `muo8ktn7-9-gq40` detectó un LF final añadido a la consigna. Diagnóstico exacto: quitar ese único byte restituye el hash original; restaurado sin modificar contenido. Publicación pausada hasta reconfirmar bytes guardados.
 
 ## Verificación y siguiente paso
 
