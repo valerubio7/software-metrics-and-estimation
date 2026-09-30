@@ -2,7 +2,7 @@ project:
   name: software-metrics-and-estimation
   description: Agile project management application focused on software metrics, estimation, effort tracking, defects, dashboards, and reports.
   primary_language: go
-  current_stage: initial-skeleton
+  current_stage: mvp-parcial-backend
 
 sdd:
   artifact_store: openspec
@@ -34,5 +34,8 @@ conventions:
     commit_style: conventional-commits
 
 notes:
-  - The repository is currently a skeletal Go module with empty domain package directories.
-  - User stories are tracked as GitHub issues and epics are represented as GitHub milestones.
+  - MVP parcial de backend Go/PostgreSQL con módulos de proyectos, historias y Sprints; no representa la aplicación completa de la consigna.
+  - "Implementadas: US-01, US-02, US-05, US-06, US-07 y US-08 (crear/modificar proyectos e historias, consultar backlog y crear Sprint)."
+  - Las historias se siguen como issues de GitHub y las épicas se representan como milestones.
+  - Las migraciones se aplican externamente; schema_migrations condiciona la disponibilidad de rutas opcionales al arrancar.
+  - Hay dos migraciones numeradas 000003 en el directorio compartido; su reconciliación y la validación del despliegue siguen pendientes.
