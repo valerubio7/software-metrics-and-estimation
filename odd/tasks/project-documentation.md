@@ -42,12 +42,14 @@ Documentar la arquitectura y las seis US implementadas, el equipo confirmado, la
   - Límites: no consulta nueva a GitHub ni suite Go/cobertura/despliegue; `git diff --check` no incluye documentos sin seguimiento. Código, SQL y README raíz intactos.
   - Commit: pendiente de autorización; no realizado.
 
-- [ ] DOC-04 — Guardar, publicar y abrir un PR documental único.
+- [x] DOC-04 — Guardar, publicar y abrir un PR documental único.
   - Ruta: operaciones Git/GitHub inline; verificación independiente del candidato publicado si corresponde.
   - Issue aprobada: [#67](https://github.com/valerubio7/software-metrics-and-estimation/issues/67); creación y cuerpo confirmados por lectura posterior.
   - Estrategia elegida por el usuario: `exception-ok`, PR único a main con `type:docs` y `size:exception`; la consigna original de 400 líneas explica gran parte del tamaño.
   - Aceptación: cambios exactos guardados, rama publicada, PR enlazado a #67; no merge ni borrado de rama.
-  - Estado: en curso; primer commit `1d92cb6` (+740/−3). Verificador `muo8ktn7-9-gq40` detectó un LF final añadido a la consigna. Diagnóstico exacto: quitar ese único byte restituye el hash original; restaurado sin modificar contenido. Publicación pausada hasta reconfirmar bytes guardados.
+  - Estado: publicado. Commits `1d92cb6` y `d5cc1c2`; este último preserva el hash original de la consigna tras quitar un LF final añadido. Verificador `muo8p2u8-a-qg8t`: PASS, bytes de archivo y commit idénticos, worktree limpio, 9 archivos +740/−3 y diff sin findings.
+  - PR: [#68](https://github.com/valerubio7/software-metrics-and-estimation/pull/68), abierto hacia main, cuerpo/issue/labels confirmados. No aparecen checks automatizados en `statusCheckRollup`; no se afirma CI aprobada.
+  - Rama publicada; este registro se guarda en un commit de cierre documental. PR pendiente de revisión; no merge ni eliminación de rama.
 
 ## Verificación y siguiente paso
 
@@ -55,4 +57,4 @@ Documentar la arquitectura y las seis US implementadas, el equipo confirmado, la
 - Verificación funcional previa, no repetida para este trabajo: `go test ./...` y `go vet ./...` pasaron en `56f5b49`; integración historias/sprints sin caché, proyectos con caché.
 - Evaluación nativa read-only: riesgo no evaluable por archivos sin seguimiento; RDD off y plan devuelto exige verificador independiente. No se inició revisión nativa ni se modificó autoridad.
 - DOC-03 completado sin defectos concretos; 275 líneas en los seis documentos nuevos y consigna de 400 líneas preservada. Los documentos siguen sin seguimiento de Git.
-- Siguiente paso: DOC-04 autorizado; crear commits, publicar rama y abrir PR. La revisión humana de los documentos y confirmación de Sprint Goal/capacidad siguen pendientes. README, manual, pruebas/informe, review y retrospectiva continúan postergados.
+- Siguiente paso: revisar PR #68 y autorizar su integración por separado. Tras integrar puede eliminarse la rama. Confirmación de Sprint Goal/capacidad y documentación postergada siguen pendientes.
