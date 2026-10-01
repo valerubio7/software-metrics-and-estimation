@@ -12,6 +12,7 @@ import (
 	"github.com/valerubio7/software-metrics-and-estimation/internal/api"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/application"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/domain"
+	sprintdomain "github.com/valerubio7/software-metrics-and-estimation/internal/sprint/domain"
 	storyapplication "github.com/valerubio7/software-metrics-and-estimation/internal/story/application"
 	storydomain "github.com/valerubio7/software-metrics-and-estimation/internal/story/domain"
 )
@@ -37,7 +38,22 @@ func (r *fakeProjectRepository) Update(_ context.Context, project domain.Project
 }
 
 type fakeStoryRepository struct {
-	stories []storydomain.Story
+	stories     []storydomain.Story
+	assignments int
+}
+
+func (r *fakeStoryRepository) AssignStories(_ context.Context, _ string, _ []string) error {
+	r.assignments++
+	return nil
+}
+
+type projectScopedFakeStoryAssigner struct {
+	*fakeStoryRepository
+}
+
+func (r projectScopedFakeStoryAssigner) AssignStoriesForProject(_ context.Context, _, _ string, _ []string) error {
+	r.assignments++
+	return nil
 }
 
 type fakeSprintRepository struct {
@@ -89,23 +105,49 @@ func TestSprintCompositionIsOptionalAndPreservesExistingRoutes(t *testing.T) {
 	}
 }
 
+func TestAssignmentRouteCompositionRequiresAssigner(t *testing.T) {
+	projectID := updateProjectID
+	sprintID := "b2a6a455-06e2-41ee-b011-7462c71375a0"
+	stories := &fakeStoryRepository{}
+	base := api.NewHTTPHandlerWithDependencies(&fakeProjectRepository{}, func() string { return updateStoryID }, api.HTTPDependencies{
+		Stories: &api.StoryDependencies{Repository: stories, GenerateID: func() string { return updateStoryID }},
+	})
+	path := "/projects/" + projectID + "/sprints/" + sprintID + "/stories"
+	missing := httptest.NewRecorder()
+	base.ServeHTTP(missing, httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"story_ids":["`+updateStoryID+`"]}`)))
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("route without assigner = %d", missing.Code)
+	}
+
+	handler := api.NewHTTPHandlerWithDependencies(&fakeProjectRepository{}, func() string { return updateStoryID }, api.HTTPDependencies{
+		Stories: &api.StoryDependencies{Repository: stories, GenerateID: func() string { return updateStoryID }, Assigner: projectScopedFakeStoryAssigner{fakeStoryRepository: stories}},
+	})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"story_ids":["`+updateStoryID+`"]}`)))
+	if response.Code != http.StatusCreated || stories.assignments != 1 {
+		t.Fatalf("assignment route = %d, calls = %d; body = %s", response.Code, stories.assignments, response.Body.String())
+	}
+}
+
 func TestMigrationReadinessSelectsRoutesIndependently(t *testing.T) {
 	for _, scenario := range []struct {
-		name    string
-		version int
-		dirty   bool
-		lookup  error
-		stories bool
-		sprints bool
+		name       string
+		version    int
+		dirty      bool
+		lookup     error
+		stories    bool
+		sprints    bool
+		assignment bool
 	}{
 		{name: "clean v2", version: 2, stories: true},
 		{name: "clean v3", version: 3, stories: true, sprints: true},
+		{name: "clean v6", version: 6, stories: true, sprints: true, assignment: true},
 		{name: "dirty v3", version: 3, dirty: true},
 		{name: "lookup error", lookup: context.DeadlineExceeded},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			readiness := api.ResolveMigrationReadiness(scenario.version, scenario.dirty, scenario.lookup)
-			if readiness.Stories != scenario.stories || readiness.Sprints != scenario.sprints || !readiness.Projects {
+			if readiness.Stories != scenario.stories || readiness.Sprints != scenario.sprints || readiness.Assignment != scenario.assignment || !readiness.Projects {
 				t.Fatalf("readiness = %+v", readiness)
 			}
 		})

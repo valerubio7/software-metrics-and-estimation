@@ -18,7 +18,6 @@ import (
 
 	"github.com/valerubio7/software-metrics-and-estimation/internal/api"
 	projectpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/project/infrastructure/postgres"
-	sprintpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/sprint/infrastructure/postgres"
 	storypostgres "github.com/valerubio7/software-metrics-and-estimation/internal/story/infrastructure/postgres"
 )
 
@@ -32,7 +31,7 @@ func TestAPIStartupRoutesFollowMigrationState(t *testing.T) {
 		lists     bool
 		logged    string
 	}{
-		{"version one", `DROP TABLE stories; ` + schemaTable + `INSERT INTO schema_migrations VALUES (1, false)`, http.StatusNotFound, false, false, "story creation unavailable"},
+		{"version one", `DROP TABLE sprint_stories; DROP TABLE stories; ` + schemaTable + `INSERT INTO schema_migrations VALUES (1, false)`, http.StatusNotFound, false, false, "story creation unavailable"},
 		{"version two", schemaTable + `INSERT INTO schema_migrations VALUES (2, false)`, http.StatusCreated, false, false, "story update unavailable"},
 		{"version three", schemaTable + `INSERT INTO schema_migrations VALUES (3, false)`, http.StatusCreated, true, false, "story backlog unavailable"},
 		{"version four", schemaTable + `INSERT INTO schema_migrations VALUES (4, false)`, http.StatusCreated, true, true, "story creation, update and backlog available"},

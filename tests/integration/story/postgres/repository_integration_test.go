@@ -1182,7 +1182,10 @@ func storyDatabase(t *testing.T) *pgxpool.Pool {
 		"000001_create_projects.up.sql",
 		"000002_create_stories.up.sql",
 		"000003_add_story_estimated_hours.up.sql",
+		"000003_create_sprints.up.sql",
 		"000004_add_story_creation_sequence.up.sql",
+		"000005_create_sprint_stories.up.sql",
+		"000006_add_sprint_closed.up.sql",
 	} {
 		applyStoryMigration(t, pool, name)
 	}

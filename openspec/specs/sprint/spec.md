@@ -6,6 +6,10 @@ Definir la creación de un Sprint asociado a un proyecto existente, registrar su
 
 ## Requisitos
 
+### Requisito: Representar si un Sprint está cerrado
+
+El sistema MUST almacenar `is_closed` como `BOOLEAN NOT NULL DEFAULT false` en cada Sprint. Los Sprints creados antes de la migración MUST conservarse como abiertos mediante el valor predeterminado. La asignación de historias MUST rechazar un Sprint con `is_closed = true`.
+
 ### Requisito: Crear un Sprint para un proyecto existente
 
 El sistema MUST ofrecer `POST /projects/{project_id}/sprints` para crear un Sprint asociado al proyecto identificado por `project_id`. Ante una solicitud válida, MUST persistir exactamente un Sprint con ese proyecto y el Sprint Goal proporcionado, generar su UUID en el servidor y devolver el identificador y los datos registrados del Sprint. La operación MUST NOT requerir ni realizar la asignación de historias.
