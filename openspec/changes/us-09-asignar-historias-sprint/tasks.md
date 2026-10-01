@@ -21,7 +21,7 @@ El usuario rechazó una excepción de tamaño, eligió PRs encadenados y selecci
 |------:|-------------|--------|------------------|--------------|
 | 1 | `feat/us-09-asignar-historias-sprint-01-core` | 1–2 | Contrato de aplicación y coordinación del caso de uso con pruebas unitarias; sin transporte ni persistencia PostgreSQL. Meta: ≤200 líneas. | Ninguna; PR #1 apunta a la rama tracker HU-09. |
 | 2 | `feat/us-09-asignar-historias-sprint-02-persistence` | 3–4 | Migración, asociación persistida, transacción/rollback e integración PostgreSQL. Meta: ≤300 líneas. | PR #2 apunta al PR #1. |
-| 3 | `feat/us-09-asignar-historias-sprint-03-http` | 5–9 | Handler, composición, gating, reglas de cierre conforme a US-12, regresión y README. Meta: ≤350 líneas. | PR #3 apunta al PR #2; la fuente de verdad de cierre queda establecida por decisión del usuario como `is_closed`. |
+| 3 | `feat/us-09-asignar-historias-sprint-03-http` | 5–9 | Handler, composición, gating, regla de cierre basada en `is_closed`, regresión y README. Meta: ≤350 líneas. | PR #3 apunta al PR #2; la fuente de verdad de cierre es `is_closed`, establecida por decisión expresa del usuario. |
 
 Las cifras por corte son metas preliminares, no conteos medidos. Si una unidad excede 400 líneas tras una única división honesta, detener esa unidad y solicitar decisión; no crear un PR sobredimensionado ni alterar el alcance aprobado. La rama tracker solo integra hijos después de revisión y no se fusiona a `main` hasta completar la cadena.
 
@@ -46,7 +46,7 @@ Las cifras por corte son metas preliminares, no conteos medidos. Si una unidad e
 
 ## Límites de aplicación
 
-La estrategia de entrega está resuelta por decisión del usuario: `auto-chain` con `feature-branch-chain`; no se requiere `size:exception` mientras cada PR se mantenga dentro de 400 líneas modificadas. Antes de cada nuevo corte, medir el diff contra su rama padre y detenerse si excede el límite después de una división honesta. Mantener la pertenencia al Product Backlog y el estado de historias; no crear representación de cierre. La migración debe aplicarse externamente, no desde el servicio; su rollback puede borrar datos de planificación y no es un mecanismo rutinario de reversión. Los PRs tracker/hijos no se publican ni crean sin autorización explícita del usuario.
+La estrategia de entrega está resuelta por decisión del usuario: `auto-chain` con `feature-branch-chain`; no se requiere `size:exception` mientras cada PR se mantenga dentro de 400 líneas modificadas. Antes de cada nuevo corte, medir el diff contra su rama padre y detenerse si excede el límite después de una división honesta. Mantener la pertenencia al Product Backlog y el estado de historias; no crear una representación de cierre distinta de `is_closed`. La migración debe aplicarse externamente, no desde el servicio; su rollback puede borrar datos de planificación y no es un mecanismo rutinario de reversión. Los PRs tracker/hijos no se publican ni crean sin autorización explícita del usuario.
 
 ### Decisión de cierre
 

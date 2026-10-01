@@ -46,7 +46,7 @@ POST con IDs ──> handler: método, JSON estricto y UUIDs
                     │
                     ▼
      repositorio: transacción, comprobar Sprint/historias/proyecto,
-                 asociación previa y cierre US-12 si ya está definido
+                 asociación previa y `is_closed`
                     │
            todas válidas ──> insertar asociaciones y commit
            cualquier error ──> rollback completo
@@ -80,7 +80,7 @@ Por decisión explícita del usuario para HU-09 (#37), se reemplaza la dependenc
 ## Pruebas y garantías
 
 - Una y varias historias válidas quedan vinculadas en una operación y conservan proyecto, Product Backlog y estado.
-- Sprint ausente, historia ausente, proyecto distinto, ID repetido, asociación previa o cierre conforme a US-12 rechazan toda la selección.
+- Sprint ausente, historia ausente, proyecto distinto, ID repetido, asociación previa o `is_closed = true` rechazan toda la selección.
 - Un error en cualquier inserción, constraint o commit revierte todos los vínculos del lote.
 - Dos solicitudes concurrentes no pueden crear duplicados ni dejar medias asignaciones; la restricción única y la transacción sostienen esta garantía.
 - Errores de base de datos no reconocidos se propagan como fallo interno y no se disfrazan de not-found/conflicto.
@@ -97,4 +97,4 @@ Aplicar la migración mediante el mecanismo externo existente antes de habilitar
 1. **Cierre de Sprint**: resuelto por la decisión autorizada; `is_closed` es la fuente de verdad.
 2. **Integridad de mismo proyecto**: confirmar si las FKs compuestas requieren ampliar claves únicas existentes o si la transacción más las FKs actuales ofrece la garantía necesaria sin carrera. Preferir integridad impuesta por base cuando sea compatible.
 3. **Respuesta de éxito y clasificación pública de conflictos**: fijar un contrato único al implementar, manteniendo patrones HTTP existentes y sin alterar la semántica de atomicidad.
-4. **Revisión de alcance**: conservar la selección single-pr aprobada y el presupuesto de 400 líneas; si el cambio previsto presenta riesgo significativo de excederlo, pausar para decisión bajo `ask-on-risk`, sin inferir estrategia de cadena ni excepción.
+4. **Revisión de alcance**: respetar `auto-chain` con `feature-branch-chain` y el presupuesto acordado de 400 líneas por PR; no introducir excepción de tamaño ni exceder el umbral.

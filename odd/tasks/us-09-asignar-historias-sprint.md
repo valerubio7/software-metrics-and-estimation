@@ -1,6 +1,6 @@
 # ODD: Asignar historias a un Sprint (HU-09)
 
-**Estado:** HU-09 implementada; corte 3 completado con la decisión autorizada de reemplazar la dependencia US-12 por `sprints.is_closed BOOLEAN NOT NULL DEFAULT false`. Verificación final pendiente.
+**Estado:** HU-09 completada, verificada, commiteada y issue #37 cerrada. Los artefactos SDD fueron reconciliados con la decisión final de no depender de US-12 y usar `sprints.is_closed BOOLEAN NOT NULL DEFAULT false`.
 
 ## Objetivo
 
@@ -15,8 +15,8 @@ Permitir seleccionar una o varias historias del Product Backlog del proyecto de 
 - No se asignan historias a Sprints cerrados. Para HU-09 la fuente de verdad es `sprints.is_closed BOOLEAN NOT NULL DEFAULT false`.
 - SDD artefactos en español; strict TDD, `go test ./...`.
 - Rama feature/tracker: `feat/us-09-asignar-historias-sprint`, creada desde `main` en `3e26553`.
-- Entrega: `auto-chain`, estrategia `feature-branch-chain`, máximo 400 líneas modificadas por PR. Sin `size:exception`.
-- No push, creación de PR, merge ni commit sin autorización explícita.
+- Entrega originalmente prevista: `auto-chain`, estrategia `feature-branch-chain`, máximo 400 líneas por PR, sin `size:exception`.
+- El usuario autorizó commit y cierre de issue. No se hizo push ni se creó PR.
 
 ## Artefactos SDD
 
@@ -49,14 +49,14 @@ Permitir seleccionar una o varias historias del Product Backlog del proyecto de 
 - Testcontainers PostgreSQL 16 y unit tests pasaron; verificación independiente pasó. 287 líneas añadidas, debajo de meta 300.
 - Sin commit.
 
-### Corte 3 — HTTP, integración, regla de cierre y documentación — IMPLEMENTADO
+### Corte 3 — HTTP, integración, regla de cierre y documentación — COMPLETO
 
-- Tareas SDD: 5–9; verificación final `go test ./...` pendiente.
+- Tareas SDD: 5–9; verificación final independiente completada.
 - El usuario autorizó reemplazar la dependencia US-12 (#40) con `is_closed BOOLEAN NOT NULL DEFAULT false`.
 - Se añadió handler POST, wiring de API y disponibilidad desde migración 000006; PostgreSQL rechaza cerrado antes de cualquier escritura.
 - Se agregaron pruebas HTTP y de integración del guardado cerrado. El primer RED fue observado: faltaban `ErrSprintClosed` y `NewAssignStoriesHandler`.
 - GREEN enfocado: `go test ./tests/unit/story/transport/http ./tests/unit/story/application ./tests/unit/cmd/api` pasó.
-- Sin commit, push, PR ni cierre del issue.
+- Commit: `3c71430` (`feat(story): assign backlog stories to sprints`). Issue #37 cerrada. Worktree limpio.
 
 ### Regresión del verificador: proyecto de ruta — COMPLETA
 

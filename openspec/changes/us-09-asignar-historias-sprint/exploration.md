@@ -4,7 +4,7 @@
 
 El alcance confirmado de HU-09 (#37) es asociar historias ya existentes del Product Backlog a un Sprint existente del mismo proyecto, de modo que queden disponibles como trabajo planificado del Sprint. La operación puede recibir varias historias seleccionadas, pero debe ser atómica: si una es inválida, no se asigna ninguna. Las historias permanecen en el Product Backlog; la asignación agrega el vínculo al Sprint, no las retira ni inventa un nuevo estado.
 
-La validación de Sprint cerrado depende explícitamente de US-12 (#40). No hay que inventar ni anticipar una representación del estado cerrado. Las decisiones y criterios aquí reflejan contexto autorizado del usuario e issue; el esquema OpenSpec existente aporta las convenciones de historias y Sprint. No se consultó GitHub ni la red durante esta exploración.
+En la decisión inicial, la validación del cierre se había condicionado a US-12 (#40). Esa decisión fue reemplazada después por autorización explícita del usuario: HU-09 incorpora `sprints.is_closed BOOLEAN NOT NULL DEFAULT false` como fuente de verdad y rechaza asignaciones cuando el valor es `true`. Este artefacto se reconcilia con la decisión final; no se depende de que US-12 esté implementada.
 
 ## Estado actual del contexto OpenSpec
 
@@ -19,20 +19,20 @@ La validación de Sprint cerrado depende explícitamente de US-12 (#40). No hay 
 - Seleccionar un Sprint existente y una o varias historias existentes del Product Backlog del mismo proyecto.
 - Asociar las historias seleccionadas al Sprint como trabajo planificado, conservándolas en el Product Backlog.
 - Rechazar historias de otro proyecto y duplicados ya asociados al mismo Sprint.
-- No permitir agregar historias a un Sprint cerrado; la comprobación depende de la capacidad/estado que defina US-12.
+- No permitir agregar historias a un Sprint con `is_closed = true`; HU-09 incorpora el campo con valor predeterminado `false`.
 - Aplicar atomicidad al conjunto: ante cualquier selección inválida, no asociar ninguna historia de la solicitud.
 
 ## Fuera de alcance
 
-No crear historias (US-05), crear Sprints (US-08), descomponer historias en tareas (US-10), registrar finalización (US-11), ni definir cierre o representación de estado del Sprint (US-12). No se define aquí cómo consultar Sprints ni se asignan estados nuevos a las historias.
+No crear historias (US-05), crear Sprints (US-08), descomponer historias en tareas (US-10), registrar finalización (US-11) ni implementar la operación de cierre de Sprint (US-12). HU-09 sí define el indicador `is_closed` que necesita para impedir nuevas asignaciones; US-12 podrá implementar el cierre usando ese indicador. No se define aquí cómo consultar Sprints ni se asignan estados nuevos a las historias.
 
 ## Implicaciones y riesgos para fases posteriores
 
 - La persistencia debe representar una asociación historia–Sprint sin borrar la relación historia–proyecto ni sacar la historia del Product Backlog.
 - La pertenencia al mismo proyecto y la ausencia de duplicados deben verificarse para la selección completa; el fallo de una validación no debe dejar asignaciones parciales.
-- La regla de Sprint cerrado queda condicionada a US-12. Hasta que exista esa definición, no asumir nombre de campo, enum, endpoint o comportamiento técnico para determinar cierre.
+- La representación acordada para HU-09 es `sprints.is_closed BOOLEAN NOT NULL DEFAULT false`; una migración reversible agrega el campo y la asignación consulta su valor transaccionalmente.
 - La selección múltiple y la atomicidad deben reflejarse conjuntamente en el contrato de operación y en las pruebas; los detalles de API, almacenamiento y errores quedan para fases posteriores.
-- El presupuesto de revisión es 400 líneas y la estrategia de entrega confirmada es `single-pr`; cualquier riesgo sobre el presupuesto debe resolverse según el preflight antes de implementar.
+- El presupuesto máximo acordado es 400 líneas por PR; posteriormente el usuario eligió `auto-chain` con `feature-branch-chain`, sin excepción de tamaño. El plan vigente está en `tasks.md`.
 
 ## Estado de la operación SDD
 

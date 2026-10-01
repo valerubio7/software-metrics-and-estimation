@@ -30,11 +30,11 @@ Verificaciones:
 - `git diff --check` en los dos archivos nuevos — sin hallazgos.
 - Conteo de código + pruebas añadido en este corte: 140 líneas (59 producción + 81 pruebas), calculado contra `/dev/null` por ser archivos nuevos sin seguimiento. Dentro de la meta de 200 y del máximo de 400 líneas del PR.
 
-## Diseño, desviaciones y pendientes
+## Registro histórico del corte 1 (estado vigente actualizado posteriormente)
 
-La aplicación valida lista no vacía y ausencia de IDs repetidos antes de llamar al puerto una sola vez con el lote completo. El puerto `StorySprintAssigner` establece como contrato que la persistencia implemente atomicidad y verifique existencia, proyecto y asociación previa. No se añadió acoplamiento a PostgreSQL ni se cambian historias, pertenencia al backlog o estado. La regla de Sprint cerrado permanece fuera de este corte, conforme a la dependencia US-12.
+La aplicación valida lista no vacía y ausencia de IDs repetidos antes de llamar al puerto una sola vez con el lote completo. El puerto `StorySprintAssigner` establece como contrato que la persistencia implemente atomicidad y verifique existencia, proyecto y asociación previa. No se añadió acoplamiento a PostgreSQL ni se cambian historias, pertenencia al backlog o estado. En ese corte, la regla de Sprint cerrado permanecía fuera de alcance. La decisión posterior del usuario reemplazó la dependencia provisional de US-12 con `sprints.is_closed BOOLEAN NOT NULL DEFAULT false`; los registros posteriores documentan su implementación y verificación.
 
-No se hicieron cambios a tareas fuera del corte. Las líneas pendientes exactas de tasks.md:
+No se hicieron cambios a tareas fuera del corte. Las tareas que estaban pendientes en ese momento (registro histórico; el estado vigente está en `tasks.md` y al final de este archivo):
 
 - [ ] 3. **RED — Persistencia y migración:** en `tests/integration/story/postgres/` añadir pruebas PostgreSQL para asociación válida, proyecto incompatible, inexistencias, duplicados, atomicidad ante fallo de un elemento y unicidad bajo concurrencia cuando el harness permita coordinación determinista; añadir prueba de conservación de proyecto/estado/backlog. Ejecutar `go test ./...` y verificar fallos esperados.
 - [ ] 4. **GREEN — Repositorio transaccional:** crear migración reversible en `internal/project/infrastructure/postgres/migrations/` y persistencia en `internal/story/infrastructure/postgres/`; comprobar elegibilidad y escribir el lote en una transacción única, con rollback completo y traducción específica de constraints. Ejecutar `go test ./...` con PostgreSQL disponible; confirmar que toda prueba de integración aplicable pasa.
@@ -50,7 +50,7 @@ No se hicieron cambios a tareas fuera del corte. Las líneas pendientes exactas 
 
 - Estado nativo v2 consumido antes de editar: cambio `us-09-asignar-historias-sprint`, store `openspec`, `applyState: ready`, `nextRecommended: apply`, sin bloqueadores; `actionContext.mode: repo-local` y raíz autorizada = workspace del repositorio. Proyección recibida reportaba 2/9 tareas hechas. No se inició otra fase ni se hicieron commits/PRs/ramas.
 - Corte #2 autorizado: `auto-chain`, `feature-branch-chain`, tareas 3–4 solamente; presupuesto meta 300 líneas, sin excepción. Resultado del corte: 287 líneas agregadas (repo + fixtures/migración + pruebas), debajo de 300/400. Conteo compuesto de 66 líneas en archivos versionados modificados y 221 líneas en los archivos nuevos de este corte. Artefactos previos de corte #1 no incluidos en este conteo.
-- Tareas 3 y 4 se marcaron `- [x]` en `tasks.md` tras pruebas enfocadas verdes. Quedan 5–9 sin tocar; la tarea 7 sigue dependiendo del contrato US-12.
+- Tareas 3 y 4 se marcaron `- [x]` en `tasks.md` tras pruebas enfocadas verdes. En ese corte, quedaban 5–9 sin tocar; su estado final y la decisión de cierre actualizada se registran en la continuación posterior.
 
 ### TDD Cycle Evidence
 
@@ -74,11 +74,11 @@ No se hicieron cambios a tareas fuera del corte. Las líneas pendientes exactas 
 - `go test ./...` — bloqueado por fallo de compilación preexistente fuera del corte: `internal/api/api.go:103-111`, `undefined: stories`; también impide construir el paquete integrado completo y `cmd/api`. No se tocó `internal/api`.
 - `git diff --check` — limpio.
 - Desviación de diseño: se eligió la opción más fuerte recomendada, con FKs compuestas que hacen imposible insertar una asociación de proyectos distintos incluso fuera del repositorio. No se hizo prueba concurrente de dos lotes solapados con inserción parcial, sí carrera determinista de una asociación duplicada; la transacción comparte esas garantías.
-- La regla de Sprint cerrado no se implementa, ya que depende de US-12 y queda fuera de este corte.
+- En este corte, la regla de Sprint cerrado todavía no se implementaba. Esa limitación fue resuelta en el corte 3 mediante `is_closed`, por decisión posterior del usuario.
 
-### Trabajo restante
+### Trabajo restante al cierre del corte 2 (registro histórico)
 
-Líneas exactas pendientes en `tasks.md`:
+Tareas pendientes en ese momento (registro histórico; el estado vigente se informa al final de este archivo):
 
 - [ ] 5. **RED — Contrato HTTP:** en `tests/unit/story/transport/http/` probar JSON estricto, ruta/UUIDs, lista vacía y repetida, códigos y respuestas para éxito, not-found, conflicto y error interno; confirmar que entrada inválida no invoca el caso de uso. Ejecutar `go test ./...` y observar los fallos esperados.
 - [ ] 6. **GREEN — Endpoint e integración de rutas:** implementar handler en `internal/story/transport/http/`, composición/ruta en `internal/api/` y gating de disponibilidad en `cmd/api/`; fijar un único código y esquema de éxito, y documentar errores deterministas sin exponer errores SQL. Ejecutar `go test ./...`.
@@ -86,9 +86,9 @@ Líneas exactas pendientes en `tasks.md`:
 - [ ] 8. **TRIANGULATE — Garantías y regresión:** ampliar/ajustar `tests/unit/` y `tests/integration/` para demostrar atomicidad de todo rechazo, persistencia completa, ausencia de asignaciones parciales y no regresión de creación/consulta/actualización de historias y creación de Sprint. Ejecutar `go test ./...` con los prerrequisitos de PostgreSQL disponibles y revisar explícitamente los resultados omitidos por falta de Docker.
 - [ ] 9. **REFACTOR — Claridad y documentación:** refactorizar únicamente tras la triangulación, conservando contratos; actualizar `README.md` con ruta, prerequisito de migración, solicitud/respuesta y errores finales. Ejecutar `go test ./...` y verificar que la documentación no prometa asignación a Sprint cerrado si la dependencia US-12 sigue bloqueada.
 
-## Pausa de alcance acordada
+## Decisión de alcance anterior, reemplazada
 
-El usuario eligió esperar a US-12 (#40), no ampliar HU-09. La issue US-12 sigue abierta y no proporciona una representación/fuente de verdad implementada para determinar si un Sprint está cerrado. No comenzar tareas 5–9 ni habilitar la ruta hasta que ese contrato exista; luego revisar tareas y diseño frente al contrato efectivo. No inventar un campo, estado o endpoint de cierre.
+En una etapa previa, el usuario eligió esperar a US-12 (#40). Después revirtió expresamente esa decisión y autorizó completar HU-09 sin depender de US-12, usando `sprints.is_closed BOOLEAN NOT NULL DEFAULT false`. Las instrucciones históricas de pausar tareas 5–9 quedaron supersedidas; el corte 3 y la verificación final se registran al final de este archivo.
 
 ## Corrección de composición: assigner project-scoped obligatorio
 
@@ -115,4 +115,8 @@ Verificación independiente anterior: `go test ./tests/unit/cmd/api`, `go test .
 
 El usuario reemplazó explícitamente la dependencia US-12 (#40) con `Sprint.is_closed BOOLEAN NOT NULL DEFAULT false`. Se actualizaron propuesta, diseño, deltas de especificación, tareas SDD y especificación vigente de Sprint. Migración 000006 agrega la columna con default false; la asociación consulta el flag dentro de la transacción y rechaza lote cerrado sin escrituras. Se implementaron el handler POST `/projects/{project_id}/sprints/{sprint_id}/stories`, composición, gating desde schema v6 y documentación.
 
-Strict TDD: RED observado con `go test ./tests/unit/story/transport/http` fallando porque `ErrSprintClosed` y `NewAssignStoriesHandler` no existían. GREEN: `go test ./tests/unit/story/transport/http ./tests/unit/story/application ./tests/unit/cmd/api` pasó. Integración/triangulación: `go test ./tests/integration/story/postgres -run '^TestAssignStoriesRejectsClosedSprintWithoutWrites$' -count=1` pasó. Suite completa: `go test ./...` pasó, incluyendo Testcontainers PostgreSQL para project, sprint y story. Sin fallos ni omisiones reportados.
+Strict TDD: RED observado con `go test ./tests/unit/story/transport/http` fallando porque `ErrSprintClosed` y `NewAssignStoriesHandler` no existían. GREEN: `go test ./tests/unit/story/transport/http ./tests/unit/story/application ./tests/unit/cmd/api` pasó. La prueba de cierre concurrente detectó la necesidad de bloquear con `FOR UPDATE`; se añadió cobertura sincronizada que verifica rechazo y cero escrituras. También se hizo fallar en RED una ruta con proyecto incorrecto y un assigner sin alcance de proyecto; el caso de uso ahora falla cerrado si falta el puerto project-scoped. Integración/triangulación: pruebas uncached PostgreSQL cubrieron Sprint cerrado, carrera con el cierre, proyecto de ruta incompatible sin escrituras, default false y migración down/up. Verificación independiente: `go test -count=1 ./...` y `git diff --check` pasaron. Sin fallos ni omisiones reportados.
+
+## Cierre de HU-09
+
+Commit `3c71430` (`feat(story): assign backlog stories to sprints`). GitHub issue #37 cerrada tras completar los criterios de aceptación. El commit incluyó también la reparación de composición/arranque de API, necesaria para compilar y verificar la ruta; se documentó como trabajo separado dentro del mismo commit por compartir archivos de composición.
