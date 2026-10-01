@@ -28,8 +28,13 @@ Archived SDD change: `openspec/changes/archive/2026-10-01-us-04-project-status/`
 
 ## Delivery tasks
 
-- [ ] 9. Run final formatting/diff checks, stage the reviewed work unit, and create the requested Conventional Commit. **In progress.**
+- [x] 9. Run final formatting/diff checks and create the requested Conventional Commit.
 - [ ] 10. Open the PR after issue #32 has its required `status:approved` label. The issue is currently OPEN with no labels; do not self-apply approval.
+
+## Commit evidence
+
+- `01fc617c53aaba03aebc0c3e49391a584954db98` — `feat(project): expose derived project status` (19 files, 771 insertions; includes implementation, tests, canonical spec, archived SDD artifacts, and this work record).
+- Authored by SantiagoMO3 <santiaguistico@gmail.com>.
 
 ## Current evidence
 
