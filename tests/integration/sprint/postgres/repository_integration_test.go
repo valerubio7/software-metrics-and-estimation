@@ -15,6 +15,7 @@ import (
 	"github.com/valerubio7/software-metrics-and-estimation/internal/sprint/application"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/sprint/domain"
 	sprintpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/sprint/infrastructure/postgres"
+	"github.com/valerubio7/software-metrics-and-estimation/tests/integration/testpostgres"
 )
 
 const (
@@ -92,6 +93,9 @@ func sprintDatabase(t *testing.T) *pgxpool.Pool {
 	if testing.Short() {
 		t.Skip("PostgreSQL integration requires Docker")
 	}
+	if dsn := os.Getenv("SPRINT_TEST_DATABASE_URL"); dsn != "" {
+		return sprintDatabaseFromDSN(t, dsn)
+	}
 	ctx := context.Background()
 	container, err := postgres.Run(ctx, "postgres:16-alpine",
 		postgres.WithDatabase("sprints_test"),
@@ -128,16 +132,42 @@ func sprintDatabase(t *testing.T) *pgxpool.Pool {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	for _, name := range []string{"000001_create_projects.up.sql", "000002_create_stories.up.sql", "000003_create_sprints.up.sql"} {
-		migration, err := os.ReadFile(filepath.Join(sprintModuleRoot(t), "internal", "project", "infrastructure", "postgres", "migrations", name))
-		if err != nil {
-			t.Fatalf("read migration %s: %v", name, err)
-		}
-		if _, err := pool.Exec(ctx, string(migration)); err != nil {
-			t.Fatalf("apply migration %s: %v", name, err)
-		}
+	root := sprintModuleRoot(t)
+	migrations := filepath.Join(root, "internal", "project", "infrastructure", "postgres", "migrations")
+	for _, name := range []string{"000001_create_projects.up.sql", "000002_create_stories.up.sql"} {
+		applySprintMigration(t, pool, migrations, name)
+	}
+	applySprintMigration(t, pool, migrations, "fixtures/000003_create_sprints.up.sql")
+	for _, name := range []string{"000004_add_story_creation_sequence.up.sql", "000005_reconcile_story_hours_and_sprints.up.sql", "000006_create_project_members.up.sql"} {
+		applySprintMigration(t, pool, migrations, name)
 	}
 	return pool
+}
+
+func sprintDatabaseFromDSN(t *testing.T, dsn string) *pgxpool.Pool {
+	t.Helper()
+	pool := testpostgres.OpenIsolated(t, dsn, "SPRINT_TEST_DATABASE_URL", "sprint_test")
+	root := sprintModuleRoot(t)
+	migrations := filepath.Join(root, "internal", "project", "infrastructure", "postgres", "migrations")
+	for _, name := range []string{"000001_create_projects.up.sql", "000002_create_stories.up.sql"} {
+		applySprintMigration(t, pool, migrations, name)
+	}
+	applySprintMigration(t, pool, migrations, "fixtures/000003_create_sprints.up.sql")
+	for _, name := range []string{"000004_add_story_creation_sequence.up.sql", "000005_reconcile_story_hours_and_sprints.up.sql", "000006_create_project_members.up.sql"} {
+		applySprintMigration(t, pool, migrations, name)
+	}
+	return pool
+}
+
+func applySprintMigration(t *testing.T, pool *pgxpool.Pool, directory, name string) {
+	t.Helper()
+	migration, err := os.ReadFile(filepath.Join(directory, name))
+	if err != nil {
+		t.Fatalf("read migration %s: %v", name, err)
+	}
+	if _, err := pool.Exec(context.Background(), string(migration)); err != nil {
+		t.Fatalf("apply migration %s: %v", name, err)
+	}
 }
 
 func insertProject(t *testing.T, pool *pgxpool.Pool) {

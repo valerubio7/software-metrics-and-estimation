@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -45,7 +46,16 @@ func TestAPIStartupRoutesFollowMigrationState(t *testing.T) {
 			if _, err := pool.Exec(context.Background(), scenario.migration); err != nil {
 				t.Fatalf("prepare migration state: %v", err)
 			}
-			testAPIStartupRoutes(t, pool.Config().ConnString(), scenario.storyCode, scenario.updates, scenario.lists, scenario.logged)
+			databaseURL, err := url.Parse(pool.Config().ConnString())
+			if err != nil {
+				t.Fatalf("parse test database URL: %v", err)
+			}
+			if searchPath := pool.Config().ConnConfig.RuntimeParams["search_path"]; searchPath != "" {
+				query := databaseURL.Query()
+				query.Set("search_path", searchPath)
+				databaseURL.RawQuery = query.Encode()
+			}
+			testAPIStartupRoutes(t, databaseURL.String(), scenario.storyCode, scenario.updates, scenario.lists, scenario.logged)
 		})
 	}
 }
