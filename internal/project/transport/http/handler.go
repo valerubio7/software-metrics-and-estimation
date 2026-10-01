@@ -5,11 +5,51 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/application"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/domain"
 )
+
+// GetProjectStatusHandler handles read-only project status requests.
+type GetProjectStatusHandler struct {
+	useCase *application.GetProjectStatusUseCase
+	now     func() time.Time
+}
+
+// NewGetProjectStatusHandler creates a status handler using the supplied date source.
+func NewGetProjectStatusHandler(useCase *application.GetProjectStatusUseCase, now func() time.Time) http.Handler {
+	return &GetProjectStatusHandler{useCase: useCase, now: now}
+}
+
+func (h *GetProjectStatusHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet {
+		writeJSON(response, http.StatusMethodNotAllowed, errorResponse{Error: "method_not_allowed", Message: "only GET is supported"})
+		return
+	}
+	projectID, err := uuid.Parse(request.PathValue("project_id"))
+	if err != nil {
+		writeJSON(response, http.StatusUnprocessableEntity, errorResponse{Error: "validation_failed", Message: "one or more fields are invalid", Fields: map[string]string{"project_id": "must be a valid UUID"}})
+		return
+	}
+	project, status, err := h.useCase.Execute(request.Context(), projectID.String(), h.now().UTC())
+	if err != nil {
+		if errors.Is(err, application.ErrProjectNotFound) {
+			writeJSON(response, http.StatusNotFound, errorResponse{Error: "project_not_found", Message: "project not found"})
+		} else {
+			writeJSON(response, http.StatusInternalServerError, errorResponse{Error: "internal_error", Message: "an unexpected error occurred"})
+		}
+		return
+	}
+	writeJSON(response, http.StatusOK, projectStatusResponse{ID: project.ID, Name: project.Name, Status: status})
+}
+
+type projectStatusResponse struct {
+	ID     string               `json:"id"`
+	Name   string               `json:"name"`
+	Status domain.ProjectStatus `json:"status"`
+}
 
 // CreateProjectHandler handles create-project HTTP requests.
 type CreateProjectHandler struct {

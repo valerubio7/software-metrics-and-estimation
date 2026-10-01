@@ -58,6 +58,29 @@ func TestPostgresProjectRepositoryCreatePersistsProject(t *testing.T) {
 	}
 }
 
+func TestPostgresProjectRepositoryGetByIDIsReadOnlyAndMapsMissing(t *testing.T) {
+	pool := newPostgresPool(t)
+	applyProjectsMigration(t, pool)
+	const projectID = "dc46073f-51fb-4393-8e80-6b7f84201cc1"
+	if _, err := pool.Exec(context.Background(), `INSERT INTO projects (id, name, start_date, planned_finish_date) VALUES ($1, 'Read me', '2026-03-01', '2026-06-30')`, projectID); err != nil {
+		t.Fatal(err)
+	}
+
+	repository := projectpostgres.NewPostgresProjectRepository(pool)
+	got, err := repository.GetByID(context.Background(), projectID)
+	if err != nil || got.ID != projectID || got.Name != "Read me" || got.StartDate.Format("2006-01-02") != "2026-03-01" || got.PlannedFinishDate.Format("2006-01-02") != "2026-06-30" {
+		t.Fatalf("GetByID() = %+v, %v", got, err)
+	}
+	var name string
+	if err := pool.QueryRow(context.Background(), `SELECT name FROM projects WHERE id = $1`, projectID).Scan(&name); err != nil || name != "Read me" {
+		t.Fatalf("stored name after read = %q, %v", name, err)
+	}
+	_, err = repository.GetByID(context.Background(), "a8de48f0-692e-4f30-bfa3-1fd7d1cbe5dc")
+	if !errors.Is(err, application.ErrProjectNotFound) {
+		t.Errorf("GetByID(missing) error = %v, want ErrProjectNotFound", err)
+	}
+}
+
 func TestPostgresProjectRepositoryUpdateChangesBasicFieldsOnly(t *testing.T) {
 	pool := newPostgresPool(t)
 	applyProjectsMigration(t, pool)

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/valerubio7/software-metrics-and-estimation/internal/api"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/application"
@@ -87,6 +88,41 @@ func TestSprintCompositionIsOptionalAndPreservesExistingRoutes(t *testing.T) {
 	handler.ServeHTTP(project, httptest.NewRequest(http.MethodPost, "/projects", strings.NewReader(`{"name":"Metrics portal","start_date":"2026-03-01","planned_finish_date":"2026-06-30"}`)))
 	if story.Code != http.StatusCreated || len(stories.stories) != 1 || project.Code != http.StatusCreated || len(projects.projects) != 1 {
 		t.Fatalf("preserved composition: story=%d/%d project=%d/%d", story.Code, len(stories.stories), project.Code, len(projects.projects))
+	}
+}
+
+type readableProjectRepository struct {
+	*fakeProjectRepository
+	project domain.Project
+	reads   int
+}
+
+func (r *readableProjectRepository) GetByID(_ context.Context, id string) (domain.Project, error) {
+	r.reads++
+	if id != r.project.ID {
+		return domain.Project{}, application.ErrProjectNotFound
+	}
+	return r.project, nil
+}
+
+func TestProjectStatusRouteIsComposedOnlyForReadableRepository(t *testing.T) {
+	const id = "5c21cbd4-d9a7-42df-9c3a-c0866f058746"
+	today := time.Now().UTC()
+	readable := &readableProjectRepository{fakeProjectRepository: &fakeProjectRepository{}, project: domain.Project{
+		ID: id, Name: "Metrics", StartDate: today.AddDate(0, 0, -1), PlannedFinishDate: today.AddDate(0, 0, 1),
+	}}
+	handler := api.NewHTTPHandler(readable, func() string { return "generated" })
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/projects/"+id, nil))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"status":"active"`) || readable.reads != 1 {
+		t.Fatalf("GET status=%d reads=%d body=%s", response.Code, readable.reads, response.Body.String())
+	}
+
+	legacy := api.NewHTTPHandler(&fakeProjectRepository{}, func() string { return "generated" })
+	missingRoute := httptest.NewRecorder()
+	legacy.ServeHTTP(missingRoute, httptest.NewRequest(http.MethodGet, "/projects/"+id, nil))
+	if missingRoute.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET without read dependency = %d, want 405", missingRoute.Code)
 	}
 }
 
