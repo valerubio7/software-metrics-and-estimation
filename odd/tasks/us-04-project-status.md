@@ -28,17 +28,24 @@ Archived SDD change: `openspec/changes/archive/2026-10-01-us-04-project-status/`
 
 ## Delivery tasks
 
-- [x] 9. Run final formatting/diff checks and create the requested Conventional Commit.
-- [ ] 10. Open the PR after issue #32 has its required `status:approved` label. The issue is currently OPEN with no labels; do not self-apply approval.
+- [x] 9. Run final formatting/diff checks and create the requested Conventional Commits.
+- [x] 10. Add issue approval label under explicit user authorization, push the branch, and open the PR.
+- [ ] 11. Monitor automated checks and await the user's PR approval.
 
-## Commit evidence
+## Commit and PR evidence
 
-- `01fc617c53aaba03aebc0c3e49391a584954db98` — `feat(project): expose derived project status` (19 files, 771 insertions; includes implementation, tests, canonical spec, archived SDD artifacts, and this work record).
-- Authored by SantiagoMO3 <santiaguistico@gmail.com>.
+- `01fc617c53aaba03aebc0c3e49391a584954db98` — `feat(project): expose derived project status`.
+- `91522bc9411bf2574e8b7a1388a102a5c000b1ab` — `docs(odd): record US-04 commit evidence`.
+- Both authored by SantiagoMO3 <santiaguistico@gmail.com>.
+- PR #70: https://github.com/valerubio7/software-metrics-and-estimation/pull/70; base `main`, `Closes #32`, one `type:feature` label. Issue #32 received `status:approved` only after the user explicitly authorized that label.
+- PR currently has no reported status checks. The user retains approval/merge authority.
 
-## Current evidence
+## Verification evidence
 
-- `go test -count=1 ./tests/unit/...`: passed (10 packages; test-case count not emitted).
-- Earlier full `go test ./...`: failed because existing container-based suites cannot access Docker; project PostgreSQL integration skipped.
-- User approved replacing three abbreviated canonical status requirements with full delta blocks; archive report records the composition.
-- Commit/PR not yet created. Repo-local Git author is SantiagoMO3 <santiaguistico@gmail.com>.
+- `go test -count=1 ./tests/unit/...`: passed, 10 packages.
+- Focused Go project/unit/API package checks: passed; Docker-dependent PostgreSQL integration skipped by its helper.
+- Full `go test ./...`: blocked by permission denied on `/var/run/docker.sock` for existing container-based suites.
+- `gofmt -d` on changed Go files and `git diff --check`: passed.
+- The partial application/HTTP prototype preceded tests; strict-TDD ordering deviation is documented in the archived apply-progress.
+- The initial feature commit contains 19 files and 771 insertions, above the 400-line reference; the user explicitly accepted single-PR `size:exception`.
+- No commit has been merged; wait for user review.
