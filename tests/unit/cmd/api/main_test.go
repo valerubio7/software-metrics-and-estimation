@@ -12,6 +12,7 @@ import (
 	"github.com/valerubio7/software-metrics-and-estimation/internal/api"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/application"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/domain"
+	memberdomain "github.com/valerubio7/software-metrics-and-estimation/internal/projectmember/domain"
 	sprintdomain "github.com/valerubio7/software-metrics-and-estimation/internal/sprint/domain"
 	storyapplication "github.com/valerubio7/software-metrics-and-estimation/internal/story/application"
 	storydomain "github.com/valerubio7/software-metrics-and-estimation/internal/story/domain"
@@ -43,6 +44,13 @@ type fakeStoryRepository struct {
 
 type fakeSprintRepository struct {
 	sprints []sprintdomain.Sprint
+}
+
+type fakeMemberRepository struct{ members []memberdomain.Member }
+
+func (r *fakeMemberRepository) Register(_ context.Context, _ string, members []memberdomain.Member) error {
+	r.members = append(r.members, members...)
+	return nil
 }
 
 func (r *fakeSprintRepository) Create(_ context.Context, sprint sprintdomain.Sprint) error {
@@ -90,6 +98,43 @@ func TestSprintCompositionIsOptionalAndPreservesExistingRoutes(t *testing.T) {
 	}
 }
 
+func TestMemberRouteRequiresExplicitDependenciesAndCleanVersionSix(t *testing.T) {
+	id := "5c21cbd4-d9a7-42df-9c3a-c0866f058746"
+	for _, tc := range []struct {
+		name    string
+		version int
+		dirty   bool
+		lookup  error
+		enabled bool
+	}{
+		{"clean v5", 5, false, nil, false}, {"clean v6", 6, false, nil, true}, {"dirty v6", 6, true, nil, false}, {"lookup error", 6, false, errors.New("query failed"), false},
+		{"missing migration table", 0, false, errors.New(`relation "schema_migrations" does not exist`), false},
+		{"no migration version row", 0, false, errors.New("no rows in result set"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			readiness := api.ResolveMigrationReadiness(tc.version, tc.dirty, tc.lookup)
+			if readiness.Members != tc.enabled {
+				t.Fatalf("members readiness=%t", readiness.Members)
+			}
+			repo := &fakeMemberRepository{}
+			deps := api.HTTPDependencies{}
+			if tc.enabled {
+				deps.Members = &api.MemberDependencies{Repository: repo, GenerateID: func() string { return id }}
+			}
+			h := api.NewHTTPHandlerWithDependencies(&fakeProjectRepository{}, func() string { return id }, deps)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/projects/"+id+"/members", strings.NewReader(`{"members":[{"full_name":"Ada"}]}`)))
+			want := http.StatusNotFound
+			if tc.enabled {
+				want = http.StatusCreated
+			}
+			if w.Code != want || (tc.enabled && len(repo.members) != 1) {
+				t.Fatalf("route status=%d writes=%d want=%d", w.Code, len(repo.members), want)
+			}
+		})
+	}
+}
+
 func TestMigrationReadinessSelectsRoutesIndependently(t *testing.T) {
 	for _, scenario := range []struct {
 		name    string
@@ -98,15 +143,21 @@ func TestMigrationReadinessSelectsRoutesIndependently(t *testing.T) {
 		lookup  error
 		stories bool
 		sprints bool
+		members bool
 	}{
 		{name: "clean v2", version: 2, stories: true},
 		{name: "clean v3", version: 3, stories: true, sprints: true},
+		{name: "clean v5", version: 5, stories: true, sprints: true},
+		{name: "clean v6", version: 6, stories: true, sprints: true, members: true},
+		{name: "clean future", version: 9, stories: true, sprints: true, members: true},
 		{name: "dirty v3", version: 3, dirty: true},
 		{name: "lookup error", lookup: context.DeadlineExceeded},
+		{name: "missing migration table", lookup: errors.New(`relation "schema_migrations" does not exist`)},
+		{name: "no migration version row", lookup: errors.New("no rows in result set")},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			readiness := api.ResolveMigrationReadiness(scenario.version, scenario.dirty, scenario.lookup)
-			if readiness.Stories != scenario.stories || readiness.Sprints != scenario.sprints || !readiness.Projects {
+			if readiness.Stories != scenario.stories || readiness.Sprints != scenario.sprints || readiness.Members != scenario.members || !readiness.Projects {
 				t.Fatalf("readiness = %+v", readiness)
 			}
 		})

@@ -139,3 +139,14 @@ Al actualizar un proyecto, el sistema MUST cambiar únicamente `name`, `start_da
 - WHEN el cliente actualiza correctamente `name`, `start_date` y `planned_finish_date` del proyecto
 - THEN el proyecto conserva el mismo identificador y todos los demás datos del proyecto
 - AND todos los datos de miembros e historias asociados permanecen sin cambios
+
+### Requirement: Preservar los datos básicos del proyecto al registrar integrantes
+
+Al registrar integrantes, el sistema MUST conservar sin cambios el nombre, las fechas y los demás datos básicos del proyecto al que se asocian.
+
+#### Scenario: Registrar integrantes sin alterar el proyecto
+
+- GIVEN un proyecto existente con datos básicos almacenados
+- WHEN el cliente registra correctamente uno o más integrantes para ese proyecto
+- THEN los integrantes quedan asociados al proyecto
+- AND los datos básicos previamente almacenados del proyecto permanecen sin cambios
