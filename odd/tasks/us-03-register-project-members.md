@@ -7,7 +7,7 @@ Complete US-03 under OpenSpec change `us-03-register-project-members`: register 
 - OpenSpec SDD selected; strict TDD runner is `go test ./...`.
 - User authorized tests only against disposable loopback PostgreSQL 18.6 and local golang-migrate v4.19.1; this does not establish production compatibility.
 - Production runner/version/checksum/path/applied history remain unknown; no persistent services or deployment credentials may be used and no rollout safety claim is allowed.
-- One-PR `size:exception` explicitly accepted. User explicitly authorized Git commit(s); push/PR/merge are not authorized.
+- One-PR `size:exception` explicitly accepted. User later authorized Git commits, pushing the branch, and opening a PR; merge is not authorized.
 
 ## Reconciled progress
 1. Member domain/application/HTTP behavior — **done**; unit coverage includes validation, exact `(full_name,email)` duplicates including NULL, atomic rejection, malformed method/JSON/UUID and error mapping.
@@ -29,4 +29,4 @@ Complete US-03 under OpenSpec change `us-03-register-project-members`: register 
 ## Finalization
 - SDD Apply, Verify and Archive are complete; archived path: `openspec/changes/archive/2026-10-01-us-03-register-project-members/`.
 - Full local disposable PostgreSQL matrix and independent verification passed as recorded above. Production rollout remains blocked pending the actual runner/version/checksum/path/applied-history evidence.
-- User authorized local work-unit commit(s) on `feat/us-03-register-project-members`; push/PR/merge are not authorized. Git author identity is configured repository-locally from the user's exact values only. Work-unit commits: `f2866ee6cb8db38a22e5680bfc095fb23fb7f0e0` (migration/harness) and `2d956cf04513cdd7460e987a4422e3ffc7741344` (project-member feature). Both are local; the branch remains unpushed.
+- Git author identity is configured repository-locally from the user's exact values only. Work-unit commits: `f2866ee6cb8db38a22e5680bfc095fb23fb7f0e0` (migration/harness) and `2d956cf04513cdd7460e987a4422e3ffc7741344` (project-member feature). The branch was pushed to `origin/feat/us-03-register-project-members`; PR #69 is open against `main`, linked to approved issue #31, and carries exactly `type:feature`. Automated GitHub checks are pending. User approval/review is pending; no merge was performed. Production migration compatibility remains unverified.
