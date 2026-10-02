@@ -8,6 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/application"
 	transporthttp "github.com/valerubio7/software-metrics-and-estimation/internal/project/transport/http"
+	memberapplication "github.com/valerubio7/software-metrics-and-estimation/internal/projectmember/application"
+	memberhttp "github.com/valerubio7/software-metrics-and-estimation/internal/projectmember/transport/http"
 	sprintapplication "github.com/valerubio7/software-metrics-and-estimation/internal/sprint/application"
 	sprinthttp "github.com/valerubio7/software-metrics-and-estimation/internal/sprint/transport/http"
 	storyapplication "github.com/valerubio7/software-metrics-and-estimation/internal/story/application"
@@ -51,16 +53,23 @@ type StoryDependencies struct {
 	Lister     storyapplication.StoryLister // nil: GET on the collection is not registered (the mux answers 405)
 }
 
-// SprintDependencies enables sprint creation after migration 000003 is clean.
+// SprintDependencies enables sprint creation after reconciliation migration 000005 is clean.
 type SprintDependencies struct {
 	Repository sprintapplication.SprintRepository
 	GenerateID sprintapplication.IDGenerator
+}
+
+// MemberDependencies enables project-member registration after migration v6 is clean.
+type MemberDependencies struct {
+	Repository memberapplication.MemberRepository
+	GenerateID memberapplication.IDGenerator
 }
 
 // HTTPDependencies contains optional migration-backed API modules.
 type HTTPDependencies struct {
 	Stories *StoryDependencies
 	Sprints *SprintDependencies
+	Members *MemberDependencies
 }
 
 // MigrationReadiness describes which handlers are safe to compose for a schema state.
@@ -68,6 +77,7 @@ type MigrationReadiness struct {
 	Projects bool
 	Stories  bool
 	Sprints  bool
+	Members  bool
 }
 
 // ResolveMigrationReadiness keeps project creation available while gating schema-backed routes.
@@ -77,7 +87,8 @@ func ResolveMigrationReadiness(version int, dirty bool, lookupErr error) Migrati
 		return readiness
 	}
 	readiness.Stories = version >= 2
-	readiness.Sprints = version >= 3
+	readiness.Sprints = version >= 5
+	readiness.Members = version >= 6
 	return readiness
 }
 
@@ -115,6 +126,10 @@ func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, ge
 	if dependencies.Sprints != nil {
 		sprintUseCase := sprintapplication.NewCreateSprintUseCase(dependencies.Sprints.Repository, dependencies.Sprints.GenerateID)
 		mux.Handle("POST /projects/{project_id}/sprints", sprinthttp.NewCreateSprintHandler(sprintUseCase))
+	}
+	if dependencies.Members != nil {
+		membersUseCase := memberapplication.NewRegisterMembersUseCase(dependencies.Members.Repository, dependencies.Members.GenerateID)
+		mux.Handle("POST /projects/{project_id}/members", memberhttp.NewRegisterMembersHandler(membersUseCase))
 	}
 	return mux
 }
