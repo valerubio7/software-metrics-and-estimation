@@ -49,6 +49,7 @@ type StoryDependencies struct {
 	GenerateID storyapplication.IDGenerator
 	Updater    storyapplication.StoryUpdater
 	Lister     storyapplication.StoryLister // nil: GET on the collection is not registered (the mux answers 405)
+	Assigner   storyapplication.StorySprintAssigner
 }
 
 // SprintDependencies enables sprint creation after migration 000003 is clean.
@@ -65,9 +66,10 @@ type HTTPDependencies struct {
 
 // MigrationReadiness describes which handlers are safe to compose for a schema state.
 type MigrationReadiness struct {
-	Projects bool
-	Stories  bool
-	Sprints  bool
+	Projects   bool
+	Stories    bool
+	Sprints    bool
+	Assignment bool
 }
 
 // ResolveMigrationReadiness keeps project creation available while gating schema-backed routes.
@@ -78,6 +80,7 @@ func ResolveMigrationReadiness(version int, dirty bool, lookupErr error) Migrati
 	}
 	readiness.Stories = version >= 2
 	readiness.Sprints = version >= 3
+	readiness.Assignment = version >= 6
 	return readiness
 }
 
@@ -101,15 +104,20 @@ func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, ge
 	mux.Handle("POST /projects", transporthttp.NewCreateProjectHandler(useCase))
 	mux.Handle("PUT /projects/{project_id}", transporthttp.NewUpdateProjectHandler(updateUseCase))
 	if dependencies.Stories != nil {
-		storyUseCase := storyapplication.NewCreateStoryUseCase(dependencies.Stories.Repository, dependencies.Stories.GenerateID)
+		stories := dependencies.Stories
+		storyUseCase := storyapplication.NewCreateStoryUseCase(stories.Repository, stories.GenerateID)
 		mux.Handle("POST /projects/{project_id}/stories", storyhttp.NewCreateStoryHandler(storyUseCase))
-		if dependencies.Stories.Updater != nil {
-			updateStoryUseCase := storyapplication.NewUpdateStoryUseCase(dependencies.Stories.Updater)
+		if stories.Updater != nil {
+			updateStoryUseCase := storyapplication.NewUpdateStoryUseCase(stories.Updater)
 			mux.Handle("PUT /projects/{project_id}/stories/{story_id}", storyhttp.NewUpdateStoryHandler(updateStoryUseCase))
 		}
-		if dependencies.Stories.Lister != nil {
-			listStoriesUseCase := storyapplication.NewListStoriesUseCase(dependencies.Stories.Lister)
+		if stories.Lister != nil {
+			listStoriesUseCase := storyapplication.NewListStoriesUseCase(stories.Lister)
 			mux.Handle("GET /projects/{project_id}/stories", storyhttp.NewListStoriesHandler(listStoriesUseCase))
+		}
+		if stories.Assigner != nil {
+			assignUseCase := storyapplication.NewAssignStoriesUseCase(stories.Assigner)
+			mux.Handle("POST /projects/{project_id}/sprints/{sprint_id}/stories", storyhttp.NewAssignStoriesHandler(assignUseCase))
 		}
 	}
 	if dependencies.Sprints != nil {
