@@ -21,7 +21,90 @@ func NewPostgresStoryRepository(pool *pgxpool.Pool) *PostgresStoryRepository {
 	return &PostgresStoryRepository{pool: pool}
 }
 
-// Create inserts one story; only the named project FK identifies a missing project.
+// AssignStories preserves the legacy repository contract by deriving the sprint's project.
+func (r *PostgresStoryRepository) AssignStories(ctx context.Context, sprintID string, storyIDs []string) error {
+	var projectID string
+	if err := r.pool.QueryRow(ctx, "SELECT project_id::text FROM sprints WHERE id = $1", sprintID).Scan(&projectID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return application.ErrSprintNotFound
+		}
+		return err
+	}
+	return r.AssignStoriesForProject(ctx, projectID, sprintID, storyIDs)
+}
+
+// AssignStoriesForProject validates the route project and atomically persists eligible stories.
+func (r *PostgresStoryRepository) AssignStoriesForProject(ctx context.Context, routeProjectID string, sprintID string, storyIDs []string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var projectID string
+	var closed bool
+	err = tx.QueryRow(ctx, "SELECT project_id::text, is_closed FROM sprints WHERE id = $1 FOR UPDATE", sprintID).Scan(&projectID, &closed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.ErrSprintNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if routeProjectID != projectID {
+		return application.ErrProjectMismatch
+	}
+	if closed {
+		return application.ErrSprintClosed
+	}
+
+	rows, err := tx.Query(ctx, "SELECT id::text, project_id::text FROM stories WHERE id = ANY($1::uuid[]) FOR KEY SHARE", storyIDs)
+	if err != nil {
+		return err
+	}
+	found := 0
+	mismatch := false
+	for rows.Next() {
+		var id, storyProject string
+		if err := rows.Scan(&id, &storyProject); err != nil {
+			rows.Close()
+			return err
+		}
+		found++
+		mismatch = mismatch || storyProject != projectID
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	if found != len(storyIDs) {
+		return application.ErrStoryNotFound
+	}
+	if mismatch {
+		return application.ErrProjectMismatch
+	}
+
+	var existing bool
+	err = tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM sprint_stories WHERE sprint_id = $1 AND story_id = ANY($2::uuid[]))", sprintID, storyIDs).Scan(&existing)
+	if err != nil {
+		return err
+	}
+	if existing {
+		return application.ErrStoryAlreadyAssigned
+	}
+	for _, storyID := range storyIDs {
+		_, err = tx.Exec(ctx, "INSERT INTO sprint_stories (sprint_id, story_id, project_id) VALUES ($1, $2, $3)", sprintID, storyID, projectID)
+		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "sprint_stories_pkey" {
+				return application.ErrStoryAlreadyAssigned
+			}
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
 func (r *PostgresStoryRepository) Create(ctx context.Context, story domain.Story) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO stories (id, project_id, title, description, priority, status, story_points, acceptance_criteria)
@@ -127,7 +210,9 @@ func (r *PostgresStoryRepository) ListByProject(ctx context.Context, projectID s
 }
 
 var (
-	_ application.StoryRepository = (*PostgresStoryRepository)(nil)
-	_ application.StoryUpdater    = (*PostgresStoryRepository)(nil)
-	_ application.StoryLister     = (*PostgresStoryRepository)(nil)
+	_ application.StorySprintAssigner              = (*PostgresStoryRepository)(nil)
+	_ application.StoryRepository                  = (*PostgresStoryRepository)(nil)
+	_ application.StoryUpdater                     = (*PostgresStoryRepository)(nil)
+	_ application.StoryLister                      = (*PostgresStoryRepository)(nil)
+	_ application.ProjectScopedStorySprintAssigner = (*PostgresStoryRepository)(nil)
 )
