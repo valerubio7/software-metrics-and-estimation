@@ -25,21 +25,27 @@ import (
 func TestAPIStartupRoutesFollowMigrationState(t *testing.T) {
 	const schemaTable = `CREATE TABLE schema_migrations (version bigint NOT NULL, dirty boolean NOT NULL); `
 	for _, scenario := range []struct {
-		name      string
-		migration string
-		storyCode int
-		updates   bool
-		lists     bool
-		logged    string
+		name       string
+		migration  string
+		storyCode  int
+		updates    bool
+		lists      bool
+		assignment bool
+		logged     string
 	}{
-		{"version one", `DROP TABLE stories; ` + schemaTable + `INSERT INTO schema_migrations VALUES (1, false)`, http.StatusNotFound, false, false, "story creation unavailable"},
-		{"version two", schemaTable + `INSERT INTO schema_migrations VALUES (2, false)`, http.StatusCreated, false, false, "story update unavailable"},
-		{"version three", schemaTable + `INSERT INTO schema_migrations VALUES (3, false)`, http.StatusCreated, true, false, "story backlog unavailable"},
-		{"version four", schemaTable + `INSERT INTO schema_migrations VALUES (4, false)`, http.StatusCreated, true, true, "story creation, update and backlog available"},
-		{"dirty", schemaTable + `INSERT INTO schema_migrations VALUES (2, true)`, http.StatusNotFound, false, false, "story creation unavailable"},
-		{"dirty version three", schemaTable + `INSERT INTO schema_migrations VALUES (3, true)`, http.StatusNotFound, false, false, "story creation unavailable"},
-		{"dirty version four", schemaTable + `INSERT INTO schema_migrations VALUES (4, true)`, http.StatusNotFound, false, false, "story creation unavailable"},
-		{"lookup error", `SELECT 1`, http.StatusNotFound, false, false, "story creation unavailable"},
+		{"version one", `DROP TABLE sprint_stories; DROP TABLE stories; ` + schemaTable + `INSERT INTO schema_migrations VALUES (1, false)`, http.StatusNotFound, false, false, false, "story creation unavailable"},
+		{"version two", schemaTable + `INSERT INTO schema_migrations VALUES (2, false)`, http.StatusCreated, false, false, false, "story update unavailable"},
+		{"version three", schemaTable + `INSERT INTO schema_migrations VALUES (3, false)`, http.StatusCreated, true, false, false, "story backlog unavailable"},
+		{"version four", schemaTable + `INSERT INTO schema_migrations VALUES (4, false)`, http.StatusCreated, true, true, false, "story creation, update and backlog available"},
+		{"version six", `DROP TABLE sprint_stories; ALTER TABLE sprints DROP COLUMN is_closed; ` + schemaTable + `INSERT INTO schema_migrations VALUES (6, false)`, http.StatusCreated, true, true, false, "story assignment unavailable"},
+		{"version seven", `ALTER TABLE sprints DROP COLUMN is_closed; ` + schemaTable + `INSERT INTO schema_migrations VALUES (7, false)`, http.StatusCreated, true, true, false, "story assignment unavailable"},
+		{"version eight", schemaTable + `INSERT INTO schema_migrations VALUES (8, false)`, http.StatusCreated, true, true, true, "story assignment available"},
+		{"future version", schemaTable + `INSERT INTO schema_migrations VALUES (10, false)`, http.StatusCreated, true, true, true, "story assignment available"},
+		{"dirty", schemaTable + `INSERT INTO schema_migrations VALUES (2, true)`, http.StatusNotFound, false, false, false, "story creation unavailable"},
+		{"dirty version three", schemaTable + `INSERT INTO schema_migrations VALUES (3, true)`, http.StatusNotFound, false, false, false, "story creation unavailable"},
+		{"dirty version four", schemaTable + `INSERT INTO schema_migrations VALUES (4, true)`, http.StatusNotFound, false, false, false, "story creation unavailable"},
+		{"dirty version eight", schemaTable + `INSERT INTO schema_migrations VALUES (8, true)`, http.StatusNotFound, false, false, false, "story assignment unavailable"},
+		{"lookup error", `SELECT 1`, http.StatusNotFound, false, false, false, "story creation unavailable"},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			pool := storyDatabase(t)
@@ -55,12 +61,12 @@ func TestAPIStartupRoutesFollowMigrationState(t *testing.T) {
 				query.Set("search_path", searchPath)
 				databaseURL.RawQuery = query.Encode()
 			}
-			testAPIStartupRoutes(t, databaseURL.String(), scenario.storyCode, scenario.updates, scenario.lists, scenario.logged)
+			testAPIStartupRoutes(t, databaseURL.String(), scenario.storyCode, scenario.updates, scenario.lists, scenario.assignment, scenario.logged)
 		})
 	}
 }
 
-func testAPIStartupRoutes(t *testing.T, databaseURL string, storyCode int, updates, lists bool, logged string) {
+func testAPIStartupRoutes(t *testing.T, databaseURL string, storyCode int, updates, lists, assignment bool, logged string) {
 	t.Helper()
 	name := "api"
 	if runtime.GOOS == "windows" {
@@ -145,11 +151,47 @@ func testAPIStartupRoutes(t *testing.T, databaseURL string, storyCode int, updat
 			}
 			assertStoryUpdateRoute(t, client, "http://"+address+"/projects/"+project.ID+"/stories/", project.ID, created.ID, updates)
 			assertBacklogRoute(t, client, "http://"+address+"/projects/"+project.ID+"/stories", project.ID, created.ID, storyCode == http.StatusCreated, lists)
+			assertStartupAssignmentRoute(t, client, "http://"+address, project.ID, created.ID, assignment)
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatal("API did not serve projects for migration state")
+}
+
+func assertStartupAssignmentRoute(t *testing.T, client *http.Client, baseURL, projectID, storyID string, enabled bool) {
+	t.Helper()
+	sprint := sprintID
+	if enabled {
+		response, err := client.Post(baseURL+"/projects/"+projectID+"/sprints", "application/json", strings.NewReader(`{"sprint_goal":"Delivery"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var created struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(response.Body).Decode(&created); err != nil {
+			response.Body.Close()
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusCreated {
+			t.Fatalf("sprint status = %d", response.StatusCode)
+		}
+		sprint = created.ID
+	}
+	response, err := client.Post(baseURL+"/projects/"+projectID+"/sprints/"+sprint+"/stories", "application/json", strings.NewReader(`{"story_ids":["`+storyID+`"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	want := http.StatusNotFound
+	if enabled {
+		want = http.StatusCreated
+	}
+	if response.StatusCode != want {
+		t.Fatalf("startup assignment status = %d, want %d", response.StatusCode, want)
+	}
 }
 
 func assertStoryUpdateRoute(t *testing.T, client *http.Client, storiesURL, projectID, storyID string, updates bool) {
