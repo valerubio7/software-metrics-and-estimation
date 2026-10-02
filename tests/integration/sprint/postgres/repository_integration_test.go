@@ -134,14 +134,17 @@ func sprintDatabase(t *testing.T) *pgxpool.Pool {
 	}
 	root := sprintModuleRoot(t)
 	migrations := filepath.Join(root, "internal", "project", "infrastructure", "postgres", "migrations")
-	for _, name := range []string{"000001_create_projects.up.sql", "000002_create_stories.up.sql"} {
-		applySprintMigration(t, pool, migrations, name)
-	}
-	applySprintMigration(t, pool, migrations, "fixtures/000003_create_sprints.up.sql")
-	for _, name := range []string{"000004_add_story_creation_sequence.up.sql", "000005_reconcile_story_hours_and_sprints.up.sql", "000006_create_project_members.up.sql"} {
+	for _, name := range sprintMigrationNames {
 		applySprintMigration(t, pool, migrations, name)
 	}
 	return pool
+}
+
+var sprintMigrationNames = []string{
+	"000001_create_projects.up.sql", "000002_create_stories.up.sql",
+	"000003_add_story_estimated_hours.up.sql", "000004_add_story_creation_sequence.up.sql",
+	"000005_reconcile_story_hours_and_sprints.up.sql", "000006_create_project_members.up.sql",
+	"000007_create_sprint_stories.up.sql", "000008_add_sprint_closed.up.sql",
 }
 
 func sprintDatabaseFromDSN(t *testing.T, dsn string) *pgxpool.Pool {
@@ -149,11 +152,7 @@ func sprintDatabaseFromDSN(t *testing.T, dsn string) *pgxpool.Pool {
 	pool := testpostgres.OpenIsolated(t, dsn, "SPRINT_TEST_DATABASE_URL", "sprint_test")
 	root := sprintModuleRoot(t)
 	migrations := filepath.Join(root, "internal", "project", "infrastructure", "postgres", "migrations")
-	for _, name := range []string{"000001_create_projects.up.sql", "000002_create_stories.up.sql"} {
-		applySprintMigration(t, pool, migrations, name)
-	}
-	applySprintMigration(t, pool, migrations, "fixtures/000003_create_sprints.up.sql")
-	for _, name := range []string{"000004_add_story_creation_sequence.up.sql", "000005_reconcile_story_hours_and_sprints.up.sql", "000006_create_project_members.up.sql"} {
+	for _, name := range sprintMigrationNames {
 		applySprintMigration(t, pool, migrations, name)
 	}
 	return pool

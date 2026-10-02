@@ -171,6 +171,65 @@ func TestMemberRouteRequiresExplicitDependenciesAndCleanVersionSix(t *testing.T)
 	}
 }
 
+type fakeAssignmentRepository struct{ calls int }
+
+func (r *fakeAssignmentRepository) AssignStories(context.Context, string, []string) error {
+	r.calls++
+	return errors.New("unscoped assignment must not be called")
+}
+func (r *fakeAssignmentRepository) AssignStoriesForProject(context.Context, string, string, []string) error {
+	r.calls++
+	return nil
+}
+
+func TestAssignmentRequiresCleanVersionEightAndExplicitDependency(t *testing.T) {
+	const id = "5c21cbd4-d9a7-42df-9c3a-c0866f058746"
+	for _, tc := range []struct {
+		name          string
+		version       int
+		dirty         bool
+		lookup        error
+		nilDependency bool
+		enabled       bool
+	}{
+		{name: "v6", version: 6},
+		{name: "v7", version: 7},
+		{name: "v8", version: 8, enabled: true},
+		{name: "future", version: 12, enabled: true},
+		{name: "nil dependency", version: 8, nilDependency: true},
+		{name: "dirty", version: 8, dirty: true},
+		{name: "lookup error", version: 8, lookup: errors.New("query failed")},
+		{name: "missing migration table", lookup: errors.New("missing schema_migrations")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			readiness := api.ResolveMigrationReadiness(tc.version, tc.dirty, tc.lookup)
+			wantReady := tc.version >= 8 && !tc.dirty && tc.lookup == nil
+			if readiness.Assignment != wantReady {
+				t.Fatalf("readiness = %+v", readiness)
+			}
+			repo := &fakeAssignmentRepository{}
+			deps := api.HTTPDependencies{
+				Stories: &api.StoryDependencies{Repository: &fakeStoryRepository{}, GenerateID: func() string { return id }},
+				Sprints: &api.SprintDependencies{Repository: &fakeSprintRepository{}, GenerateID: func() string { return id }},
+			}
+			// Use the actual startup resolver, never infer readiness from repository type.
+			if readiness.Assignment && !tc.nilDependency {
+				deps.Stories.Assigner = repo
+			}
+			h := api.NewHTTPHandlerWithDependencies(&fakeProjectRepository{}, func() string { return id }, deps)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/projects/"+id+"/sprints/"+id+"/stories", strings.NewReader(`{"story_ids":["`+id+`"]}`)))
+			wantStatus, wantCalls := http.StatusNotFound, 0
+			if tc.enabled {
+				wantStatus, wantCalls = http.StatusCreated, 1
+			}
+			if w.Code != wantStatus || repo.calls != wantCalls {
+				t.Fatalf("status/writes = %d/%d want %d/%d", w.Code, repo.calls, wantStatus, wantCalls)
+			}
+		})
+	}
+}
+
 func TestMigrationReadinessSelectsRoutesIndependently(t *testing.T) {
 	for _, scenario := range []struct {
 		name    string

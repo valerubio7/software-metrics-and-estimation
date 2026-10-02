@@ -71,9 +71,10 @@ assert_v5_idempotent() {
   [[ "$state" == '6 false' ]] || { echo "$db v5 rerun changed migration state: $state" >&2; return 1; }
 }
 
-# (1) Fresh install: runner resolves the complete unique source and applies through v5.
+# (1) Baseline-v6 convergence stays at its historical cut for v5 reapplication.
+# US09 upgrades are checked separately below; v5 must never be reapplied at v8.
 "$PG_BIN/createdb" -h 127.0.0.1 -p "$port" fresh
-"$MIGRATE_BIN" -path "$MIGRATIONS" -database "$(url_for fresh)" up
+"$MIGRATE_BIN" -path "$MIGRATIONS" -database "$(url_for fresh)" goto 6
 seed_project_story fresh
 psql_for fresh -q -c "INSERT INTO sprints VALUES ('00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000001','preserve sprint')"
 assert_converged fresh yes
@@ -84,7 +85,7 @@ assert_v5_idempotent fresh
 for migration in 000001_create_projects.up.sql 000002_create_stories.up.sql 000003_add_story_estimated_hours.up.sql 000004_add_story_creation_sequence.up.sql; do apply_sql hours_history "$MIGRATIONS/$migration"; done
 seed_project_story hours_history
 psql_for hours_history -q -c 'CREATE TABLE schema_migrations (version BIGINT NOT NULL PRIMARY KEY, dirty BOOLEAN NOT NULL)' -c 'INSERT INTO schema_migrations VALUES (4,false)'
-"$MIGRATE_BIN" -path "$MIGRATIONS" -database "$(url_for hours_history)" up
+"$MIGRATE_BIN" -path "$MIGRATIONS" -database "$(url_for hours_history)" goto 6
 assert_converged hours_history no
 
 # (3) Weak same-named checks must fail closed before persistent v5 DDL.
@@ -129,7 +130,7 @@ apply_sql sprint_history "$MIGRATIONS/000004_add_story_creation_sequence.up.sql"
 seed_project_story sprint_history
 psql_for sprint_history -q -c "INSERT INTO sprints VALUES ('00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000001','preserve sprint')" \
   -c 'CREATE TABLE schema_migrations (version BIGINT NOT NULL PRIMARY KEY, dirty BOOLEAN NOT NULL)' -c 'INSERT INTO schema_migrations VALUES (4,false)'
-"$MIGRATE_BIN" -path "$MIGRATIONS" -database "$(url_for sprint_history)" up
+"$MIGRATE_BIN" -path "$MIGRATIONS" -database "$(url_for sprint_history)" goto 6
 assert_converged sprint_history yes
 assert_v5_idempotent sprint_history
 
@@ -149,7 +150,69 @@ partial_schema=$(psql_for partial_sprints -Atqc "SELECT (SELECT count(*)=1 FROM 
 partial_data=$(psql_for partial_sprints -Atqc "SELECT (SELECT count(*)=1 AND min(id::text)='00000000-0000-0000-0000-000000000003' FROM sprints) AND (SELECT title||':'||status FROM stories WHERE id='00000000-0000-0000-0000-000000000002')='matrix-story:pendiente'")
 [[ "$partial_data" == t ]] || { echo 'partial-sprints preflight modified existing data' >&2; exit 1; }
 
-# Down one migration may remove schema additions, but must not delete existing tables or rows.
+# Canonical v6 -> v8: retain historical project/story/sprint/member values.
+# These are disposable destructive reversals, not a production rollback guarantee.
+seed_member() {
+  psql_for "$1" -q -c "INSERT INTO project_members (id,project_id,full_name,email) VALUES ('00000000-0000-0000-0000-000000000004','00000000-0000-0000-0000-000000000001','matrix-member','member@example.test')"
+}
+backbone_values() {
+  psql_for "$1" -Atqc "SELECT p.id||':'||p.name||':'||p.start_date||':'||p.planned_finish_date||':'||s.id||':'||s.title||':'||s.description||':'||s.priority||':'||s.status||':'||s.story_points||':'||array_to_string(s.acceptance_criteria,',')||':'||coalesce(s.estimated_hours::text,'')||':'||s.seq||':'||sp.id||':'||sp.sprint_goal||':'||m.id||':'||m.full_name||':'||m.email FROM projects p JOIN stories s ON s.project_id=p.id JOIN sprints sp ON sp.project_id=p.id JOIN project_members m ON m.project_id=p.id"
+}
+assert_us09_schema() {
+  local db=$1 state structure
+  state=$(psql_for "$db" -Atqc 'SELECT version || '\'' '\'' || dirty FROM schema_migrations')
+  [[ "$state" == '8 false' ]] || { echo "$db US09 migration state: $state" >&2; return 1; }
+  structure=$(psql_for "$db" -Atqc "SELECT to_regclass('public.sprint_stories') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='sprints' AND column_name='is_closed' AND data_type='boolean' AND is_nullable='NO' AND column_default='false') AND (SELECT count(*)=3 FROM pg_constraint WHERE conrelid='sprint_stories'::regclass AND conname IN ('sprint_stories_pkey','sprint_stories_sprint_project_fkey','sprint_stories_story_project_fkey'))")
+  [[ "$structure" == t ]] || { echo "$db incomplete US09 schema" >&2; return 1; }
+}
+upgrade_and_reverse_us09() {
+  local db=$1 before after open associations removed state
+  seed_member "$db"
+  before=$(backbone_values "$db")
+  [[ -n "$before" ]] || { echo "$db missing v6 seeded backbone" >&2; return 1; }
+  "$MIGRATE_BIN" -path "$MIGRATIONS" -database "$(url_for "$db")" up
+  assert_us09_schema "$db"
+  after=$(backbone_values "$db")
+  [[ "$after" == "$before" ]] || { echo "$db upgrade changed v6 values" >&2; return 1; }
+  open=$(psql_for "$db" -Atqc 'SELECT bool_and(NOT is_closed) FROM sprints')
+  [[ "$open" == t ]] || { echo "$db existing sprint was not defaulted open" >&2; return 1; }
+  psql_for "$db" -q -c "INSERT INTO sprint_stories (sprint_id,story_id,project_id) VALUES ('00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001')" \
+    -c "UPDATE sprints SET is_closed=true WHERE id='00000000-0000-0000-0000-000000000003'"
+  associations=$(psql_for "$db" -Atqc "SELECT count(*)=1 AND bool_and(sp.is_closed) FROM sprint_stories ss JOIN stories s ON s.id=ss.story_id AND s.project_id=ss.project_id JOIN sprints sp ON sp.id=ss.sprint_id AND sp.project_id=ss.project_id")
+  [[ "$associations" == t ]] || { echo "$db association/closed state not persisted" >&2; return 1; }
+  "$MIGRATE_BIN" -path "$MIGRATIONS" -database "$(url_for "$db")" down 2
+  state=$(psql_for "$db" -Atqc 'SELECT version || '\'' '\'' || dirty FROM schema_migrations')
+  [[ "$state" == '6 false' ]] || { echo "$db feature down-two state: $state" >&2; return 1; }
+  removed=$(psql_for "$db" -Atqc "SELECT to_regclass('public.sprint_stories') IS NULL AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='sprints' AND column_name='is_closed')")
+  [[ "$removed" == t ]] || { echo "$db feature down retained association/closure schema" >&2; return 1; }
+  after=$(backbone_values "$db")
+  [[ "$after" == "$before" ]] || { echo "$db feature down changed v6 values" >&2; return 1; }
+  "$MIGRATE_BIN" -path "$MIGRATIONS" -database "$(url_for "$db")" up
+  assert_us09_schema "$db"
+  after=$(backbone_values "$db")
+  [[ "$after" == "$before" ]] || { echo "$db feature reapply changed v6 values" >&2; return 1; }
+  open=$(psql_for "$db" -Atqc 'SELECT bool_and(NOT is_closed) FROM sprints')
+  associations=$(psql_for "$db" -Atqc 'SELECT count(*) FROM sprint_stories')
+  [[ "$open" == t && "$associations" == 0 ]] || { echo "$db reapply did not reset lost closure/associations" >&2; return 1; }
+}
+# hours_history originally had no sprint; its baseline assertion above remains intact.
+psql_for hours_history -q -c "INSERT INTO sprints (id,project_id,sprint_goal) VALUES ('00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000001','preserve sprint')"
+for db in fresh hours_history sprint_history; do upgrade_and_reverse_us09 "$db"; done
+
+# Also exercise the runner's actual fresh installation at the new head.
+"$PG_BIN/createdb" -h 127.0.0.1 -p "$port" fresh_head
+"$MIGRATE_BIN" -path "$MIGRATIONS" -database "$(url_for fresh_head)" up
+assert_us09_schema fresh_head
+seed_project_story fresh_head
+seed_member fresh_head
+psql_for fresh_head -q -c "INSERT INTO sprints (id,project_id,sprint_goal) VALUES ('00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000001','preserve sprint')"
+head_open=$(psql_for fresh_head -Atqc 'SELECT bool_and(NOT is_closed) FROM sprints')
+[[ "$head_open" == t ]] || { echo 'fresh v8 sprint not open' >&2; exit 1; }
+
+# Return from v8 to v6 BEFORE the legacy v6 down-one member-removal check.
+"$MIGRATE_BIN" -path "$MIGRATIONS" -database "$(url_for sprint_history)" down 2
+assert_converged sprint_history yes
+# Down one at v6 removes members only; preserve project/story/sprint backbone.
 "$MIGRATE_BIN" -path "$MIGRATIONS" -database "$(url_for sprint_history)" down 1
 state=$(psql_for sprint_history -Atqc 'SELECT version || '\'' '\'' || dirty FROM schema_migrations')
 [[ "$state" == '5 false' ]] || { echo "down-one migration state: $state" >&2; exit 1; }
@@ -191,4 +254,4 @@ else
   exit 1
 fi
 
-echo 'PASS: fresh install and both valid v4 histories converge at 6 false with seeded data preserved; down 1 removes only v6 members and retains project/story/sprint rows; story, sprint, project-member, and full Go test suites passed against disposable loopback PostgreSQL.'
+echo 'PASS: baseline-v6 and v5 reapply preserved; fresh v8 and canonical v6->v8 preserve seeded project/story/sprint/member rows; feature down 2 loses association/closure only; legacy v6 down 1 removes members only; negative fixtures fail dirty v5; story, sprint, member and full Go suites passed against disposable loopback PostgreSQL.'

@@ -51,7 +51,8 @@ type StoryDependencies struct {
 	Repository storyapplication.StoryRepository
 	GenerateID storyapplication.IDGenerator
 	Updater    storyapplication.StoryUpdater
-	Lister     storyapplication.StoryLister // nil: GET on the collection is not registered (the mux answers 405)
+	Lister     storyapplication.StoryLister         // nil: GET on the collection is not registered (the mux answers 405)
+	Assigner   storyapplication.StorySprintAssigner // supplied only after migration 000008 is clean
 }
 
 // SprintDependencies enables sprint creation after reconciliation migration 000005 is clean.
@@ -75,10 +76,11 @@ type HTTPDependencies struct {
 
 // MigrationReadiness describes which handlers are safe to compose for a schema state.
 type MigrationReadiness struct {
-	Projects bool
-	Stories  bool
-	Sprints  bool
-	Members  bool
+	Projects   bool
+	Stories    bool
+	Sprints    bool
+	Members    bool
+	Assignment bool
 }
 
 // ResolveMigrationReadiness keeps project creation available while gating schema-backed routes.
@@ -90,6 +92,7 @@ func ResolveMigrationReadiness(version int, dirty bool, lookupErr error) Migrati
 	readiness.Stories = version >= 2
 	readiness.Sprints = version >= 5
 	readiness.Members = version >= 6
+	readiness.Assignment = version >= 8
 	return readiness
 }
 
@@ -128,6 +131,10 @@ func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, ge
 			listStoriesUseCase := storyapplication.NewListStoriesUseCase(dependencies.Stories.Lister)
 			mux.Handle("GET /projects/{project_id}/stories", storyhttp.NewListStoriesHandler(listStoriesUseCase))
 		}
+	}
+	if dependencies.Stories != nil && dependencies.Stories.Assigner != nil {
+		assignUseCase := storyapplication.NewAssignStoriesUseCase(dependencies.Stories.Assigner)
+		mux.Handle("POST /projects/{project_id}/sprints/{sprint_id}/stories", storyhttp.NewAssignStoriesHandler(assignUseCase))
 	}
 	if dependencies.Sprints != nil {
 		sprintUseCase := sprintapplication.NewCreateSprintUseCase(dependencies.Sprints.Repository, dependencies.Sprints.GenerateID)

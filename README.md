@@ -1,6 +1,6 @@
 # Métricas de software y estimación
 
-Este servicio permite crear proyectos (US-01), crear historias en el Product Backlog de un proyecto conocido (US-05), modificarlas (US-06) y consultar el Product Backlog ordenado (US-07) mediante una API HTTP respaldada por PostgreSQL.
+Este servicio permite crear proyectos (US-01), crear historias en el Product Backlog de un proyecto conocido (US-05), modificarlas (US-06), consultar el Product Backlog ordenado (US-07), crear Sprints (US-08) y asignarles historias (US-09) mediante una API HTTP respaldada por PostgreSQL.
 
 ## Requisitos previos
 
@@ -114,6 +114,34 @@ La respuesta `200 OK` es un contenedor con el identificador canónico del proyec
 - **Bloqueo exclusivo al migrar**: agregar la columna de identidad reescribe la tabla `stories` bajo un bloqueo `ACCESS EXCLUSIVE`, que bloquea lecturas y escrituras mientras dura. Con el volumen actual es instantáneo; en entornos con muchas historias, aplique `000004` en una ventana de mantenimiento.
 - **Limitación del orden de las filas previas**: al aplicar `000004`, PostgreSQL asigna `seq` a las historias ya existentes en el orden físico de la tabla, porque no hay ningún dato previo del cual reconstruir el orden real de creación. Para esas historias el desempate cronológico dentro de una misma prioridad **no** está garantizado; queda fijo y es determinista desde entonces. El orden por prioridad rige igual para todas, y las historias creadas después de la migración sí conservan su orden de creación.
 - **Reversión de la migración `000004`**: su `down` elimina la restricción y la columna `seq`; solo se pierde la secuencia de desempate, ningún dato de negocio. Volver a aplicar `000004` asigna una nueva secuencia arbitraria a las historias existentes.
+
+## Crear un Sprint y asignar historias (US-08 / US-09)
+
+`POST /projects/{project_id}/sprints` recibe `{"sprint_goal":"Entrega"}` y devuelve `201` con `id`, `project_id` y `sprint_goal`. Requiere un proyecto existente, un UUID válido y un objetivo no blanco. La creación no asigna historias.
+
+La asignación usa `POST /projects/{project_id}/sprints/{sprint_id}/stories`, con un único objeto JSON y sin campos adicionales:
+
+```json
+{"story_ids":["e99c05a4-03ea-4c19-8f59-286dd59e7aa1","7256b0bb-835c-4166-9600-3d774e919477"]}
+```
+
+Devuelve `201 Created` con `{"sprint_id":"<uuid>","story_ids":["<uuid>","<uuid>"]}`. El lote es atómico: todas las historias deben existir, pertenecer al proyecto del Sprint y no estar ya asociadas a ese mismo Sprint. El proyecto de la ruta debe coincidir con el del Sprint. Las historias **permanecen en el Product Backlog**, sin cambios de estado, contenido, estimación ni orden de creación. La unicidad del par Sprint/historia y las FKs compuestas respaldan la integridad; la transacción bloquea el Sprint frente a asignaciones/cierre concurrentes.
+
+| Resultado | HTTP / código |
+|---|---|
+| JSON malformado, varios valores, tipos incorrectos o campos desconocidos | `400 invalid_request` |
+| UUID inválido, selección vacía o IDs repetidos | `422 validation_failed` con `fields` |
+| Sprint o historia inexistente | `404 resource_not_found` |
+| Proyecto de ruta distinto (también inexistente), historia de otro proyecto, asociación previa o Sprint cerrado | `409 assignment_conflict` |
+| Fallo inesperado, sin detalles internos ni escrituras parciales | `500 internal_error` |
+
+La fuente de cierre es `sprints.is_closed BOOLEAN NOT NULL DEFAULT false`: los Sprints existentes y nuevos quedan abiertos por defecto. US-09 no agrega un endpoint de cierre, tareas ni operaciones de finalización.
+
+### Migraciones y disponibilidad
+
+El comando `migrate ... up` aplica la secuencia canónica única `000001`–`000008`. `000005` reconcilia historias/Sprints, `000006` crea integrantes, `000007_create_sprint_stories` agrega asociaciones y `000008_add_sprint_closed` agrega el cierre. Al arrancar, la API mantiene creación de Sprints con versión limpia **>=5**, integrantes con **>=6**, y registra asignación solamente con versión limpia **>=8** y dependencia explícita. En v6/v7, estado `dirty`, error de lectura o sin dependencia, la ruta de asignación no existe (`404`); no se infiere capacidad del tipo de repositorio. Los gates anteriores de historias y el GET de estado del proyecto se conservan.
+
+La compatibilidad cubierta es instalación nueva y upgrade desde **main canónico v6**. Se desconoce el despliegue de los v5/v6 alternativos de la cadena original: no se afirma compatibilidad ni readiness productiva para esas bases. Las migraciones históricas de main no se renumeran ni modifican. En una base descartable, `down 2` desde v8 vuelve a v6 y **pierde asociaciones y estado de cierre**, preservando integrantes/proyectos/historias/Sprints; no es una garantía de rollback productivo seguro.
 
 ## Pruebas
 

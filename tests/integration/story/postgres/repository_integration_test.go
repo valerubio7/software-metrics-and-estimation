@@ -1190,6 +1190,8 @@ func storyDatabase(t *testing.T) *pgxpool.Pool {
 		"000004_add_story_creation_sequence.up.sql",
 		"000005_reconcile_story_hours_and_sprints.up.sql",
 		"000006_create_project_members.up.sql",
+		"000007_create_sprint_stories.up.sql",
+		"000008_add_sprint_closed.up.sql",
 	} {
 		applyStoryMigration(t, pool, name)
 	}
@@ -1199,7 +1201,7 @@ func storyDatabase(t *testing.T) *pgxpool.Pool {
 func storyDatabaseFromDSN(t *testing.T, dsn string) *pgxpool.Pool {
 	t.Helper()
 	pool := testpostgres.OpenIsolated(t, dsn, "STORY_TEST_DATABASE_URL", "story_test")
-	for _, name := range []string{"000001_create_projects.up.sql", "000002_create_stories.up.sql", "000003_add_story_estimated_hours.up.sql", "000004_add_story_creation_sequence.up.sql", "000005_reconcile_story_hours_and_sprints.up.sql", "000006_create_project_members.up.sql"} {
+	for _, name := range []string{"000001_create_projects.up.sql", "000002_create_stories.up.sql", "000003_add_story_estimated_hours.up.sql", "000004_add_story_creation_sequence.up.sql", "000005_reconcile_story_hours_and_sprints.up.sql", "000006_create_project_members.up.sql", "000007_create_sprint_stories.up.sql", "000008_add_sprint_closed.up.sql"} {
 		applyStoryMigration(t, pool, name)
 	}
 	return pool
