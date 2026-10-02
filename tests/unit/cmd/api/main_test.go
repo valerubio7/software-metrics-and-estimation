@@ -145,12 +145,16 @@ func TestMigrationReadinessSelectsRoutesIndependently(t *testing.T) {
 		sprints bool
 		members bool
 	}{
+		{name: "clean v1", version: 1},
 		{name: "clean v2", version: 2, stories: true},
-		{name: "clean v3", version: 3, stories: true, sprints: true},
+		{name: "clean v3", version: 3, stories: true},
+		{name: "clean v4", version: 4, stories: true},
 		{name: "clean v5", version: 5, stories: true, sprints: true},
 		{name: "clean v6", version: 6, stories: true, sprints: true, members: true},
 		{name: "clean future", version: 9, stories: true, sprints: true, members: true},
 		{name: "dirty v3", version: 3, dirty: true},
+		{name: "dirty v5", version: 5, dirty: true},
+		{name: "dirty v6", version: 6, dirty: true},
 		{name: "lookup error", lookup: context.DeadlineExceeded},
 		{name: "missing migration table", lookup: errors.New(`relation "schema_migrations" does not exist`)},
 		{name: "no migration version row", lookup: errors.New("no rows in result set")},
@@ -158,7 +162,47 @@ func TestMigrationReadinessSelectsRoutesIndependently(t *testing.T) {
 		t.Run(scenario.name, func(t *testing.T) {
 			readiness := api.ResolveMigrationReadiness(scenario.version, scenario.dirty, scenario.lookup)
 			if readiness.Stories != scenario.stories || readiness.Sprints != scenario.sprints || readiness.Members != scenario.members || !readiness.Projects {
-				t.Fatalf("readiness = %+v", readiness)
+				t.Errorf("readiness = %+v", readiness)
+			}
+
+			id := "5c21cbd4-d9a7-42df-9c3a-c0866f058746"
+			generateID := func() string { return id }
+			projects := &fakeProjectRepository{}
+			stories := &fakeStoryRepository{}
+			sprints := &fakeSprintRepository{}
+			members := &fakeMemberRepository{}
+			deps := api.HTTPDependencies{}
+			if readiness.Stories {
+				deps.Stories = &api.StoryDependencies{Repository: stories, GenerateID: generateID}
+			}
+			if readiness.Sprints {
+				deps.Sprints = &api.SprintDependencies{Repository: sprints, GenerateID: generateID}
+			}
+			if readiness.Members {
+				deps.Members = &api.MemberDependencies{Repository: members, GenerateID: generateID}
+			}
+			handler := api.NewHTTPHandlerWithDependencies(projects, generateID, deps)
+			for _, route := range []struct {
+				name    string
+				path    string
+				body    string
+				enabled bool
+				writes  func() int
+			}{
+				{"projects", "/projects", `{"name":"Metrics portal","start_date":"2026-03-01","planned_finish_date":"2026-06-30"}`, true, func() int { return len(projects.projects) }},
+				{"stories", "/projects/" + id + "/stories", `{"title":"Registro","description":"Crear historia","priority":"media","acceptance_criteria":["Listo"]}`, scenario.stories, func() int { return len(stories.stories) }},
+				{"sprints", "/projects/" + id + "/sprints", `{"sprint_goal":"Deliver"}`, scenario.sprints, func() int { return len(sprints.sprints) }},
+				{"members", "/projects/" + id + "/members", `{"members":[{"full_name":"Ada"}]}`, scenario.members, func() int { return len(members.members) }},
+			} {
+				response := httptest.NewRecorder()
+				handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, route.path, strings.NewReader(route.body)))
+				wantStatus, wantWrites := http.StatusNotFound, 0
+				if route.enabled {
+					wantStatus, wantWrites = http.StatusCreated, 1
+				}
+				if response.Code != wantStatus || route.writes() != wantWrites {
+					t.Errorf("%s status=%d writes=%d; want status=%d writes=%d; body=%s", route.name, response.Code, route.writes(), wantStatus, wantWrites, response.Body.String())
+				}
 			}
 		})
 	}

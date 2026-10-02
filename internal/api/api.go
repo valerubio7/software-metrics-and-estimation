@@ -53,7 +53,7 @@ type StoryDependencies struct {
 	Lister     storyapplication.StoryLister // nil: GET on the collection is not registered (the mux answers 405)
 }
 
-// SprintDependencies enables sprint creation after migration 000003 is clean.
+// SprintDependencies enables sprint creation after reconciliation migration 000005 is clean.
 type SprintDependencies struct {
 	Repository sprintapplication.SprintRepository
 	GenerateID sprintapplication.IDGenerator
@@ -87,7 +87,7 @@ func ResolveMigrationReadiness(version int, dirty bool, lookupErr error) Migrati
 		return readiness
 	}
 	readiness.Stories = version >= 2
-	readiness.Sprints = version >= 3
+	readiness.Sprints = version >= 5
 	readiness.Members = version >= 6
 	return readiness
 }
