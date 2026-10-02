@@ -22,6 +22,56 @@ const (
 	sprintID  = "e99c05a4-03ea-4c19-8f59-286dd59e7aa1"
 )
 
+func TestSprintClosedMigrationDefaultDownAndUp(t *testing.T) {
+	pool := sprintDatabase(t)
+	insertProject(t, pool)
+
+	var columnDefault string
+	if err := pool.QueryRow(context.Background(), `SELECT column_default FROM information_schema.columns WHERE table_name = 'sprints' AND column_name = 'is_closed'`).Scan(&columnDefault); err != nil {
+		t.Fatalf("read is_closed default after migration: %v", err)
+	}
+	if columnDefault != "false" {
+		t.Fatalf("is_closed default = %q, want false", columnDefault)
+	}
+	if _, err := pool.Exec(context.Background(), "INSERT INTO sprints (id, project_id, sprint_goal) VALUES ($1, $2, 'Default')", sprintID, projectID); err != nil {
+		t.Fatalf("insert sprint with default closed state: %v", err)
+	}
+	var isClosed bool
+	if err := pool.QueryRow(context.Background(), "SELECT is_closed FROM sprints WHERE id = $1", sprintID).Scan(&isClosed); err != nil {
+		t.Fatal(err)
+	}
+	if isClosed {
+		t.Fatal("new sprint is closed; want false by default")
+	}
+
+	applySprintMigration(t, pool, "000006_add_sprint_closed.down.sql")
+	var columnExists bool
+	if err := pool.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'sprints' AND column_name = 'is_closed')`).Scan(&columnExists); err != nil {
+		t.Fatal(err)
+	}
+	if columnExists {
+		t.Fatal("is_closed still exists after down migration")
+	}
+	applySprintMigration(t, pool, "000006_add_sprint_closed.up.sql")
+	if err := pool.QueryRow(context.Background(), `SELECT column_default FROM information_schema.columns WHERE table_name = 'sprints' AND column_name = 'is_closed'`).Scan(&columnDefault); err != nil {
+		t.Fatalf("read is_closed default after reapplying migration: %v", err)
+	}
+	if columnDefault != "false" {
+		t.Fatalf("is_closed default after reapplying migration = %q, want false", columnDefault)
+	}
+}
+
+func applySprintMigration(t *testing.T, pool *pgxpool.Pool, name string) {
+	t.Helper()
+	migration, err := os.ReadFile(filepath.Join(sprintModuleRoot(t), "internal", "project", "infrastructure", "postgres", "migrations", name))
+	if err != nil {
+		t.Fatalf("read migration %s: %v", name, err)
+	}
+	if _, err := pool.Exec(context.Background(), string(migration)); err != nil {
+		t.Fatalf("apply migration %s: %v", name, err)
+	}
+}
+
 func TestSprintRepositoryPersistsSprintFields(t *testing.T) {
 	pool := sprintDatabase(t)
 	insertProject(t, pool)
@@ -128,7 +178,7 @@ func sprintDatabase(t *testing.T) *pgxpool.Pool {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	for _, name := range []string{"000001_create_projects.up.sql", "000002_create_stories.up.sql", "000003_create_sprints.up.sql"} {
+	for _, name := range []string{"000001_create_projects.up.sql", "000002_create_stories.up.sql", "000003_create_sprints.up.sql", "000006_add_sprint_closed.up.sql"} {
 		migration, err := os.ReadFile(filepath.Join(sprintModuleRoot(t), "internal", "project", "infrastructure", "postgres", "migrations", name))
 		if err != nil {
 			t.Fatalf("read migration %s: %v", name, err)
