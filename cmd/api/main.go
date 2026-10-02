@@ -32,30 +32,38 @@ func main() {
 	}
 
 	// Story creation needs schema version 2, story update version 3 and the backlog query
-	// version 4; sprint creation needs schema version 3. All of them require a clean
-	// externally managed migration state.
+	// version 4; all of them require a clean externally managed migration state.
 	var version int
 	var dirty bool
 	migrationErr := pool.QueryRow(ctx, "SELECT version, dirty FROM schema_migrations").Scan(&version, &dirty)
+	readiness := api.ResolveMigrationReadiness(version, dirty, migrationErr)
 	projects := projectpostgres.NewPostgresProjectRepository(pool)
-
 	dependencies := api.HTTPDependencies{}
-	switch {
-	case migrationErr == nil && !dirty && version >= 4:
+	if readiness.Stories {
 		stories := storypostgres.NewPostgresStoryRepository(pool)
-		log.Printf("story creation, update and backlog available (schema version=%d)", version)
-		dependencies.Stories = &api.StoryDependencies{Repository: stories, GenerateID: api.NewProjectID, Updater: stories, Lister: stories}
-	case migrationErr == nil && !dirty && version >= 3:
-		stories := storypostgres.NewPostgresStoryRepository(pool)
-		log.Printf("story backlog unavailable until migration 000004 is clean (version=%d)", version)
-		dependencies.Stories = &api.StoryDependencies{Repository: stories, GenerateID: api.NewProjectID, Updater: stories}
-	case migrationErr == nil && !dirty && version >= 2:
-		log.Printf("story update unavailable until migration 000003 is clean (version=%d)", version)
-		dependencies.Stories = &api.StoryDependencies{Repository: storypostgres.NewPostgresStoryRepository(pool), GenerateID: api.NewProjectID}
-	default:
+		storyDependencies := &api.StoryDependencies{Repository: stories, GenerateID: api.NewProjectID}
+		if version >= 3 {
+			storyDependencies.Updater = stories
+		}
+		if version >= 4 {
+			storyDependencies.Lister = stories
+		}
+		if readiness.Assignment {
+			storyDependencies.Assigner = stories
+		}
+		dependencies.Stories = storyDependencies
+		switch version {
+		case 2:
+			log.Printf("story creation available; story update unavailable until migration 000003 is clean (version=%d)", version)
+		case 3:
+			log.Printf("story creation and update available; story backlog unavailable until migration 000004 is clean (version=%d)", version)
+		default:
+			log.Printf("story creation, update and backlog available (version=%d)", version)
+		}
+	} else {
 		log.Printf("story creation unavailable until migration 000002 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}
-	if migrationErr == nil && !dirty && version >= 3 {
+	if readiness.Sprints {
 		dependencies.Sprints = &api.SprintDependencies{Repository: sprintpostgres.NewPostgresSprintRepository(pool), GenerateID: api.NewProjectID}
 	} else {
 		log.Printf("sprint creation unavailable until migration 000003 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
