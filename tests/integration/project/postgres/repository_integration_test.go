@@ -15,6 +15,7 @@ import (
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/application"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/domain"
 	projectpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/project/infrastructure/postgres"
+	"github.com/valerubio7/software-metrics-and-estimation/tests/integration/testpostgres"
 )
 
 func TestPostgresProjectRepositoryCreatePersistsProject(t *testing.T) {
@@ -140,6 +141,9 @@ func TestProjectsMigrationRejectsFinishDateBeforeStartDate(t *testing.T) {
 func newPostgresPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ctx := context.Background()
+	if dsn := os.Getenv("PROJECT_TEST_DATABASE_URL"); dsn != "" {
+		return projectDatabaseFromDSN(t, dsn)
+	}
 	container, err := postgres.Run(ctx, "postgres:16-alpine",
 		postgres.WithDatabase("projects_test"),
 		postgres.WithUsername("postgres"),
@@ -184,6 +188,11 @@ func waitForPostgres(t *testing.T, pool *pgxpool.Pool) {
 		time.Sleep(200 * time.Millisecond)
 	}
 	t.Fatalf("wait for PostgreSQL test container: %v", lastErr)
+}
+
+func projectDatabaseFromDSN(t *testing.T, dsn string) *pgxpool.Pool {
+	t.Helper()
+	return testpostgres.OpenIsolated(t, dsn, "PROJECT_TEST_DATABASE_URL", "project_test")
 }
 
 func applyProjectsMigration(t *testing.T, pool *pgxpool.Pool) {

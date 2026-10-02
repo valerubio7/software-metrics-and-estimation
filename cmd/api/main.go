@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/api"
 	projectpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/project/infrastructure/postgres"
+	memberpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/projectmember/infrastructure/postgres"
 	sprintpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/sprint/infrastructure/postgres"
 	storypostgres "github.com/valerubio7/software-metrics-and-estimation/internal/story/infrastructure/postgres"
 )
@@ -32,7 +33,7 @@ func main() {
 	}
 
 	// Story creation needs schema version 2, story update version 3 and the backlog query
-	// version 4; sprint creation needs schema version 3. All of them require a clean
+	// version 4; sprint creation needs reconciled schema version 5. All of them require a clean
 	// externally managed migration state.
 	var version int
 	var dirty bool
@@ -55,10 +56,16 @@ func main() {
 	default:
 		log.Printf("story creation unavailable until migration 000002 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}
-	if migrationErr == nil && !dirty && version >= 3 {
+	if readiness := api.ResolveMigrationReadiness(version, dirty, migrationErr); readiness.Sprints {
 		dependencies.Sprints = &api.SprintDependencies{Repository: sprintpostgres.NewPostgresSprintRepository(pool), GenerateID: api.NewProjectID}
 	} else {
-		log.Printf("sprint creation unavailable until migration 000003 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
+		log.Printf("sprint creation unavailable until reconciliation migration 000005 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
+	}
+	if readiness := api.ResolveMigrationReadiness(version, dirty, migrationErr); readiness.Members {
+		dependencies.Members = &api.MemberDependencies{Repository: memberpostgres.NewPostgresMemberRepository(pool), GenerateID: api.NewProjectID}
+		log.Printf("project member registration available (schema version=%d)", version)
+	} else {
+		log.Printf("project member registration unavailable until migration 000006 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}
 	handler := api.NewHTTPHandlerWithDependencies(projects, api.NewProjectID, dependencies)
 	server := &http.Server{Addr: config.Address, Handler: handler}

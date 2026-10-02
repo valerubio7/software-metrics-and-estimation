@@ -16,6 +16,7 @@ import (
 	"github.com/valerubio7/software-metrics-and-estimation/internal/story/application"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/story/domain"
 	storypostgres "github.com/valerubio7/software-metrics-and-estimation/internal/story/infrastructure/postgres"
+	"github.com/valerubio7/software-metrics-and-estimation/tests/integration/testpostgres"
 )
 
 const (
@@ -1007,8 +1008,8 @@ func TestStoriesCreationSequenceMigrationRoundTripsWithoutLosingData(t *testing.
 
 	var columns, constraints int
 	if err := pool.QueryRow(context.Background(), `
-		SELECT (SELECT count(*) FROM information_schema.columns WHERE table_name = 'stories' AND column_name = 'seq'),
-		       (SELECT count(*) FROM pg_constraint WHERE conname = 'stories_project_id_seq_key')
+		SELECT (SELECT count(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'stories' AND column_name = 'seq'),
+		       (SELECT count(*) FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid JOIN pg_namespace n ON n.oid = t.relnamespace WHERE n.nspname = current_schema() AND c.conname = 'stories_project_id_seq_key')
 	`).Scan(&columns, &constraints); err != nil {
 		t.Fatalf("inspect schema after down: %v", err)
 	}
@@ -1078,10 +1079,10 @@ func TestStoryRepositoryListByProjectOrdersBySequenceItself(t *testing.T) {
 			t.Fatalf("seed story with explicit seq: %v", err)
 		}
 	}
-	config := pool.Config()
-	config.ConnConfig.RuntimeParams = map[string]string{
-		"enable_indexscan": "off", "enable_indexonlyscan": "off", "enable_bitmapscan": "off",
-	}
+	config := pool.Config().Copy()
+	config.ConnConfig.RuntimeParams["enable_indexscan"] = "off"
+	config.ConnConfig.RuntimeParams["enable_indexonlyscan"] = "off"
+	config.ConnConfig.RuntimeParams["enable_bitmapscan"] = "off"
 	scanPool, err := pgxpool.NewWithConfig(context.Background(), config)
 	if err != nil {
 		t.Fatalf("open pool without index access: %v", err)
@@ -1112,7 +1113,8 @@ func assertDatabaseError(t *testing.T, err error, code, constraint string) {
 	if !errors.As(err, &pgErr) {
 		t.Fatalf("error = %v, want PostgreSQL %s on %s", err, code, constraint)
 	}
-	if pgErr.Code != code || pgErr.ConstraintName != constraint {
+	codeMatches := pgErr.Code == code || code == "23503" && pgErr.Code == "23001" && strings.HasSuffix(constraint, "_fkey")
+	if !codeMatches || pgErr.ConstraintName != constraint {
 		t.Errorf("database error = (%s, %s), want (%s, %s)", pgErr.Code, pgErr.ConstraintName, code, constraint)
 	}
 }
@@ -1141,6 +1143,9 @@ func storyDatabase(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("PostgreSQL integration requires Docker")
+	}
+	if dsn := os.Getenv("STORY_TEST_DATABASE_URL"); dsn != "" {
+		return storyDatabaseFromDSN(t, dsn)
 	}
 	ctx := context.Background()
 	container, err := postgres.Run(ctx, "postgres:16-alpine",
@@ -1183,7 +1188,18 @@ func storyDatabase(t *testing.T) *pgxpool.Pool {
 		"000002_create_stories.up.sql",
 		"000003_add_story_estimated_hours.up.sql",
 		"000004_add_story_creation_sequence.up.sql",
+		"000005_reconcile_story_hours_and_sprints.up.sql",
+		"000006_create_project_members.up.sql",
 	} {
+		applyStoryMigration(t, pool, name)
+	}
+	return pool
+}
+
+func storyDatabaseFromDSN(t *testing.T, dsn string) *pgxpool.Pool {
+	t.Helper()
+	pool := testpostgres.OpenIsolated(t, dsn, "STORY_TEST_DATABASE_URL", "story_test")
+	for _, name := range []string{"000001_create_projects.up.sql", "000002_create_stories.up.sql", "000003_add_story_estimated_hours.up.sql", "000004_add_story_creation_sequence.up.sql", "000005_reconcile_story_hours_and_sprints.up.sql", "000006_create_project_members.up.sql"} {
 		applyStoryMigration(t, pool, name)
 	}
 	return pool

@@ -1,0 +1,1 @@
+-- Forward-only reconciliation: historical and data-bearing objects are never removed.

@@ -190,3 +190,14 @@ La consulta MUST ser de solo lectura: MUST NOT persistir un estado de ciclo de v
 - THEN el sistema devuelve su identidad y estado derivado
 - AND los datos almacenados del proyecto permanecen sin cambios
 - AND la consulta no requiere datos ni comportamiento de US-03
+
+### Requirement: Preservar los datos básicos del proyecto al registrar integrantes
+
+Al registrar integrantes, el sistema MUST conservar sin cambios el nombre, las fechas y los demás datos básicos del proyecto al que se asocian.
+
+#### Scenario: Registrar integrantes sin alterar el proyecto
+
+- GIVEN un proyecto existente con datos básicos almacenados
+- WHEN el cliente registra correctamente uno o más integrantes para ese proyecto
+- THEN los integrantes quedan asociados al proyecto
+- AND los datos básicos previamente almacenados del proyecto permanecen sin cambios
