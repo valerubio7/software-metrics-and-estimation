@@ -2,7 +2,9 @@ package postgres
 
 import (
 	"context"
+	"errors"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/application"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/domain"
@@ -11,6 +13,23 @@ import (
 // PostgresProjectRepository persists projects in PostgreSQL.
 type PostgresProjectRepository struct {
 	pool *pgxpool.Pool
+}
+
+// GetByID retrieves the basic project fields without modifying persistence.
+func (r *PostgresProjectRepository) GetByID(ctx context.Context, id string) (domain.Project, error) {
+	var project domain.Project
+	err := r.pool.QueryRow(ctx, `
+		SELECT id::text, name, start_date, planned_finish_date
+		FROM projects
+		WHERE id = $1
+	`, id).Scan(&project.ID, &project.Name, &project.StartDate, &project.PlannedFinishDate)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Project{}, application.ErrProjectNotFound
+	}
+	if err != nil {
+		return domain.Project{}, err
+	}
+	return project, nil
 }
 
 // Update replaces only the basic project fields and reports an unknown ID.

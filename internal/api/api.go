@@ -4,6 +4,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/application"
@@ -108,9 +109,14 @@ func NewHTTPHandler(repository application.ProjectRepository, generateID applica
 func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, generateID application.IDGenerator, dependencies HTTPDependencies) http.Handler {
 	useCase := application.NewCreateProjectUseCase(repository, generateID)
 	updateUseCase := application.NewUpdateProjectUseCase(repository)
+	statusReader, supportsProjectReads := repository.(application.ProjectReader)
 	mux := http.NewServeMux()
 	mux.Handle("POST /projects", transporthttp.NewCreateProjectHandler(useCase))
 	mux.Handle("PUT /projects/{project_id}", transporthttp.NewUpdateProjectHandler(updateUseCase))
+	if supportsProjectReads {
+		statusUseCase := application.NewGetProjectStatusUseCase(statusReader)
+		mux.Handle("GET /projects/{project_id}", transporthttp.NewGetProjectStatusHandler(statusUseCase, func() time.Time { return time.Now().UTC() }))
+	}
 	if dependencies.Stories != nil {
 		storyUseCase := storyapplication.NewCreateStoryUseCase(dependencies.Stories.Repository, dependencies.Stories.GenerateID)
 		mux.Handle("POST /projects/{project_id}/stories", storyhttp.NewCreateStoryHandler(storyUseCase))
