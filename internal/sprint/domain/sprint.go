@@ -7,6 +7,7 @@ type Sprint struct {
 	ID         string
 	ProjectID  string
 	SprintGoal string
+	IsClosed   bool
 }
 
 // ValidationError describes invalid sprint input by field.
