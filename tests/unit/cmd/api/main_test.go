@@ -17,6 +17,7 @@ import (
 	sprintdomain "github.com/valerubio7/software-metrics-and-estimation/internal/sprint/domain"
 	storyapplication "github.com/valerubio7/software-metrics-and-estimation/internal/story/application"
 	storydomain "github.com/valerubio7/software-metrics-and-estimation/internal/story/domain"
+	taskdomain "github.com/valerubio7/software-metrics-and-estimation/internal/task/domain"
 )
 
 type fakeProjectRepository struct {
@@ -239,6 +240,7 @@ func TestMigrationReadinessSelectsRoutesIndependently(t *testing.T) {
 		stories bool
 		sprints bool
 		members bool
+		tasks   bool
 	}{
 		{name: "clean v1", version: 1},
 		{name: "clean v2", version: 2, stories: true},
@@ -246,17 +248,20 @@ func TestMigrationReadinessSelectsRoutesIndependently(t *testing.T) {
 		{name: "clean v4", version: 4, stories: true},
 		{name: "clean v5", version: 5, stories: true, sprints: true},
 		{name: "clean v6", version: 6, stories: true, sprints: true, members: true},
-		{name: "clean future", version: 9, stories: true, sprints: true, members: true},
+		{name: "clean v8", version: 8, stories: true, sprints: true, members: true},
+		{name: "clean v9", version: 9, stories: true, sprints: true, members: true, tasks: true},
+		{name: "clean future", version: 12, stories: true, sprints: true, members: true, tasks: true},
 		{name: "dirty v3", version: 3, dirty: true},
 		{name: "dirty v5", version: 5, dirty: true},
 		{name: "dirty v6", version: 6, dirty: true},
+		{name: "dirty v9", version: 9, dirty: true},
 		{name: "lookup error", lookup: context.DeadlineExceeded},
 		{name: "missing migration table", lookup: errors.New(`relation "schema_migrations" does not exist`)},
 		{name: "no migration version row", lookup: errors.New("no rows in result set")},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			readiness := api.ResolveMigrationReadiness(scenario.version, scenario.dirty, scenario.lookup)
-			if readiness.Stories != scenario.stories || readiness.Sprints != scenario.sprints || readiness.Members != scenario.members || !readiness.Projects {
+			if readiness.Stories != scenario.stories || readiness.Sprints != scenario.sprints || readiness.Members != scenario.members || readiness.Tasks != scenario.tasks || !readiness.Projects {
 				t.Errorf("readiness = %+v", readiness)
 			}
 
@@ -300,6 +305,77 @@ func TestMigrationReadinessSelectsRoutesIndependently(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+type fakeTaskRepository struct{ calls int }
+
+func (r *fakeTaskRepository) CreateForSprintStory(context.Context, string, string, string, []taskdomain.Task) error {
+	r.calls++
+	return nil
+}
+
+func TestTaskRouteRequiresCleanVersionNineAndExplicitDependency(t *testing.T) {
+	const id = "5c21cbd4-d9a7-42df-9c3a-c0866f058746"
+	for _, tc := range []struct {
+		name          string
+		version       int
+		dirty         bool
+		lookup        error
+		nilDependency bool
+		enabled       bool
+	}{
+		{name: "v7", version: 7},
+		{name: "v8", version: 8},
+		{name: "v9", version: 9, enabled: true},
+		{name: "future 12", version: 12, enabled: true},
+		{name: "nil dependency", version: 9, nilDependency: true},
+		{name: "dirty v9", version: 9, dirty: true},
+		{name: "lookup error", version: 9, lookup: errors.New("query failed")},
+		{name: "missing migration table", lookup: errors.New("missing schema_migrations")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			readiness := api.ResolveMigrationReadiness(tc.version, tc.dirty, tc.lookup)
+			wantReady := tc.version >= 9 && !tc.dirty && tc.lookup == nil
+			if readiness.Tasks != wantReady {
+				t.Fatalf("readiness = %+v", readiness)
+			}
+			repo := &fakeTaskRepository{}
+			deps := api.HTTPDependencies{}
+			if readiness.Tasks && !tc.nilDependency {
+				deps.Tasks = &api.TaskDependencies{Repository: repo, GenerateID: func() string { return id }}
+			}
+			h := api.NewHTTPHandlerWithDependencies(&fakeProjectRepository{}, func() string { return id }, deps)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/projects/"+id+"/sprints/"+id+"/stories/"+id+"/tasks", strings.NewReader(`{"tasks":[{"title":"A"}]}`)))
+			wantStatus, wantCalls := http.StatusNotFound, 0
+			if tc.enabled {
+				wantStatus, wantCalls = http.StatusCreated, 1
+			}
+			if w.Code != wantStatus || repo.calls != wantCalls {
+				t.Fatalf("status/writes = %d/%d want %d/%d body=%s", w.Code, repo.calls, wantStatus, wantCalls, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestTaskRouteIsIndependentFromStories(t *testing.T) {
+	const id = "5c21cbd4-d9a7-42df-9c3a-c0866f058746"
+	repo := &fakeTaskRepository{}
+	h := api.NewHTTPHandlerWithDependencies(&fakeProjectRepository{}, func() string { return id }, api.HTTPDependencies{
+		Tasks: &api.TaskDependencies{Repository: repo, GenerateID: func() string { return id }},
+	})
+
+	taskResponse := httptest.NewRecorder()
+	h.ServeHTTP(taskResponse, httptest.NewRequest(http.MethodPost, "/projects/"+id+"/sprints/"+id+"/stories/"+id+"/tasks", strings.NewReader(`{"tasks":[{"title":"A"}]}`)))
+	if taskResponse.Code != http.StatusCreated || repo.calls != 1 {
+		t.Fatalf("task route status/calls = %d/%d, want 201/1 even without Stories dependency: %s", taskResponse.Code, repo.calls, taskResponse.Body.String())
+	}
+
+	storyResponse := httptest.NewRecorder()
+	h.ServeHTTP(storyResponse, httptest.NewRequest(http.MethodPost, "/projects/"+id+"/stories", strings.NewReader(`{"title":"T","description":"D","priority":"media","acceptance_criteria":["ok"]}`)))
+	if storyResponse.Code != http.StatusNotFound {
+		t.Fatalf("story route status = %d, want 404 (Stories dependency absent)", storyResponse.Code)
 	}
 }
 

@@ -15,6 +15,8 @@ import (
 	sprinthttp "github.com/valerubio7/software-metrics-and-estimation/internal/sprint/transport/http"
 	storyapplication "github.com/valerubio7/software-metrics-and-estimation/internal/story/application"
 	storyhttp "github.com/valerubio7/software-metrics-and-estimation/internal/story/transport/http"
+	taskapplication "github.com/valerubio7/software-metrics-and-estimation/internal/task/application"
+	taskhttp "github.com/valerubio7/software-metrics-and-estimation/internal/task/transport/http"
 )
 
 // Config contains the API runtime configuration.
@@ -67,11 +69,18 @@ type MemberDependencies struct {
 	GenerateID memberapplication.IDGenerator
 }
 
+// TaskDependencies enables task creation after migration 000009 is clean.
+type TaskDependencies struct {
+	Repository taskapplication.TaskRepository
+	GenerateID taskapplication.IDGenerator
+}
+
 // HTTPDependencies contains optional migration-backed API modules.
 type HTTPDependencies struct {
 	Stories *StoryDependencies
 	Sprints *SprintDependencies
 	Members *MemberDependencies
+	Tasks   *TaskDependencies // nil: the task route is not registered (the mux answers 404)
 }
 
 // MigrationReadiness describes which handlers are safe to compose for a schema state.
@@ -81,6 +90,7 @@ type MigrationReadiness struct {
 	Sprints    bool
 	Members    bool
 	Assignment bool
+	Tasks      bool
 }
 
 // ResolveMigrationReadiness keeps project creation available while gating schema-backed routes.
@@ -93,6 +103,7 @@ func ResolveMigrationReadiness(version int, dirty bool, lookupErr error) Migrati
 	readiness.Sprints = version >= 5
 	readiness.Members = version >= 6
 	readiness.Assignment = version >= 8
+	readiness.Tasks = version >= 9
 	return readiness
 }
 
@@ -143,6 +154,10 @@ func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, ge
 	if dependencies.Members != nil {
 		membersUseCase := memberapplication.NewRegisterMembersUseCase(dependencies.Members.Repository, dependencies.Members.GenerateID)
 		mux.Handle("POST /projects/{project_id}/members", memberhttp.NewRegisterMembersHandler(membersUseCase))
+	}
+	if dependencies.Tasks != nil {
+		createTasksUseCase := taskapplication.NewCreateTasksUseCase(dependencies.Tasks.Repository, dependencies.Tasks.GenerateID)
+		mux.Handle("POST /projects/{project_id}/sprints/{sprint_id}/stories/{story_id}/tasks", taskhttp.NewCreateTasksHandler(createTasksUseCase))
 	}
 	return mux
 }
