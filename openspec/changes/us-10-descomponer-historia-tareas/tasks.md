@@ -104,8 +104,8 @@ Chain strategy: size-exception
 
 ## Fase 8: Documentación
 
-- [ ] 8.1 Actualizar `README.md` donde hoy se listan rutas y migraciones (línea ~142) documentando la ruta nueva `POST /projects/{project_id}/sprints/{sprint_id}/stories/{story_id}/tasks` y el umbral de esquema `000009` que la habilita, siguiendo el mismo formato usado para las rutas existentes.
-- [ ] 8.2 **Commit** (Unidad de Trabajo 8): `docs: document task creation route and migration 000009`. Sin traza TDD (cambio de documentación, no requiere RED/GREEN).
+- [x] 8.1 Actualizar `README.md` donde hoy se listan rutas y migraciones (línea ~142) documentando la ruta nueva `POST /projects/{project_id}/sprints/{sprint_id}/stories/{story_id}/tasks` y el umbral de esquema `000009` que la habilita, siguiendo el mismo formato usado para las rutas existentes.
+- [x] 8.2 **Commit** (Unidad de Trabajo 8): `docs: document task creation route and migration 000009`. Sin traza TDD (cambio de documentación, no requiere RED/GREEN).
 
 ## Fase 9: Verificación final
 

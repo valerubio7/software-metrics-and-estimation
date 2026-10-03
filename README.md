@@ -139,9 +139,29 @@ La fuente de cierre es `sprints.is_closed BOOLEAN NOT NULL DEFAULT false`: los S
 
 ### Migraciones y disponibilidad
 
-El comando `migrate ... up` aplica la secuencia canónica única `000001`–`000008`. `000005` reconcilia historias/Sprints, `000006` crea integrantes, `000007_create_sprint_stories` agrega asociaciones y `000008_add_sprint_closed` agrega el cierre. Al arrancar, la API mantiene creación de Sprints con versión limpia **>=5**, integrantes con **>=6**, y registra asignación solamente con versión limpia **>=8** y dependencia explícita. En v6/v7, estado `dirty`, error de lectura o sin dependencia, la ruta de asignación no existe (`404`); no se infiere capacidad del tipo de repositorio. Los gates anteriores de historias y el GET de estado del proyecto se conservan.
+El comando `migrate ... up` aplica la secuencia canónica única `000001`–`000009`. `000005` reconcilia historias/Sprints, `000006` crea integrantes, `000007_create_sprint_stories` agrega asociaciones, `000008_add_sprint_closed` agrega el cierre y `000009_create_tasks` crea la tabla de tareas. Al arrancar, la API mantiene creación de Sprints con versión limpia **>=5**, integrantes con **>=6**, registra asignación solamente con versión limpia **>=8** y creación de tareas solamente con versión limpia **>=9**, todas con dependencia explícita. En versiones anteriores, estado `dirty`, error de lectura o sin dependencia, la ruta correspondiente no existe (`404`); no se infiere capacidad del tipo de repositorio. Los gates anteriores de historias y el GET de estado del proyecto se conservan.
 
 La compatibilidad cubierta es instalación nueva y upgrade desde **main canónico v6**. Se desconoce el despliegue de los v5/v6 alternativos de la cadena original: no se afirma compatibilidad ni readiness productiva para esas bases. Las migraciones históricas de main no se renumeran ni modifican. En una base descartable, `down 2` desde v8 vuelve a v6 y **pierde asociaciones y estado de cierre**, preservando integrantes/proyectos/historias/Sprints; no es una garantía de rollback productivo seguro.
+
+## Descomponer una historia del Sprint en tareas (US-10)
+
+`POST /projects/{project_id}/sprints/{sprint_id}/stories/{story_id}/tasks` crea un lote de una o más tareas para la historia indicada, siempre que esté asignada a ese Sprint. Solo está disponible con el esquema en versión 9 o superior sin estado `dirty` (migración `000009`); con una versión inferior la ruta no existe (`404`), de forma independiente del gate de asignación de US-09.
+
+```json
+{"tasks":[{"title":"Diseñar el esquema","estimated_hours":4.5},{"title":"Escribir pruebas de integración"}]}
+```
+
+Cada tarea requiere `title` no vacío ni compuesto solo por espacios; `estimated_hours` es opcional (ausente o `null` significa "sin estimar") y, cuando está presente, sigue la misma regla que `Story.EstimatedHours`: mayor que `0`, como máximo dos decimales y menor o igual que `99999.99`. El lote es todo o nada. Devuelve `201 Created` con `{"tasks":[{"id","project_id","sprint_id","story_id","title","estimated_hours"}, ...]}` en el orden del request. Las tareas quedan asociadas a su historia, a su Sprint y a su proyecto; no tienen campo de estado en este alcance (diferido a US-15), y se permite crearlas aunque el Sprint esté cerrado.
+
+| Resultado | HTTP / código |
+|---|---|
+| JSON malformado, lote vacío o ausente, campo desconocido (raíz o tarea) o tipo incorrecto | `400 invalid_request` |
+| UUID de ruta inválido, título vacío o estimación inválida en algún elemento del lote | `422 validation_failed` con `fields` indexados por tarea (`tasks[i].campo`) |
+| Proyecto, Sprint o historia inexistente o de otro proyecto | `404 project_not_found` / `sprint_not_found` / `story_not_found` |
+| La historia existe pero no está asignada a ese Sprint | `409 story_not_in_sprint` |
+| Fallo inesperado, sin detalles internos ni escrituras parciales | `500 internal_error` |
+
+La verificación de pertenencia (proyecto → Sprint del proyecto → historia del proyecto → asociación en `sprint_stories`) y el alta del lote ocurren dentro de la misma transacción, bloqueando las filas leídas con `FOR KEY SHARE`; una FK compuesta hacia `sprint_stories(sprint_id, story_id)` refuerza la regla también en base de datos y, como efecto, impide desasignar una historia con tareas creadas. Antes de revertir la migración `000009` evalúe y preserve las tareas existentes: su `down` elimina la tabla `tasks` y todos sus datos.
 
 ## Pruebas
 
