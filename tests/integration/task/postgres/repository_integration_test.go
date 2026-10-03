@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -386,10 +387,31 @@ func taskDatabase(t *testing.T) *pgxpool.Pool {
 		t.Fatalf("connect to PostgreSQL: %v", err)
 	}
 	t.Cleanup(pool.Close)
+	waitForTaskDatabaseReady(t, ctx, pool)
 	for _, name := range canonicalTaskMigrations() {
 		applyTaskMigration(t, pool, name)
 	}
 	return pool
+}
+
+// waitForTaskDatabaseReady polls with Ping until the container accepts connections.
+// The container's "ready" log line fires before PostgreSQL finishes starting up;
+// connecting immediately can fail with an EOF on the wire.
+func waitForTaskDatabaseReady(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		pingCtx, cancel := context.WithTimeout(ctx, time.Second)
+		err := pool.Ping(pingCtx)
+		cancel()
+		if err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("wait for PostgreSQL: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 func taskDatabaseFromDSN(t *testing.T, dsn string) *pgxpool.Pool {

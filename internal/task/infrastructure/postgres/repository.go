@@ -41,8 +41,8 @@ func (r *PostgresTaskRepository) CreateForSprintStory(ctx context.Context, proje
 		return application.ErrProjectNotFound
 	}
 
-	var sprintExists bool
-	err = tx.QueryRow(ctx, "SELECT 1 FROM sprints WHERE id = $1 AND project_id = $2 FOR KEY SHARE", sprintID, projectID).Scan(&sprintExists)
+	var sprintRow int
+	err = tx.QueryRow(ctx, "SELECT 1 FROM sprints WHERE id = $1 AND project_id = $2 FOR KEY SHARE", sprintID, projectID).Scan(&sprintRow)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return application.ErrSprintNotFound
 	}
@@ -50,8 +50,8 @@ func (r *PostgresTaskRepository) CreateForSprintStory(ctx context.Context, proje
 		return err
 	}
 
-	var storyExists bool
-	err = tx.QueryRow(ctx, "SELECT 1 FROM stories WHERE id = $1 AND project_id = $2 FOR KEY SHARE", storyID, projectID).Scan(&storyExists)
+	var storyRow int
+	err = tx.QueryRow(ctx, "SELECT 1 FROM stories WHERE id = $1 AND project_id = $2 FOR KEY SHARE", storyID, projectID).Scan(&storyRow)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return application.ErrStoryNotFound
 	}
@@ -59,8 +59,8 @@ func (r *PostgresTaskRepository) CreateForSprintStory(ctx context.Context, proje
 		return err
 	}
 
-	var assigned bool
-	err = tx.QueryRow(ctx, "SELECT 1 FROM sprint_stories WHERE sprint_id = $1 AND story_id = $2 FOR KEY SHARE", sprintID, storyID).Scan(&assigned)
+	var assignedRow int
+	err = tx.QueryRow(ctx, "SELECT 1 FROM sprint_stories WHERE sprint_id = $1 AND story_id = $2 FOR KEY SHARE", sprintID, storyID).Scan(&assignedRow)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return application.ErrStoryNotInSprint
 	}
