@@ -13,6 +13,7 @@ import (
 	memberpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/projectmember/infrastructure/postgres"
 	sprintpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/sprint/infrastructure/postgres"
 	storypostgres "github.com/valerubio7/software-metrics-and-estimation/internal/story/infrastructure/postgres"
+	taskpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/task/infrastructure/postgres"
 )
 
 func main() {
@@ -33,8 +34,8 @@ func main() {
 	}
 
 	// Story creation needs schema version 2, story update version 3 and the backlog query
-	// version 4; sprint creation needs reconciled schema version 5. All of them require a clean
-	// externally managed migration state.
+	// version 4; sprint creation needs reconciled schema version 5. Task creation needs
+	// schema version 9. All of them require a clean externally managed migration state.
 	var version int
 	var dirty bool
 	migrationErr := pool.QueryRow(ctx, "SELECT version, dirty FROM schema_migrations").Scan(&version, &dirty)
@@ -72,6 +73,12 @@ func main() {
 		log.Printf("story assignment available (schema version=%d)", version)
 	} else {
 		log.Printf("story assignment unavailable until migration 000008 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
+	}
+	if readiness := api.ResolveMigrationReadiness(version, dirty, migrationErr); readiness.Tasks {
+		dependencies.Tasks = &api.TaskDependencies{Repository: taskpostgres.NewPostgresTaskRepository(pool), GenerateID: api.NewProjectID}
+		log.Printf("task creation available (schema version=%d)", version)
+	} else {
+		log.Printf("task creation unavailable until migration 000009 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}
 	handler := api.NewHTTPHandlerWithDependencies(projects, api.NewProjectID, dependencies)
 	server := &http.Server{Addr: config.Address, Handler: handler}
