@@ -110,9 +110,30 @@ Chain strategy: size-exception
 ## Fase 9: Verificación final
 
 - [ ] 9.1 Ejecutar la suite completa `go test ./...` (con Docker disponible para las pruebas de integración con Testcontainers) y confirmar que todo pasa.
+
+  **PARCIAL (sdd-apply)**: se ejecutó `go test ./...` con Docker no disponible en este entorno (motor de Docker Desktop detenido). Resultado observado:
+  - Todos los paquetes `tests/unit/...` (incluidos los tres nuevos de `task`) → **PASS**.
+  - `tests/integration/migrations/...` → **PASS** (no usa Testcontainers).
+  - `tests/integration/project/postgres`, `tests/integration/projectmember/postgres`, `tests/integration/sprint/postgres`, `tests/integration/story/postgres` y `tests/integration/task/postgres` → **FAIL**, los cinco con el mismo error de infraestructura: `rootless Docker is not supported on Windows, failed to create Docker provider`.
+  - Esto confirma que el bloqueo es **ambiental y preexistente** (afecta por igual a los módulos ya mergeados en `main` y al nuevo módulo `task`), no un defecto introducido por este cambio. No se puede marcar esta tarea como completa sin Docker disponible.
+
 - [ ] 9.2 Revisar uno por uno los criterios de éxito de `proposal.md` (read-only) contra el comportamiento implementado y marcar cada uno como cumplido o pendiente con evidencia (comando ejecutado y resultado observado).
+
+  1. Crear una o más tareas asociadas a historia/Sprint/proyecto → implementado (`CreateTasksUseCase` + `PostgresTaskRepository.CreateForSprintStory`); probado a nivel unitario con fakes (`go test ./tests/unit/task/...` → PASS); **no verificado contra PostgreSQL real** (Docker no disponible).
+  2. Título obligatorio, estimación opcional con máximo `99999.99` y 2 decimales → implementado y probado (`go test ./tests/unit/task/domain/... ./tests/unit/task/application/...` → PASS).
+  3. Historia no pertenece al Sprint, o proyecto/Sprint/historia inexistente o ajeno → error correspondiente y cero tareas → implementado en el repositorio y probado a nivel de handler/caso de uso con fakes (`go test ./tests/unit/task/...` → PASS); **la verificación contra base real (`repository_integration_test.go`) no se pudo ejecutar** (Docker no disponible).
+  4. Lote todo o nada, también ante fallo de persistencia → implementado (transacción única con `defer Rollback`); probado a nivel de caso de uso con fakes; **el test de rollback real (`TestCreateTasksRollsBackWhenAnInsertFails`) no se pudo ejecutar** (Docker no disponible).
+  5. Ruta solo se registra con esquema limpio `>= 9`; rutas existentes conservan sus gates → **cumplido y verificado**: `go test ./tests/unit/cmd/api/... ./internal/api/...` → PASS (`TestTaskRouteRequiresCleanVersionNineAndExplicitDependency`, `TestMigrationReadinessSelectsRoutesIndependently`, `TestTaskRouteIsIndependentFromStories`).
+  6. Tareas sin campo de estado, disponibles para US-15 → **cumplido**: `domain.Task` no tiene campo de estado; el handler rechaza una clave `status` en el cuerpo con `400 invalid_request` (campo desconocido, cubierto por `TestCreateTasksHandler/unknown_task_field`).
+  7. `go test ./...` pasa; integración PostgreSQL/Testcontainers se ejecuta con Docker → **pendiente**, ver 9.1. Todo lo verificable sin Docker pasa.
+
 - [ ] 9.3 Reconfirmar, antes de abrir el PR, que `000009` sigue siendo el siguiente número libre dentro de `internal/project/infrastructure/postgres/migrations/` (read-only en esta verificación; riesgo ya documentado en la propuesta: "Otro cambio en curso toma el número `000009` antes de integrar").
+
+  Confirmado: el directorio solo contiene `000001`–`000009` (un par `.up.sql`/`.down.sql` por versión, sin duplicados), verificado también por `TestMigrationVersionsAreUnique` (PASS). `000009` sigue siendo el siguiente número libre al momento de este commit.
+
 - [ ] 9.4 Si la verificación detecta una corrección necesaria, aplicarla siguiendo el mismo ciclo RED → GREEN → REFACTOR de la fase correspondiente y agregar un commit adicional con su propia traza TDD; si no se detecta ninguna corrección, no se agrega commit nuevo en esta fase.
+
+  No se detectó ninguna corrección de comportamiento; la única desviación encontrada (tasks vacío → 400 en vez de 422) ya se documentó y resolvió en la Fase 5. No se agrega commit nuevo en esta fase.
 
 ---
 
