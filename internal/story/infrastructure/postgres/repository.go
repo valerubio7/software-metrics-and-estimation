@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -104,6 +105,74 @@ func (r *PostgresStoryRepository) AssignStoriesForProject(ctx context.Context, r
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+var _ application.SprintStoryCompleter = (*PostgresStoryRepository)(nil)
+
+// CompleteSprintStory records the completion instant of a story within a sprint in one
+// transaction. The sprint is locked first (same order and mode as AssignStoriesForProject),
+// so completion is serialized against assignment, sprint closure and other completions.
+func (r *PostgresStoryRepository) CompleteSprintStory(ctx context.Context, projectID, sprintID, storyID string) (application.SprintStoryCompletion, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return application.SprintStoryCompletion{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	var projectExists bool
+	if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM projects WHERE id = $1)", projectID).Scan(&projectExists); err != nil {
+		return application.SprintStoryCompletion{}, err
+	}
+	if !projectExists {
+		return application.SprintStoryCompletion{}, application.ErrProjectNotFound
+	}
+
+	var closed bool
+	err = tx.QueryRow(ctx, "SELECT is_closed FROM sprints WHERE id = $1 AND project_id = $2 FOR UPDATE", sprintID, projectID).Scan(&closed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.SprintStoryCompletion{}, application.ErrSprintNotFound
+	}
+	if err != nil {
+		return application.SprintStoryCompletion{}, err
+	}
+
+	var storyFound int
+	err = tx.QueryRow(ctx, "SELECT 1 FROM stories WHERE id = $1 AND project_id = $2 FOR KEY SHARE", storyID, projectID).Scan(&storyFound)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.SprintStoryCompletion{}, application.ErrStoryNotFound
+	}
+	if err != nil {
+		return application.SprintStoryCompletion{}, err
+	}
+	if closed {
+		return application.SprintStoryCompletion{}, application.ErrSprintClosed
+	}
+
+	var existing *time.Time
+	err = tx.QueryRow(ctx, "SELECT completed_at FROM sprint_stories WHERE sprint_id = $1 AND story_id = $2 FOR UPDATE", sprintID, storyID).Scan(&existing)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.SprintStoryCompletion{}, application.ErrStoryNotInSprint
+	}
+	if err != nil {
+		return application.SprintStoryCompletion{}, err
+	}
+	if existing != nil {
+		return application.SprintStoryCompletion{}, application.ErrStoryAlreadyCompleted
+	}
+
+	// The IS NULL guard stays even under the row lock: defense in depth against double counting.
+	var completedAt time.Time
+	err = tx.QueryRow(ctx, "UPDATE sprint_stories SET completed_at = now() WHERE sprint_id = $1 AND story_id = $2 AND completed_at IS NULL RETURNING completed_at", sprintID, storyID).Scan(&completedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.SprintStoryCompletion{}, application.ErrStoryAlreadyCompleted
+	}
+	if err != nil {
+		return application.SprintStoryCompletion{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return application.SprintStoryCompletion{}, err
+	}
+	return application.SprintStoryCompletion{ProjectID: projectID, SprintID: sprintID, StoryID: storyID, CompletedAt: completedAt}, nil
 }
 
 // Create inserts one story; only the named project FK identifies a missing project.

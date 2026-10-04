@@ -75,12 +75,19 @@ type TaskDependencies struct {
 	GenerateID taskapplication.IDGenerator
 }
 
+// CompletionDependencies enables story completion within a sprint after migration 000010 is clean.
+type CompletionDependencies struct {
+	Completer storyapplication.SprintStoryCompleter
+}
+
 // HTTPDependencies contains optional migration-backed API modules.
 type HTTPDependencies struct {
 	Stories *StoryDependencies
 	Sprints *SprintDependencies
 	Members *MemberDependencies
 	Tasks   *TaskDependencies // nil: the task route is not registered (the mux answers 404)
+	// Completion nil: the completion route is not registered (the mux answers 404).
+	Completion *CompletionDependencies
 }
 
 // MigrationReadiness describes which handlers are safe to compose for a schema state.
@@ -91,6 +98,7 @@ type MigrationReadiness struct {
 	Members    bool
 	Assignment bool
 	Tasks      bool
+	Completion bool
 }
 
 // ResolveMigrationReadiness keeps project creation available while gating schema-backed routes.
@@ -104,6 +112,7 @@ func ResolveMigrationReadiness(version int, dirty bool, lookupErr error) Migrati
 	readiness.Members = version >= 6
 	readiness.Assignment = version >= 8
 	readiness.Tasks = version >= 9
+	readiness.Completion = version >= 10
 	return readiness
 }
 
@@ -158,6 +167,10 @@ func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, ge
 	if dependencies.Tasks != nil {
 		createTasksUseCase := taskapplication.NewCreateTasksUseCase(dependencies.Tasks.Repository, dependencies.Tasks.GenerateID)
 		mux.Handle("POST /projects/{project_id}/sprints/{sprint_id}/stories/{story_id}/tasks", taskhttp.NewCreateTasksHandler(createTasksUseCase))
+	}
+	if dependencies.Completion != nil {
+		completeUseCase := storyapplication.NewCompleteSprintStoryUseCase(dependencies.Completion.Completer)
+		mux.Handle("POST /projects/{project_id}/sprints/{sprint_id}/stories/{story_id}/completion", storyhttp.NewCompleteSprintStoryHandler(completeUseCase))
 	}
 	return mux
 }

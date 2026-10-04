@@ -37,6 +37,7 @@ notes:
   - MVP parcial de backend Go/PostgreSQL con módulos de proyectos, historias y Sprints; no representa la aplicación completa de la consigna.
   - "Implementadas: US-01, US-02, US-05, US-06, US-07 y US-08 (crear/modificar proyectos e historias, consultar backlog y crear Sprint)."
   - "Implementada: US-10 (descomponer historia en tareas)."
+  - "Implementada: US-11 (registrar historia completada en el Sprint)."
   - Las historias se siguen como issues de GitHub y las épicas se representan como milestones.
   - Las migraciones se aplican externamente; schema_migrations condiciona la disponibilidad de rutas opcionales al arrancar.
   - Hay dos migraciones numeradas 000003 en el directorio compartido; su reconciliación y la validación del despliegue siguen pendientes.

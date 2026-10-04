@@ -39,13 +39,13 @@ func TestMigrationVersionsAreUnique(t *testing.T) {
 		pairs[version][direction] = entry.Name()
 	}
 
-	for _, version := range []string{"000001", "000002", "000003", "000004", "000005", "000006", "000007", "000008", "000009"} {
+	for _, version := range []string{"000001", "000002", "000003", "000004", "000005", "000006", "000007", "000008", "000009", "000010"} {
 		if pairs[version] == nil {
 			problems = append(problems, "missing canonical migration version "+version)
 		}
 	}
-	if len(pairs) != 9 {
-		problems = append(problems, "canonical sequence must contain exactly nine migration pairs")
+	if len(pairs) != 10 {
+		problems = append(problems, "canonical sequence must contain exactly ten migration pairs")
 	}
 
 	for version, files := range pairs {
