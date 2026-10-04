@@ -2,13 +2,18 @@ package postgres_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/valerubio7/software-metrics-and-estimation/internal/api"
+	projectpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/project/infrastructure/postgres"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/story/application"
 	storypostgres "github.com/valerubio7/software-metrics-and-estimation/internal/story/infrastructure/postgres"
 )
@@ -329,5 +334,34 @@ func TestCompleteSprintStoryConcurrentRequestsRecordOnce(t *testing.T) {
 	}
 	if got := completedAt(t, pool, sprintOneID, storyOneID); got == nil || !got.Equal(winner.CompletedAt) {
 		t.Fatalf("persisted completed_at = %v, want winner's %v", got, winner.CompletedAt)
+	}
+}
+
+func TestCompleteSprintStoryHTTPEndToEnd(t *testing.T) {
+	pool, repo := completionDatabase(t)
+	handler := api.NewHTTPHandlerWithDependencies(projectpostgres.NewPostgresProjectRepository(pool), api.NewProjectID,
+		api.HTTPDependencies{Completion: &api.CompletionDependencies{Completer: repo}})
+	path := "/projects/" + projectID + "/sprints/" + sprintOneID + "/stories/" + storyOneID + "/completion"
+
+	first := httptest.NewRecorder()
+	handler.ServeHTTP(first, httptest.NewRequest(http.MethodPost, path, nil))
+	var body struct {
+		StoryID     string    `json:"story_id"`
+		CompletedAt time.Time `json:"completed_at"`
+	}
+	if first.Code != http.StatusOK || json.Unmarshal(first.Body.Bytes(), &body) != nil || body.StoryID != storyOneID {
+		t.Fatalf("first completion = %d %s, want 200", first.Code, first.Body.String())
+	}
+	if got := completedAt(t, pool, sprintOneID, storyOneID); got == nil || !got.Equal(body.CompletedAt) {
+		t.Fatalf("persisted completed_at = %v, want response %v", got, body.CompletedAt)
+	}
+
+	second := httptest.NewRecorder()
+	handler.ServeHTTP(second, httptest.NewRequest(http.MethodPost, path, nil))
+	var conflict struct {
+		Error string `json:"error"`
+	}
+	if second.Code != http.StatusConflict || json.Unmarshal(second.Body.Bytes(), &conflict) != nil || conflict.Error != "story_already_completed" {
+		t.Fatalf("second completion = %d %s, want 409 story_already_completed", second.Code, second.Body.String())
 	}
 }

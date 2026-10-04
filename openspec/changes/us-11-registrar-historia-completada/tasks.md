@@ -127,8 +127,8 @@ Requisitos de spec: contrato del caso de uso (delegación sin envolver errores; 
 
 > Depende de WU 1, 3 y 5. Requiere Docker.
 
-- [ ] 6.1 **RED/verificación**: En `completion_integration_test.go` agregar `TestCompleteSprintStoryHTTPEndToEnd` componiendo `api.NewHTTPHandlerWithDependencies(projectpostgres..., api.NewProjectID, api.HTTPDependencies{Completion: &api.CompletionDependencies{Completer: storypostgres.NewPostgresStoryRepository(pool)}})`: primer `POST` → 200 con `completed_at` igual al persistido; segundo `POST` → 409 `story_already_completed`. Ejecutar `go test ./tests/integration/story/postgres/... -run TestCompleteSprintStoryHTTPEndToEnd` y registrar el resultado real (puede pasar de inmediato porque no hay producción nueva; documentarlo como "GREEN directo", sin inventar un RED).
-- [ ] 6.2 **Commit** (WU 6): `test(story): add end-to-end HTTP coverage for sprint story completion`. Traza compacta: `RED: n/a, sin producción nueva (verificación de composición)` / `GREEN: TestCompleteSprintStoryHTTPEndToEnd pasa (200 y 409)`. Actualizar `tasks.md` y `apply-progress.md`.
+- [x] 6.1 **RED/verificación**: En `completion_integration_test.go` agregar `TestCompleteSprintStoryHTTPEndToEnd` componiendo `api.NewHTTPHandlerWithDependencies(projectpostgres..., api.NewProjectID, api.HTTPDependencies{Completion: &api.CompletionDependencies{Completer: storypostgres.NewPostgresStoryRepository(pool)}})`: primer `POST` → 200 con `completed_at` igual al persistido; segundo `POST` → 409 `story_already_completed`. Ejecutar `go test ./tests/integration/story/postgres/... -run TestCompleteSprintStoryHTTPEndToEnd` y registrar el resultado real (puede pasar de inmediato porque no hay producción nueva; documentarlo como "GREEN directo", sin inventar un RED).
+- [x] 6.2 **Commit** (WU 6): `test(story): add end-to-end HTTP coverage for sprint story completion`. Traza compacta: `RED: n/a, sin producción nueva (verificación de composición)` / `GREEN: TestCompleteSprintStoryHTTPEndToEnd pasa (200 y 409)`. Actualizar `tasks.md` y `apply-progress.md`.
 
 ## Fase 7 (WU 7): Documentación
 
