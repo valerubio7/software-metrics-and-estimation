@@ -379,6 +379,79 @@ func TestTaskRouteIsIndependentFromStories(t *testing.T) {
 	}
 }
 
+type fakeSprintStoryCompleter struct{ calls int }
+
+func (c *fakeSprintStoryCompleter) CompleteSprintStory(_ context.Context, projectID, sprintID, storyID string) (storyapplication.SprintStoryCompletion, error) {
+	c.calls++
+	return storyapplication.SprintStoryCompletion{ProjectID: projectID, SprintID: sprintID, StoryID: storyID, CompletedAt: time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)}, nil
+}
+
+func TestCompletionRouteRequiresCleanVersionTenAndExplicitDependency(t *testing.T) {
+	const id = "5c21cbd4-d9a7-42df-9c3a-c0866f058746"
+	for _, tc := range []struct {
+		name          string
+		version       int
+		dirty         bool
+		lookup        error
+		nilDependency bool
+		enabled       bool
+	}{
+		{name: "v9", version: 9},
+		{name: "v10", version: 10, enabled: true},
+		{name: "future 12", version: 12, enabled: true},
+		{name: "nil dependency", version: 10, nilDependency: true},
+		{name: "dirty v10", version: 10, dirty: true},
+		{name: "lookup error", version: 10, lookup: errors.New("query failed")},
+		{name: "missing migration table", lookup: errors.New("missing schema_migrations")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			readiness := api.ResolveMigrationReadiness(tc.version, tc.dirty, tc.lookup)
+			wantReady := tc.version >= 10 && !tc.dirty && tc.lookup == nil
+			if readiness.Completion != wantReady {
+				t.Fatalf("readiness = %+v", readiness)
+			}
+			if tc.version == 9 && !readiness.Tasks {
+				t.Fatalf("v9 must keep task creation ready: %+v", readiness)
+			}
+			completer := &fakeSprintStoryCompleter{}
+			deps := api.HTTPDependencies{}
+			if readiness.Completion && !tc.nilDependency {
+				deps.Completion = &api.CompletionDependencies{Completer: completer}
+			}
+			h := api.NewHTTPHandlerWithDependencies(&fakeProjectRepository{}, func() string { return id }, deps)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/projects/"+id+"/sprints/"+id+"/stories/"+id+"/completion", nil))
+			wantStatus, wantCalls := http.StatusNotFound, 0
+			if tc.enabled {
+				wantStatus, wantCalls = http.StatusOK, 1
+			}
+			if w.Code != wantStatus || completer.calls != wantCalls {
+				t.Fatalf("status/calls = %d/%d want %d/%d body=%s", w.Code, completer.calls, wantStatus, wantCalls, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestCompletionRouteIsIndependentFromStories(t *testing.T) {
+	const id = "5c21cbd4-d9a7-42df-9c3a-c0866f058746"
+	completer := &fakeSprintStoryCompleter{}
+	h := api.NewHTTPHandlerWithDependencies(&fakeProjectRepository{}, func() string { return id }, api.HTTPDependencies{
+		Completion: &api.CompletionDependencies{Completer: completer},
+	})
+
+	completionResponse := httptest.NewRecorder()
+	h.ServeHTTP(completionResponse, httptest.NewRequest(http.MethodPost, "/projects/"+id+"/sprints/"+id+"/stories/"+id+"/completion", nil))
+	if completionResponse.Code != http.StatusOK || completer.calls != 1 {
+		t.Fatalf("completion route status/calls = %d/%d, want 200/1 even without Stories dependency: %s", completionResponse.Code, completer.calls, completionResponse.Body.String())
+	}
+
+	storyResponse := httptest.NewRecorder()
+	h.ServeHTTP(storyResponse, httptest.NewRequest(http.MethodPost, "/projects/"+id+"/stories", strings.NewReader(`{"title":"T","description":"D","priority":"media","acceptance_criteria":["ok"]}`)))
+	if storyResponse.Code != http.StatusNotFound {
+		t.Fatalf("story route status = %d, want 404 (Stories dependency absent)", storyResponse.Code)
+	}
+}
+
 func (r *fakeStoryRepository) Create(_ context.Context, story storydomain.Story) error {
 	r.stories = append(r.stories, story)
 	return nil

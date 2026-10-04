@@ -35,7 +35,7 @@ func main() {
 
 	// Story creation needs schema version 2, story update version 3 and the backlog query
 	// version 4; sprint creation needs reconciled schema version 5. Task creation needs
-	// schema version 9. All of them require a clean externally managed migration state.
+	// schema version 9 and story completion schema version 10. All of them require a clean externally managed migration state.
 	var version int
 	var dirty bool
 	migrationErr := pool.QueryRow(ctx, "SELECT version, dirty FROM schema_migrations").Scan(&version, &dirty)
@@ -79,6 +79,12 @@ func main() {
 		log.Printf("task creation available (schema version=%d)", version)
 	} else {
 		log.Printf("task creation unavailable until migration 000009 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
+	}
+	if readiness := api.ResolveMigrationReadiness(version, dirty, migrationErr); readiness.Completion {
+		dependencies.Completion = &api.CompletionDependencies{Completer: storypostgres.NewPostgresStoryRepository(pool)}
+		log.Printf("story completion available (schema version=%d)", version)
+	} else {
+		log.Printf("story completion unavailable until migration 000010 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}
 	handler := api.NewHTTPHandlerWithDependencies(projects, api.NewProjectID, dependencies)
 	server := &http.Server{Addr: config.Address, Handler: handler}
