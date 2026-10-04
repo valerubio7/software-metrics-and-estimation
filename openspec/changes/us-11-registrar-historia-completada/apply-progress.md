@@ -18,8 +18,8 @@ Pronóstico: ~585 líneas cambiadas (producción ~190, pruebas ~370, documentaci
 | 4 | `TestCompleteSprintStoryHandler` no compila: `storyhttp.NewCompleteSprintStoryHandler` indefinido. | Se crea `complete_sprint_story_handler.go`; pasan las 16 filas: éxito (200, `completed_at` en UTC desde una zona UTC-3, `Content-Type`), UUID en mayúsculas canonicalizados, cuerpo ignorado (`{"x":1}` y `not json`), 422 por cada ID y acumulado de los tres, 404 x3, 409 x3, 500 sin filtrar `secret`, 405. Triangulación: tabla con casos de éxito, validación y cada centinela. | Mensajes y nombres alineados con `story/transport/http` y `task/transport/http`; ningún status, código o mensaje probado cambió. | `beaf023` `feat(story): add CompleteSprintStoryHandler with error mapping` |
 | 5 | `TestCompletionRouteRequiresCleanVersionTenAndExplicitDependency` y `TestCompletionRouteIsIndependentFromStories` no compilan: `MigrationReadiness.Completion`, `HTTPDependencies.Completion` y `api.CompletionDependencies` indefinidos. | Se agregan `CompletionDependencies`, `HTTPDependencies.Completion`, `readiness.Completion = version >= 10` y el registro condicional de la ruta en `api.go`, más el bloque de gate con logs en `main.go`; pasan las 7 filas (v9 con `Tasks` listo, v10, future 12, dependencia nula, sucio, error de consulta, tabla ausente) y la independencia respecto de `Stories` (0.9 s). Riesgo abierto del diseño: `TestAPIStartupRoutesFollowMigrationState` (caso "future version", fila 10 sobre esquema v8) sigue en verde (105 s, `-p 1`). | Comentario de versiones de `main.go` actualizado (versión 10); sin cambios de comportamiento. | `7a35ff5` `feat(api): gate sprint story completion route behind migration 000010` |
 | 6 | N/A: no hay producción nueva (verificación de composición), se evita inventar un RED. | GREEN directo: `TestCompleteSprintStoryHTTPEndToEnd` pasa al primer intento (7.0 s): primer `POST` 200 con `completed_at` igual al persistido; segundo `POST` 409 `story_already_completed`. | Sin cambios. | `8a64543` `test(story): add end-to-end HTTP coverage for sprint story completion` |
-| 7 | N/A: documentación, sin comportamiento. | N/A | Sin cambios de comportamiento. | ver `git log` (`docs: document sprint story completion route and migration 000010`) |
-| 8 | pendiente | pendiente | pendiente | pendiente |
+| 7 | N/A: documentación, sin comportamiento. | N/A | Sin cambios de comportamiento. | `7af8b44` `docs: document sprint story completion route and migration 000010` |
+| 8 | N/A: verificación final, sin producción nueva. | `go test -p 1 ./...` completo con Docker real: todos los paquetes en verde (531 s en total; `story/postgres` 384 s, `task/postgres` 82 s, `projectmember/postgres` 27 s, `sprint/postgres` 20 s; los paquetes unitarios y `migrations`/`project` salieron de caché de corridas verdes previas, sin cambios de código posteriores). | Sin cambios; no se detectaron correcciones (8.4). | sin commit de producción; seguimiento en `docs(sdd): finalize US-11 apply progress` |
 
 ### Evidencia de unidad de trabajo
 
@@ -43,10 +43,38 @@ Los hashes se registran en el commit de la WU siguiente (un commit no puede cont
 - WU 5: `feat(api): gate sprint story completion route behind migration 000010` — RED: `TestCompletionRouteRequiresCleanVersionTenAndExplicitDependency` no compila (símbolos inexistentes); GREEN: pasa junto con `TestCompletionRouteIsIndependentFromStories`; REFACTOR: sin cambios de comportamiento.
 - WU 6: `test(story): add end-to-end HTTP coverage for sprint story completion` — RED: n/a, sin producción nueva; GREEN: `TestCompleteSprintStoryHTTPEndToEnd` pasa (200 y 409).
 - WU 7: `docs: document sprint story completion route and migration 000010` — documentación, sin traza TDD.
+- WU 8: verificación final, sin traza TDD ni código nuevo; el commit de seguimiento sólo cierra `apply-progress.md` y `tasks.md`.
+
+## Verificación final (WU 8)
+
+- Corrida completa: `go test -p 1 ./...` → ok, Docker 29.8.1, sin saltar pruebas ni usar `-short`. No se necesitó una corrida sin `-p 1`.
+- `000010` sigue siendo la migración más alta y el siguiente número libre es `000011` (`ls` de `internal/project/infrastructure/postgres/migrations`).
+- Riesgo abierto del diseño: el caso "future version" (fila 10 sobre esquema v8) de `TestAPIStartupRoutesFollowMigrationState` sigue en verde.
+
+### Criterios de éxito de la propuesta
+
+| # | Criterio | Prueba | Resultado |
+|---|---|---|---|
+| 1 | Registrar completada una historia asignada y persistir `completed_at` | `TestCompleteSprintStoryPersistsCompletionForThatSprintOnly`, `TestCompleteSprintStoryHTTPEndToEnd` | ok |
+| 2 | No asignada: 409 `story_not_in_sprint` sin cambios | `TestCompleteSprintStoryRejectsUnassignedStory`, fila 409 de `TestCompleteSprintStoryHandler` | ok |
+| 3 | Inexistente o de otro proyecto: 404 sin cambios | `TestCompleteSprintStoryRejectsMissingOrForeignResourcesWithoutWrites`, filas 404 del handler | ok |
+| 4 | Doble registro, también en paralelo: un único registro y 409 | `TestCompleteSprintStoryNeverCountsTwice`, `TestCompleteSprintStoryConcurrentRequestsRecordOnce` (1 éxito, 7 conflictos) | ok |
+| 5 | Sprint cerrado: 409 | `TestCompleteSprintStoryRejectsClosedSprint` | ok |
+| 6 | `stories.status` no se modifica | `TestCompleteSprintStoryPersistsCompletionForThatSprintOnly` (`ListByProject` antes/después y tras `Update`) | ok |
+| 7 | Ruta sólo con esquema limpio `>= 10`; gates existentes intactos | `TestCompletionRouteRequiresCleanVersionTenAndExplicitDependency`, `TestCompletionRouteIsIndependentFromStories`, `TestAPIStartupRoutesFollowMigrationState` | ok |
+| 8 | `go test ./...` con Testcontainers | corrida completa `-p 1` | ok |
+
+### Escenarios de la spec
+
+Cubiertos por las pruebas anteriores más: validación de los tres UUID, acumulada y con cuerpo ignorado (`TestCompleteSprintStoryHandler`: filas `invalid *_id`, `all route IDs invalid`, `body is ignored`); migración reconocida, aplicable y reversible (`TestMigrationVersionsAreUnique`, `TestCompletionSchemaRequiresMigrationTen`, `TestSprintStoryCompletionMigrationCanBeReversedAndReapplied`); completar en otro Sprint sin doble conteo y métricas (`COUNT(completed_at)`/`SUM(story_points)` en la prueba de persistencia); completar con tareas pendientes (la prueba de reversibilidad crea una tarea sobre la asociación); 500 sin filtrar detalles (fila `unexpected` del handler). Todos ok.
+
+### Tamaño final
+
+`git diff --shortstat main...HEAD` excluyendo `openspec/` (sin archivos generados): 14 archivos, +878 / -5 (~883 líneas) contra el pronóstico de ~585 y el presupuesto de 400. El exceso proviene de pruebas más completas que la estimación (fixture de integración, concurrencia, tabla de handler) y de la documentación README; sigue cubierto por la `size:exception` aceptada (PR único, revisable commit por commit).
 
 ## Defectos encontrados
 
-Ninguno hasta ahora.
+Ninguno. La verificación final no detectó correcciones (tarea 8.4): no se agregó commit de arreglo.
 
 ## Límites de entorno
 

@@ -74,7 +74,7 @@ Dónde las pruebas pueden ser más delgadas sin perder cobertura de la spec:
 
 - [x] 0.1 Crear `openspec/changes/us-11-registrar-historia-completada/apply-progress.md` (en español) con: encabezado del cambio, modo (`single-pr`, `strict_tdd`), tabla `WU | RED | GREEN | REFACTOR | Commit` (una fila por WU 1-8), sección "Commits y traza TDD" (la misma traza compacta de cada commit), sección "Defectos encontrados" (síntoma, causa, corrección, WU) y sección "Límites de entorno" (Docker, contención).
 - [x] 0.2 Registrar en `apply-progress.md` la excepción `size:exception` aceptada y el pronóstico (~585 líneas vs 400) antes de la primera tarea de producción (WU 1).
-- [ ] 0.3 Tras cada WU: completar su fila (RED observado, GREEN observado, REFACTOR) con evidencia detallada (nombre de prueba y resultado, duración si es de integración) y marcar las casillas de `tasks.md`; incluir ambos archivos en el commit de esa WU.
+- [x] 0.3 Tras cada WU: completar su fila (RED observado, GREEN observado, REFACTOR) con evidencia detallada (nombre de prueba y resultado, duración si es de integración) y marcar las casillas de `tasks.md`; incluir ambos archivos en el commit de esa WU.
 
 ## Fase 1 (WU 1): Migración `000010` — columna `completed_at`
 
@@ -139,11 +139,11 @@ Requisitos de spec: contrato del caso de uso (delegación sin envolver errores; 
 
 ## Fase 8 (WU 8): Verificación final
 
-- [ ] 8.1 Ejecutar `go test ./...` con Docker disponible y confirmar que todo pasa; si hay contención de recursos de Testcontainers, repetir con `go test -p 1 ./...` y registrar ambas corridas, sin saltar ni marcar `-short`.
-- [ ] 8.2 Revisar los 8 criterios de éxito de `proposal.md` y los escenarios de `specs/historia/spec.md` uno por uno, con el nombre de la prueba y el resultado observado, en `apply-progress.md`.
-- [ ] 8.3 Reconfirmar, antes del PR, que `000010` sigue siendo el siguiente número libre (read-only).
-- [ ] 8.4 Si la verificación detecta una corrección, aplicarla con su ciclo RED -> GREEN -> REFACTOR y un commit propio con traza compacta, y registrar el defecto en `apply-progress.md`; si no, no se agrega commit.
-- [ ] 8.5 Dejar `apply-progress.md` completo (tabla final, commits, defectos, límites de entorno) y todas las casillas de `tasks.md` marcadas con evidencia. Commit final sólo si quedaron cambios de seguimiento sin commitear: `docs(sdd): finalize US-11 apply progress`.
+- [x] 8.1 Ejecutar `go test ./...` con Docker disponible y confirmar que todo pasa; si hay contención de recursos de Testcontainers, repetir con `go test -p 1 ./...` y registrar ambas corridas, sin saltar ni marcar `-short`.
+- [x] 8.2 Revisar los 8 criterios de éxito de `proposal.md` y los escenarios de `specs/historia/spec.md` uno por uno, con el nombre de la prueba y el resultado observado, en `apply-progress.md`.
+- [x] 8.3 Reconfirmar, antes del PR, que `000010` sigue siendo el siguiente número libre (read-only).
+- [x] 8.4 Si la verificación detecta una corrección, aplicarla con su ciclo RED -> GREEN -> REFACTOR y un commit propio con traza compacta, y registrar el defecto en `apply-progress.md`; si no, no se agrega commit.
+- [x] 8.5 Dejar `apply-progress.md` completo (tabla final, commits, defectos, límites de entorno) y todas las casillas de `tasks.md` marcadas con evidencia. Commit final sólo si quedaron cambios de seguimiento sin commitear: `docs(sdd): finalize US-11 apply progress`.
 - [ ] 8.6 **Archivo (fuera de apply)**: `sdd-verify` y luego `sdd-archive` los ejecuta el orquestador; el archivado mueve el cambio a `openspec/changes/archive/` y consolida la delta en `openspec/specs/historia/`. `sdd-apply` no archiva.
 
 ---
