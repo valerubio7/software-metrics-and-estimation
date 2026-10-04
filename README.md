@@ -139,7 +139,7 @@ La fuente de cierre es `sprints.is_closed BOOLEAN NOT NULL DEFAULT false`: los S
 
 ### Migraciones y disponibilidad
 
-El comando `migrate ... up` aplica la secuencia canónica única `000001`–`000009`. `000005` reconcilia historias/Sprints, `000006` crea integrantes, `000007_create_sprint_stories` agrega asociaciones, `000008_add_sprint_closed` agrega el cierre y `000009_create_tasks` crea la tabla de tareas. Al arrancar, la API mantiene creación de Sprints con versión limpia **>=5**, integrantes con **>=6**, registra asignación solamente con versión limpia **>=8** y creación de tareas solamente con versión limpia **>=9**, todas con dependencia explícita. En versiones anteriores, estado `dirty`, error de lectura o sin dependencia, la ruta correspondiente no existe (`404`); no se infiere capacidad del tipo de repositorio. Los gates anteriores de historias y el GET de estado del proyecto se conservan.
+El comando `migrate ... up` aplica la secuencia canónica única `000001`–`000010`. `000005` reconcilia historias/Sprints, `000006` crea integrantes, `000007_create_sprint_stories` agrega asociaciones, `000008_add_sprint_closed` agrega el cierre y `000009_create_tasks` crea la tabla de tareas y `000010_add_sprint_story_completion` agrega `sprint_stories.completed_at`. Al arrancar, la API mantiene creación de Sprints con versión limpia **>=5**, integrantes con **>=6**, registra asignación solamente con versión limpia **>=8** y creación de tareas solamente con versión limpia **>=9** y registro de finalización solamente con versión limpia **>=10**, todas con dependencia explícita. En versiones anteriores, estado `dirty`, error de lectura o sin dependencia, la ruta correspondiente no existe (`404`); no se infiere capacidad del tipo de repositorio. Los gates anteriores de historias y el GET de estado del proyecto se conservan.
 
 La compatibilidad cubierta es instalación nueva y upgrade desde **main canónico v6**. Se desconoce el despliegue de los v5/v6 alternativos de la cadena original: no se afirma compatibilidad ni readiness productiva para esas bases. Las migraciones históricas de main no se renumeran ni modifican. En una base descartable, `down 2` desde v8 vuelve a v6 y **pierde asociaciones y estado de cierre**, preservando integrantes/proyectos/historias/Sprints; no es una garantía de rollback productivo seguro.
 
@@ -162,6 +162,23 @@ Cada tarea requiere `title` no vacío ni compuesto solo por espacios; `estimated
 | Fallo inesperado, sin detalles internos ni escrituras parciales | `500 internal_error` |
 
 La verificación de pertenencia (proyecto → Sprint del proyecto → historia del proyecto → asociación en `sprint_stories`) y el alta del lote ocurren dentro de la misma transacción, bloqueando las filas leídas con `FOR KEY SHARE`; una FK compuesta hacia `sprint_stories(sprint_id, story_id)` refuerza la regla también en base de datos y, como efecto, impide desasignar una historia con tareas creadas. Antes de revertir la migración `000009` evalúe y preserve las tareas existentes: su `down` elimina la tabla `tasks` y todos sus datos.
+
+## Registrar una historia del Sprint como completada (US-11)
+
+`POST /projects/{project_id}/sprints/{sprint_id}/stories/{story_id}/completion` registra que la historia fue completada dentro de ese Sprint. No requiere cuerpo (cualquier contenido se ignora). Solo está disponible con el esquema en versión 10 o superior sin estado `dirty` (migración `000010`); con una versión inferior la ruta no existe (`404`), de forma independiente de los gates de asignación (US-09) y de tareas (US-10).
+
+Devuelve `200 OK` con `{"project_id","sprint_id","story_id","completed_at"}`, donde `completed_at` es el instante en UTC fijado por PostgreSQL y persistido en `sprint_stories.completed_at` (fuente de verdad de la finalización por Sprint; `NULL` significa no completada). Una misma historia puede completarse una vez en cada Sprint al que esté asignada, y nunca se cuenta dos veces dentro del mismo Sprint, ni con solicitudes concurrentes. Se permite completar con tareas pendientes. `stories.status` no se modifica: la divergencia con `completed_at` es deliberada.
+
+| Resultado | HTTP / código |
+|---|---|
+| UUID de ruta inválido (se informan todos los inválidos en `fields`) | `422 validation_failed` |
+| Proyecto, Sprint o historia inexistente o de otro proyecto | `404 project_not_found` / `sprint_not_found` / `story_not_found` |
+| El Sprint está cerrado | `409 sprint_closed` |
+| La historia no está asignada a ese Sprint | `409 story_not_in_sprint` |
+| La historia ya fue completada en ese Sprint | `409 story_already_completed` |
+| Fallo inesperado, sin detalles internos ni escrituras parciales | `500 internal_error` |
+
+Los errores se evalúan en ese orden de precedencia dentro de una única transacción que bloquea el Sprint (`FOR UPDATE`). Antes de revertir la migración `000010` evalúe y preserve los registros de finalización: su `down` elimina la columna `completed_at` y todos sus datos.
 
 ## Pruebas
 

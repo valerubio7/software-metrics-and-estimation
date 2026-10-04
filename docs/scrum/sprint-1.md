@@ -37,6 +37,10 @@ Las seis historias Done tienen un recorrido de [trazabilidad](../traceability.md
 
 Esta formulación no es un acuerdo confirmado. La API actual cubre proyectos, backlog y creación de Sprint; asignación y registro de finalización no se presentan aquí como implementados. El objetivo general de «MVP» de la consigna tampoco reemplaza un Sprint Goal aprobado por el equipo.
 
+## Notas posteriores
+
+- 2026-10-04: el registro de finalización de una historia en el Sprint (US-11) está implementado en código (`POST .../completion`, migración `000010`). Esta nota no modifica la instantánea del tablero anterior.
+
 ## Decisiones pendientes
 
 - Confirmar o ajustar la propuesta de Sprint Goal con el equipo y Product Architect.

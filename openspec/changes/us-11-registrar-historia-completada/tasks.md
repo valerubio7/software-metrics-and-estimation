@@ -132,10 +132,10 @@ Requisitos de spec: contrato del caso de uso (delegación sin envolver errores; 
 
 ## Fase 7 (WU 7): Documentación
 
-- [ ] 7.1 `README.md`: agregar la sección de US-11 (ruta `POST /projects/{project_id}/sprints/{sprint_id}/stories/{story_id}/completion`, sin cuerpo, respuestas 200/404/409/422/500, fuente de verdad `sprint_stories.completed_at`, divergencia deliberada con `stories.status`, Sprint cerrado rechazado) y actualizar "Migraciones y disponibilidad" (`000001`-`000010`, gate `>= 10`); documentar que `down` de `000010` elimina los registros de finalización.
-- [ ] 7.2 `openspec/config.yaml`: agregar la nota `"Implementada: US-11 (registrar historia completada en el Sprint)."` en el mismo formato de las notas existentes (no corregir la nota histórica de `000003`).
-- [ ] 7.3 `docs/scrum/sprint-1.md`: agregar una nota fechada de que el registro de finalización está implementado en código, sin reescribir la instantánea del tablero.
-- [ ] 7.4 **Commit** (WU 7): `docs: document sprint story completion route and migration 000010`. Sin traza TDD (documentación; indicarlo en una línea). Actualizar `tasks.md` y `apply-progress.md`.
+- [x] 7.1 `README.md`: agregar la sección de US-11 (ruta `POST /projects/{project_id}/sprints/{sprint_id}/stories/{story_id}/completion`, sin cuerpo, respuestas 200/404/409/422/500, fuente de verdad `sprint_stories.completed_at`, divergencia deliberada con `stories.status`, Sprint cerrado rechazado) y actualizar "Migraciones y disponibilidad" (`000001`-`000010`, gate `>= 10`); documentar que `down` de `000010` elimina los registros de finalización.
+- [x] 7.2 `openspec/config.yaml`: agregar la nota `"Implementada: US-11 (registrar historia completada en el Sprint)."` en el mismo formato de las notas existentes (no corregir la nota histórica de `000003`).
+- [x] 7.3 `docs/scrum/sprint-1.md`: agregar una nota fechada de que el registro de finalización está implementado en código, sin reescribir la instantánea del tablero.
+- [x] 7.4 **Commit** (WU 7): `docs: document sprint story completion route and migration 000010`. Sin traza TDD (documentación; indicarlo en una línea). Actualizar `tasks.md` y `apply-progress.md`.
 
 ## Fase 8 (WU 8): Verificación final
 
