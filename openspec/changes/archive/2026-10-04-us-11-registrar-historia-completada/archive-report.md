@@ -17,13 +17,13 @@ El cambio US-11 "Registrar una historia del Sprint como completada" se completó
 - Fase 8: 8.1–8.5 (verificación final, incluida la prueba de integración HTTP)
 - Fase 8.6: Este archivo (archivado)
 
-**Verificación**: Se ejecutó `go test -p 1 ./...` con Docker disponible; resultó en 531 segundos, 0 fallos, 0 saltos, 29 paquetes con tests. No se ejecutó `sdd-verify` como fase separada (opcional); la evidencia se registró en `apply-progress.md` y fue completada por `sdd-apply`.
+**Verificación**: Se ejecutó `go test -p 1 ./...` con Docker disponible; resultó en 531 segundos, todos los paquetes con tests en verde (22 paquetes con archivos de prueba en el repositorio). No se ejecutó `sdd-verify` como fase separada (opcional); la evidencia se registró en `apply-progress.md` y fue completada por `sdd-apply`.
 
 **Tests**:
-- Suite unitaria: 6 paquetes nuevos (`tests/unit/story/application/...`, `tests/unit/story/transport/http/...`, `tests/unit/cmd/api/...`, `tests/unit/api/...`), todos en verde
+- Suite unitaria: 3 archivos de prueba nuevos o ampliados (`tests/unit/story/application/`, `tests/unit/story/transport/http/`, `tests/unit/cmd/api/`), todos en verde
 - Suite de integración: 1 módulo nuevo con Testcontainers (`tests/integration/story/postgres/completion_integration_test.go`), ejecución HTTP real incluida, todos en verde
 - Suite de migraciones: `tests/integration/migrations/migration_files_test.go` actualizada para reconocer `000010`, PASS
-- Resultado final: 0 fallos, 0 saltos, ejecución con Docker serializada en verde
+- Resultado final: sin fallos, ejecución con Docker serializada en verde
 
 ## Defectos reales encontrados y corregidos
 
@@ -55,7 +55,7 @@ Verificados contra el comportamiento implementado y la suite de tests en verde:
    Evidencia: `go test ./tests/unit/cmd/api/... ./internal/api/... -run TestCompletionRoute` PASS.
 
 8. **`go test ./...` pasa con Docker disponible** ✓  
-   Evidencia: Suite completa ejecutada con `go test -p 1 ./...` → 0 fallos, 0 saltos, 29 paquetes, 531 segundos.
+   Evidencia: Suite completa ejecutada con `go test -p 1 ./...` → sin fallos, 531 segundos.
 
 ## Especificación consolidada
 
@@ -142,4 +142,4 @@ Los siguientes puntos fueron marcados como "a confirmar por el equipo" en la pro
 
 ## Cierre
 
-El cambio US-11 se da por **archivado y completado** el 2026-10-04. La rama `feat/us11-registrar-historia-completada` está lista para revisión y merge. No hay tareas pendientes, verificaciones bloqueadas ni riesgos no documentados. Todos los 8.6 (archivo) se han ejecutado exitosamente.
+El cambio US-11 se da por **archivado y completado** el 2026-10-04. La rama `feat/us11-registrar-historia-completada` está lista para revisión y merge. No hay tareas pendientes, verificaciones bloqueadas ni riesgos no documentados. La tarea 8.6 (archivo) se ejecutó exitosamente.
