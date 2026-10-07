@@ -1,31 +1,31 @@
-# Equipo y responsabilidades
+# Equipo y cómo nos organizamos — Sprint 1
 
-El equipo tiene cinco integrantes confirmados. Los roles siguen la terminología de la [consigna](../assignment.md#metodología-de-desarrollo), no una asignación inventada de cargos Scrum tradicionales.
+Lo redacto yo, Valentín Rubio, como Agile Enabler del equipo. Esto es cómo quedamos para el Sprint 1 y qué hace cada uno en la práctica.
 
-## Integrantes confirmados
+## Quiénes somos
 
-| Integrante | GitHub | Rol confirmado |
+| Integrante | GitHub | En qué estuvo en Sprint 1 |
 |---|---|---|
-| Valentín Rubio | [valerubio7](https://github.com/valerubio7) | Agile Enabler y Product Builder. |
+| Valentín Rubio | [valerubio7](https://github.com/valerubio7) | Agile Enabler + Product Builder. Facilité planning, dailies, review y retro. Mantuve tablero y estas actas. |
 | Pablo Geyer | [PabloGeyer](https://github.com/PabloGeyer) | Product Builder. |
-| Luciano | [Lucho-cas](https://github.com/Lucho-cas) | Product Builder; apellido pendiente de confirmación. |
+| Luciano | [Lucho-cas](https://github.com/Lucho-cas) | Product Builder. |
 | Santiago Calzolari | [SantyCalz](https://github.com/SantyCalz) | Product Builder. |
-| Santiago Oses | [SantiagoMO3](https://github.com/SantiagoMO3) | Product Builder; perfil y colaboración confirmados. |
+| Santiago Oses | [SantiagoMO3](https://github.com/SantiagoMO3) | Product Builder. |
 
-Product Builder es una responsabilidad compartida por los cinco, no un rol excluyente del Agile Enabler. Ser responsable de una historia en el tablero no implica ser su único autor ni revisor.
+Somos 5, que es el máximo de la consigna. Todos codeamos y todos respondemos por lo que se mergea, use o no IA.
 
-## Responsabilidades y límites de la evidencia
+## Roles según la consigna
 
-| Rol | Responsabilidad | Estado |
-|---|---|---|
-| Product Architect | Orientación del producto según la consigna. | Asignado a los profesores; nombres individuales pendientes. |
-| Agile Enabler | Facilitar la organización y seguimiento del equipo. | Valentín confirmó este rol; no hay un registro aquí de ceremonias realizadas. |
-| Product Builders | Construir el producto y responder por lo incorporado, incluido trabajo asistido por IA. | Los cinco integrantes; no se asignan especialidades exclusivas. |
+Seguí la terminología de la [consigna](../assignment.md#metodología-de-desarrollo), no inventé cargos.
 
-## Pendientes de confirmación
+* **Product Architect: los profesores.** Nos marcan la visión y qué entra en cada Sprint. No me corresponde poner sus nombres acá.
+* **Agile Enabler: yo.** Mi trabajo fue que el Sprint corra: armar las ceremonias, que el tablero en [Projects](https://github.com/users/valerubio7/projects/4) esté al día, destrabar discusiones y dejar registro escrito.
+* **Product Builders: los 5.** Construir el producto, especificar (SDD), escenarios (BDD) y tests (TDD). Ser responsable de una historia en el tablero significa seguirla, no hacerla solo.
 
-- Apellido de Luciano y nombres de los profesores responsables.
-- Distribución concreta de tareas, disponibilidad y capacidad del equipo.
-- Evidencia de planificación, seguimiento, review y retrospectiva exigidas por la consigna.
+## Cómo trabajamos en Sprint 1
 
-Este documento no acredita reuniones, asistencia, aprobaciones ni revisiones de código. El [Sprint 1](sprint-1.md) registra únicamente el estado observable del tablero; el [registro de IA](../ai-usage.md) distingue uso y validación humana.
+* Tablero único en GitHub Projects con US-01 a US-11.
+* PRs chicas, una historia por PR cuando se pudo.
+* Todo lo generado con IA lo revisamos antes de mergear. Si está en `main`, es porque alguno de nosotros lo validó.
+
+Pendiente para Sprint 2: confirmar apellido de Luciano y repartir mejor la capacidad según disponibilidad de cada uno.
