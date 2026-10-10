@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -79,22 +78,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View implements tea.Model.
 func (m Model) View() string {
 	var b strings.Builder
+	b.WriteString(header())
+	b.WriteString("\n\n")
 	if m.APIErr != nil {
-		fmt.Fprintf(&b, "API no disponible: %s\n\n", m.APIErr.Error())
+		b.WriteString(errorBannerStyle.Render("API no disponible: " + m.APIErr.Error()))
+		b.WriteString("\n")
+		b.WriteString(errorHintStyle.Render("Revisá API_URL o levantá la API; la navegación sigue disponible."))
+		b.WriteString("\n\n")
+	} else {
+		b.WriteString(statusOkStyle.Render("● API conectada · " + m.APIURL))
+		b.WriteString("\n\n")
 	}
 	if m.Screen != "menu" {
-		fmt.Fprintf(&b, "%s (Disponible en %s)\n\nPulsa esc para volver, q para salir.", m.Choices[m.Cursor], placeholderRelease(m.Cursor))
+		b.WriteString(screenTitleStyle.Render(m.Choices[m.Cursor]))
+		b.WriteString("  ")
+		b.WriteString(badgeStyle.Render("Disponible en " + placeholderRelease(m.Cursor)))
+		b.WriteString("\n\n")
+		b.WriteString(hintStyle.Render("Pulsa "))
+		b.WriteString(hintKeyStyle.Render("esc"))
+		b.WriteString(hintStyle.Render(" para volver, "))
+		b.WriteString(hintKeyStyle.Render("q"))
+		b.WriteString(hintStyle.Render(" para salir."))
 		return b.String()
 	}
-	b.WriteString("Software Metrics & Estimation\n\n")
 	for i, choice := range m.Choices {
-		cursor := " "
 		if m.Cursor == i {
-			cursor = ">"
+			b.WriteString(cursorStyle.Render("▸") + " " + selectedStyle.Render(choice))
+		} else {
+			b.WriteString("  " + itemStyle.Render(choice))
 		}
-		fmt.Fprintf(&b, "%s %s\n", cursor, choice)
+		b.WriteString("\n")
 	}
-	b.WriteString("\n↑/↓ mover · enter entrar · q salir\n")
+	b.WriteString("\n")
+	b.WriteString(hintStyle.Render("Mover "))
+	b.WriteString(hintKeyStyle.Render("↑/↓"))
+	b.WriteString(hintStyle.Render(" · entrar "))
+	b.WriteString(hintKeyStyle.Render("enter"))
+	b.WriteString(hintStyle.Render(" · salir "))
+	b.WriteString(hintKeyStyle.Render("q"))
+	return b.String()
+}
+
+func header() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Software Metrics & Estimation"))
+	b.WriteString("\n")
+	b.WriteString(subtitleStyle.Render("Sprint 2 · La Interfaz · TUI base"))
+	b.WriteString("\n")
+	b.WriteString(ruleStyle.Render("────────────────────────────────"))
 	return b.String()
 }
 
