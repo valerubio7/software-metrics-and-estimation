@@ -13,6 +13,7 @@ type Model struct {
 	Choices []string
 	Cursor  int
 	Screen  string
+	APIErr  error
 }
 
 // NewModel creates the base navigation model.
@@ -77,10 +78,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View implements tea.Model.
 func (m Model) View() string {
-	if m.Screen != "menu" {
-		return fmt.Sprintf("%s (Disponible en %s)\n\nPulsa esc para volver, q para salir.", m.Choices[m.Cursor], placeholderRelease(m.Cursor))
-	}
 	var b strings.Builder
+	if m.APIErr != nil {
+		fmt.Fprintf(&b, "API no disponible: %s\n\n", m.APIErr.Error())
+	}
+	if m.Screen != "menu" {
+		fmt.Fprintf(&b, "%s (Disponible en %s)\n\nPulsa esc para volver, q para salir.", m.Choices[m.Cursor], placeholderRelease(m.Cursor))
+		return b.String()
+	}
 	b.WriteString("Software Metrics & Estimation\n\n")
 	for i, choice := range m.Choices {
 		cursor := " "
