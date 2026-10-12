@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	sprintpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/sprint/infrastructure/postgres"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/story/application"
 	storypostgres "github.com/valerubio7/software-metrics-and-estimation/internal/story/infrastructure/postgres"
 )
@@ -204,31 +205,66 @@ func TestAssignStoriesWaitsForConcurrentSprintClose(t *testing.T) {
 	pool, repo := assignmentDatabase(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	closeTx, err := pool.Begin(ctx)
+	blocker, err := pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer closeTx.Rollback(context.Background())
-	if _, err := closeTx.Exec(ctx, "UPDATE sprints SET is_closed = true WHERE id = $1", sprintID); err != nil {
+	defer blocker.Rollback(context.Background())
+	if _, err := blocker.Exec(ctx, "SELECT id FROM sprints WHERE id = $1 FOR UPDATE", sprintID); err != nil {
 		t.Fatal(err)
 	}
-	result := make(chan error, 1)
+
+	closer := sprintpostgres.NewPostgresSprintRepository(pool)
+	closeResult := make(chan error, 1)
+	go func() { closeResult <- closer.CloseSprint(ctx, projectID, sprintID) }()
+	waitForSprintClosureLock(t, ctx, pool)
+	assignResult := make(chan error, 1)
 	go func() {
-		result <- repo.AssignStoriesForProject(ctx, projectID, sprintID, []string{storyID, secondAssignmentStoryID})
+		assignResult <- repo.AssignStoriesForProject(ctx, projectID, sprintID, []string{storyID, secondAssignmentStoryID})
 	}()
 	waitForAssignmentLocks(t, ctx, pool, 1)
-	if err := closeTx.Commit(ctx); err != nil {
+	if err := blocker.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
 	select {
-	case err := <-result:
+	case err := <-closeResult:
+		if err != nil {
+			t.Fatalf("concurrent CloseSprint() error = %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	select {
+	case err := <-assignResult:
 		if !errors.Is(err, application.ErrSprintClosed) {
-			t.Fatalf("assignment after concurrent close = %v", err)
+			t.Fatalf("assignment after concurrent close = %v, want ErrSprintClosed", err)
 		}
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
 	assertAssignmentCount(t, pool, 0)
+}
+
+func waitForSprintClosureLock(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
+	t.Helper()
+	for {
+		var waiting int
+		err := pool.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity
+			WHERE datname = current_database()
+			AND query LIKE 'SELECT is_closed FROM sprints WHERE id = $1 AND project_id = $2 FOR UPDATE%'
+			AND wait_event_type = 'Lock'`).Scan(&waiting)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if waiting > 0 {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("sprint closure did not wait on the sprint lock: %v", ctx.Err())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 }
 
 func TestAssignStoriesRejectsClosedSprintWithoutWrites(t *testing.T) {
