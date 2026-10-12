@@ -58,7 +58,13 @@ func main() {
 		log.Printf("story creation unavailable until migration 000002 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}
 	if readiness := api.ResolveMigrationReadiness(version, dirty, migrationErr); readiness.Sprints {
-		dependencies.Sprints = &api.SprintDependencies{Repository: sprintpostgres.NewPostgresSprintRepository(pool), GenerateID: api.NewProjectID}
+		repository := sprintpostgres.NewPostgresSprintRepository(pool)
+		sprintDependencies := &api.SprintDependencies{Repository: repository, GenerateID: api.NewProjectID}
+		if readiness.SprintClose {
+			sprintDependencies.Closer = repository
+			log.Printf("sprint closure available (schema version=%d)", version)
+		}
+		dependencies.Sprints = sprintDependencies
 	} else {
 		log.Printf("sprint creation unavailable until reconciliation migration 000005 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}

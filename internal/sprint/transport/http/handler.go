@@ -16,8 +16,23 @@ type CreateSprintHandler struct {
 	useCase *application.CreateSprintUseCase
 }
 
+type CloseSprintHandler struct {
+	useCase *application.CloseSprintUseCase
+}
+
+// NewCloseSprintHandler creates the project-scoped Sprint closure handler.
+func NewCloseSprintHandler(useCase *application.CloseSprintUseCase) http.Handler {
+	return &CloseSprintHandler{useCase: useCase}
+}
+
 func NewCreateSprintHandler(useCase *application.CreateSprintUseCase) http.Handler {
 	return &CreateSprintHandler{useCase: useCase}
+}
+
+type closeSprintResponse struct {
+	ProjectID string `json:"project_id"`
+	SprintID  string `json:"sprint_id"`
+	IsClosed  bool   `json:"is_closed"`
 }
 
 type createSprintRequest struct {
@@ -34,6 +49,41 @@ type errorResponse struct {
 	Error   string            `json:"error"`
 	Message string            `json:"message"`
 	Fields  map[string]string `json:"fields,omitempty"`
+}
+
+func (h *CloseSprintHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		writeJSON(response, http.StatusMethodNotAllowed, errorResponse{Error: "method_not_allowed", Message: "only POST is supported"})
+		return
+	}
+	projectID, projectErr := uuid.Parse(request.PathValue("project_id"))
+	sprintID, sprintErr := uuid.Parse(request.PathValue("sprint_id"))
+	fields := make(map[string]string)
+	if projectErr != nil {
+		fields["project_id"] = "must be a valid UUID"
+	}
+	if sprintErr != nil {
+		fields["sprint_id"] = "must be a valid UUID"
+	}
+	if len(fields) > 0 {
+		writeJSON(response, http.StatusUnprocessableEntity, errorResponse{Error: "validation_failed", Message: "one or more fields are invalid", Fields: fields})
+		return
+	}
+	command := application.CloseSprintCommand{ProjectID: projectID.String(), SprintID: sprintID.String()}
+	if err := h.useCase.Execute(request.Context(), command); err != nil {
+		switch {
+		case errors.Is(err, application.ErrProjectNotFound):
+			writeJSON(response, http.StatusNotFound, errorResponse{Error: "project_not_found", Message: "project not found"})
+		case errors.Is(err, application.ErrSprintNotFound):
+			writeJSON(response, http.StatusNotFound, errorResponse{Error: "sprint_not_found", Message: "sprint not found"})
+		case errors.Is(err, application.ErrSprintClosed):
+			writeJSON(response, http.StatusConflict, errorResponse{Error: "sprint_closed", Message: "sprint is already closed"})
+		default:
+			writeJSON(response, http.StatusInternalServerError, errorResponse{Error: "internal_error", Message: "an unexpected error occurred"})
+		}
+		return
+	}
+	writeJSON(response, http.StatusOK, closeSprintResponse{ProjectID: command.ProjectID, SprintID: command.SprintID, IsClosed: true})
 }
 
 func (h *CreateSprintHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
