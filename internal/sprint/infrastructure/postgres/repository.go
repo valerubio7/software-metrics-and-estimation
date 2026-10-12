@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/sprint/application"
@@ -19,6 +21,42 @@ type PostgresSprintRepository struct {
 func NewPostgresSprintRepository(pool *pgxpool.Pool) *PostgresSprintRepository {
 	return &PostgresSprintRepository{pool: pool}
 }
+
+// CloseSprint atomically closes one project-scoped sprint under the same row lock
+// used by assignment and completion, preserving all associated records.
+func (r *PostgresSprintRepository) CloseSprint(ctx context.Context, projectID, sprintID string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var projectExists bool
+	if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM projects WHERE id = $1)", projectID).Scan(&projectExists); err != nil {
+		return err
+	}
+	if !projectExists {
+		return application.ErrProjectNotFound
+	}
+
+	var closed bool
+	err = tx.QueryRow(ctx, "SELECT is_closed FROM sprints WHERE id = $1 AND project_id = $2 FOR UPDATE", sprintID, projectID).Scan(&closed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.ErrSprintNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if closed {
+		return application.ErrSprintClosed
+	}
+	if _, err := tx.Exec(ctx, "UPDATE sprints SET is_closed = true WHERE id = $1 AND project_id = $2", sprintID, projectID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+var _ application.SprintCloser = (*PostgresSprintRepository)(nil)
 
 // Create inserts one sprint; only the named project FK identifies a missing project.
 func (r *PostgresSprintRepository) Create(ctx context.Context, sprint domain.Sprint) error {

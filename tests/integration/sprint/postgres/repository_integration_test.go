@@ -48,6 +48,88 @@ func TestSprintRepositoryPersistsSprintFields(t *testing.T) {
 	}
 }
 
+func TestCloseSprintPersistsClosureAndPreservesAssociations(t *testing.T) {
+	pool := sprintDatabase(t)
+	insertProject(t, pool)
+	_, err := pool.Exec(context.Background(), "INSERT INTO sprints (id, project_id, sprint_goal) VALUES ($1, $2, 'Preserve history')", sprintID, projectID)
+	if err != nil {
+		t.Fatalf("seed sprint: %v", err)
+	}
+	storyID := "a25b26b4-26bf-482e-a318-74e6cb845462"
+	_, err = pool.Exec(context.Background(), `
+		INSERT INTO stories (id, project_id, title, description, priority, status, acceptance_criteria)
+		VALUES ($1, $2, 'Story', 'Description', 'alta', 'completada', ARRAY['criterion'])
+	`, storyID, projectID)
+	if err != nil {
+		t.Fatalf("seed story: %v", err)
+	}
+	_, err = pool.Exec(context.Background(), "INSERT INTO sprint_stories (sprint_id, story_id, project_id, completed_at) VALUES ($1, $2, $3, '2026-10-11T10:00:00Z')", sprintID, storyID, projectID)
+	if err != nil {
+		t.Fatalf("seed sprint association: %v", err)
+	}
+	taskID := "c631b683-b585-4df3-b6a3-10ed2fd11d9e"
+	_, err = pool.Exec(context.Background(), `
+		INSERT INTO tasks (id, project_id, sprint_id, story_id, title, estimated_hours)
+		VALUES ($1, $2, $3, $4, 'Preserved task', 2.5)
+	`, taskID, projectID, sprintID, storyID)
+	if err != nil {
+		t.Fatalf("seed task: %v", err)
+	}
+
+	repository := sprintpostgres.NewPostgresSprintRepository(pool)
+	if err := repository.CloseSprint(context.Background(), projectID, sprintID); err != nil {
+		t.Fatalf("CloseSprint() error = %v", err)
+	}
+	var closed bool
+	var associationCount, taskCount int
+	var completedAt *time.Time
+	var storyStatus string
+	var taskTitle string
+	var estimatedHours float64
+	if err := pool.QueryRow(context.Background(), "SELECT is_closed FROM sprints WHERE id = $1", sprintID).Scan(&closed); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(context.Background(), "SELECT count(*), max(completed_at) FROM sprint_stories WHERE sprint_id = $1", sprintID).Scan(&associationCount, &completedAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(context.Background(), "SELECT status FROM stories WHERE id = $1", storyID).Scan(&storyStatus); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(context.Background(), "SELECT count(*), max(title), max(estimated_hours) FROM tasks WHERE sprint_id = $1", sprintID).Scan(&taskCount, &taskTitle, &estimatedHours); err != nil {
+		t.Fatal(err)
+	}
+	if !closed || associationCount != 1 || completedAt == nil || !completedAt.Equal(time.Date(2026, 10, 11, 10, 0, 0, 0, time.UTC)) || storyStatus != "completada" || taskCount != 1 || taskTitle != "Preserved task" || estimatedHours != 2.5 {
+		t.Fatalf("closed/history = %v/%d/%v/%s/%d/%q/%.2f, want closed and unchanged completion, story, task and effort", closed, associationCount, completedAt, storyStatus, taskCount, taskTitle, estimatedHours)
+	}
+	if err := repository.CloseSprint(context.Background(), projectID, sprintID); !errors.Is(err, application.ErrSprintClosed) {
+		t.Errorf("repeated CloseSprint() error = %v, want ErrSprintClosed", err)
+	}
+	if err := repository.CloseSprint(context.Background(), "9b6847be-c44c-47e8-a91d-69aa2874a80f", sprintID); !errors.Is(err, application.ErrProjectNotFound) {
+		t.Errorf("CloseSprint(missing project) error = %v, want ErrProjectNotFound", err)
+	}
+	if err := repository.CloseSprint(context.Background(), projectID, "9b6847be-c44c-47e8-a91d-69aa2874a80f"); !errors.Is(err, application.ErrSprintNotFound) {
+		t.Errorf("CloseSprint(missing sprint) error = %v, want ErrSprintNotFound", err)
+	}
+	otherProjectID := "8756a2df-783d-4070-a236-b4284356ed50"
+	otherSprintID := "4991929f-4ef2-4412-9365-04235c3c1dbf"
+	if _, err := pool.Exec(context.Background(), `INSERT INTO projects (id, name, start_date, planned_finish_date) VALUES ($1, 'Other', '2026-03-01', '2026-06-30')`, otherProjectID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(context.Background(), "INSERT INTO sprints (id, project_id, sprint_goal) VALUES ($1, $2, 'Other sprint')", otherSprintID, otherProjectID); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.CloseSprint(context.Background(), projectID, otherSprintID); !errors.Is(err, application.ErrSprintNotFound) {
+		t.Errorf("CloseSprint(other project) error = %v, want ErrSprintNotFound", err)
+	}
+	var otherClosed bool
+	if err := pool.QueryRow(context.Background(), "SELECT is_closed FROM sprints WHERE id = $1", otherSprintID).Scan(&otherClosed); err != nil {
+		t.Fatal(err)
+	}
+	if otherClosed {
+		t.Errorf("cross-project rejection changed sprint state: is_closed=%v", otherClosed)
+	}
+}
+
 func TestSprintRepositoryMapsOnlyNamedProjectForeignKey(t *testing.T) {
 	pool := sprintDatabase(t)
 	repository := sprintpostgres.NewPostgresSprintRepository(pool)
@@ -145,6 +227,7 @@ var sprintMigrationNames = []string{
 	"000003_add_story_estimated_hours.up.sql", "000004_add_story_creation_sequence.up.sql",
 	"000005_reconcile_story_hours_and_sprints.up.sql", "000006_create_project_members.up.sql",
 	"000007_create_sprint_stories.up.sql", "000008_add_sprint_closed.up.sql",
+	"000009_create_tasks.up.sql", "000010_add_sprint_story_completion.up.sql",
 }
 
 func sprintDatabaseFromDSN(t *testing.T, dsn string) *pgxpool.Pool {

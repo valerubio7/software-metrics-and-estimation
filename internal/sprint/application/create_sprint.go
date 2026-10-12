@@ -8,7 +8,37 @@ import (
 )
 
 // ErrProjectNotFound identifies a missing project when the repository inserts a sprint.
-var ErrProjectNotFound = errors.New("project not found")
+var (
+	ErrProjectNotFound = errors.New("project not found")
+	ErrSprintNotFound  = errors.New("sprint not found")
+	ErrSprintClosed    = errors.New("sprint is already closed")
+)
+
+// SprintCloser closes one sprint scoped to its owning project.
+type SprintCloser interface {
+	CloseSprint(ctx context.Context, projectID, sprintID string) error
+}
+
+// CloseSprintCommand identifies the sprint and owning project to close.
+type CloseSprintCommand struct {
+	ProjectID string
+	SprintID  string
+}
+
+// CloseSprintUseCase closes a sprint through its project-scoped persistence port.
+type CloseSprintUseCase struct {
+	closer SprintCloser
+}
+
+// NewCloseSprintUseCase builds a close-sprint use case.
+func NewCloseSprintUseCase(closer SprintCloser) *CloseSprintUseCase {
+	return &CloseSprintUseCase{closer: closer}
+}
+
+// Execute delegates one project-scoped close operation.
+func (u *CloseSprintUseCase) Execute(ctx context.Context, command CloseSprintCommand) error {
+	return u.closer.CloseSprint(ctx, command.ProjectID, command.SprintID)
+}
 
 // CreateSprintCommand contains only values supplied to create a sprint.
 type CreateSprintCommand struct {

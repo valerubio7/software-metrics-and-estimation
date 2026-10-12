@@ -61,6 +61,7 @@ type StoryDependencies struct {
 type SprintDependencies struct {
 	Repository sprintapplication.SprintRepository
 	GenerateID sprintapplication.IDGenerator
+	Closer     sprintapplication.SprintCloser // supplied only after migration 000008 is clean
 }
 
 // MemberDependencies enables project-member registration after migration v6 is clean.
@@ -92,13 +93,14 @@ type HTTPDependencies struct {
 
 // MigrationReadiness describes which handlers are safe to compose for a schema state.
 type MigrationReadiness struct {
-	Projects   bool
-	Stories    bool
-	Sprints    bool
-	Members    bool
-	Assignment bool
-	Tasks      bool
-	Completion bool
+	Projects    bool
+	Stories     bool
+	Sprints     bool
+	Members     bool
+	Assignment  bool
+	SprintClose bool
+	Tasks       bool
+	Completion  bool
 }
 
 // ResolveMigrationReadiness keeps project creation available while gating schema-backed routes.
@@ -111,6 +113,7 @@ func ResolveMigrationReadiness(version int, dirty bool, lookupErr error) Migrati
 	readiness.Sprints = version >= 5
 	readiness.Members = version >= 6
 	readiness.Assignment = version >= 8
+	readiness.SprintClose = version >= 8
 	readiness.Tasks = version >= 9
 	readiness.Completion = version >= 10
 	return readiness
@@ -159,6 +162,10 @@ func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, ge
 	if dependencies.Sprints != nil {
 		sprintUseCase := sprintapplication.NewCreateSprintUseCase(dependencies.Sprints.Repository, dependencies.Sprints.GenerateID)
 		mux.Handle("POST /projects/{project_id}/sprints", sprinthttp.NewCreateSprintHandler(sprintUseCase))
+		if dependencies.Sprints.Closer != nil {
+			closeUseCase := sprintapplication.NewCloseSprintUseCase(dependencies.Sprints.Closer)
+			mux.Handle("POST /projects/{project_id}/sprints/{sprint_id}/closure", sprinthttp.NewCloseSprintHandler(closeUseCase))
+		}
 	}
 	if dependencies.Members != nil {
 		membersUseCase := memberapplication.NewRegisterMembersUseCase(dependencies.Members.Repository, dependencies.Members.GenerateID)
