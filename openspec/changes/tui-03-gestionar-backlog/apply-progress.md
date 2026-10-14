@@ -167,3 +167,25 @@ Resumen: 45 pruebas nuevas de nivel superior (8 + 8 + 29), 93 subpruebas en tota
 - Binario: `go run ./cmd/tui` (o `go build ./cmd/tui`).
 - Variable de entorno de la TUI: `API_URL` (por defecto `http://localhost:8080`; se recortan espacios y barra final).
 - Levantar la API: `go run ./cmd/api` con `DATABASE_URL` obligatoria (cadena de conexión PostgreSQL) y `HTTP_ADDR` opcional (por defecto `:8080`). La base necesita las migraciones aplicadas externamente en `internal/project/infrastructure/postgres/migrations/`; las rutas de historias (lista y modificación) se registran según `schema_migrations` (la lista de backlog requiere versión 4 limpia o superior).
+
+## Tarea 7 — estilo visual del backlog
+
+Refinamiento visual pedido por el usuario después de probar la TUI manualmente. No cambia la especificación (`openspec/specs/` intacto): el comportamiento, las teclas y los textos son los mismos, y las 62 pruebas existentes de `tests/unit/tui` pasan sin modificarse.
+
+| Commit | Hash | Contenido |
+|--------|------|-----------|
+| 10 RED | `fcf9e0e` | `test(tui): cover backlog screen styling (RED)`: `backlog_style_test.go` (8 pruebas) y `termenv` como dependencia directa en `go.mod` |
+| 11 GREEN | `281018e` | `feat(tui): style backlog screens like the main menu (GREEN)`: `internal/tui/backlog_screens.go` |
+| 12 docs | este commit | `docs(openspec): record backlog styling task` |
+
+**RED** (`go test ./tests/unit/tui/`): las 8 pruebas nuevas fallan, todas con mensajes del tipo `line "▸ Crear historia" has no ANSI styling, want it styled`, `selected row ... has no background`, `footer ... is one unstyled run, want the keys styled apart from the text` y `error line ... has no banner border`. Las aserciones del texto plano sin ANSI ya pasaban (el texto no cambia) y las 62 pruebas previas seguían verdes.
+
+**GREEN**: `go test ./tests/unit/tui/` en verde con 70 pruebas de nivel superior (62 + 8), sin ningún FAIL; `go test $(go list ./... | tr -d '\r' | rg -v tests/integration)` en verde; `go build ./...` y `go vet ./internal/tui/ ./tests/unit/tui/` limpios.
+
+Decisiones y observaciones:
+
+- La prueba fuerza `termenv.TrueColor` porque `lipgloss` no emite ANSI sin TTY; así las pruebas existentes no cambian. Una prueba adicional confirma que con perfil `Ascii` no hay secuencias ANSI.
+- Las filas del backlog usan `selectedStyle` e `itemStyle` con `UnsetPadding()`: el relleno horizontal del menú agregaría espacios al texto plano y rompería el contrato de que el texto sin ANSI no cambia (por ejemplo `fieldValue` en las pruebas de formulario). Visualmente la barra de selección no tiene el margen lateral que sí tiene el menú.
+- `errorBannerStyle` dibuja un borde redondeado, de modo que el texto del error queda dentro de un recuadro (el contenido de cada línea no cambia).
+- La pantalla de resultado distingue éxito de error con `backlogReturn` (`"backlog"` solo en éxito), sin agregar campos al modelo. En éxito se resalta solo la primera línea (`Historia creada correctamente (201)`).
+- No se tocaron las pantallas de proyectos ni el menú.

@@ -213,3 +213,13 @@ Secuencial estricto por commit: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 
 - Frente al presupuesto de 400 líneas y al pronóstico de 800 a 950: el pronóstico se superó de forma material (aproximadamente 3,4 veces). Las causas principales son las pruebas de pantalla de caja negra (1067 líneas en `backlog_test.go`, 30 pruebas con tablas por escenario de la spec) y el tamaño de `backlog_screens.go` (438 líneas). No se recortaron pruebas, comentarios ni documentación para ajustar el número.
 - Etiqueta requerida en el PR: `size:exception`. Los nueve commits son límites de reversión independientes.
 - Nota: las tareas con salida RED/GREEN y los hallazgos están en `apply-progress.md`.
+
+## Tarea 7 — estilo visual del backlog (commits 10 a 12)
+
+Refinamiento visual solicitado por el usuario tras la prueba manual de la TUI. No hay cambio de especificación: el comportamiento, el manejo de teclas y los textos no cambian (`openspec/specs/` no se toca). Las pantallas del backlog adoptan los estilos `lipgloss` de `internal/tui/styles.go` que ya usa el menú principal.
+
+Commits: `fcf9e0e` (RED), `281018e` (GREEN) y el commit de documentación (este).
+
+- [x] 7.1 RED: crear `tests/unit/tui/backlog_style_test.go` (8 pruebas) que fuerza `termenv.TrueColor` (restaurado con `t.Cleanup`) y verifica ANSI en título, fila seleccionada (fondo de `selectedStyle`), filas sin seleccionar (sin fondo), mensajes de carga/vacío, pista de teclas, banner de error (borde) y estilo de éxito, y que el texto sin ANSI conserva el cuerpo plano actual. `termenv` pasa de indirecta a directa en `go.mod`. Evidencia: commit `fcf9e0e`; las 8 pruebas nuevas fallan por falta de ANSI y los 62 tests previos siguen verdes.
+- [x] 7.2 GREEN: en `internal/tui/backlog_screens.go`, títulos con `screenTitleStyle`; fila seleccionada `cursorStyle("▸") + selectedStyle`, no seleccionada `"  " + itemStyle`; pistas con `hintKeyStyle` en las teclas y `hintStyle` en el resto; carga y vacío en `hintStyle`; errores del formulario y de la API en `errorBannerStyle`; éxito en `statusOkStyle`. Se elimina `cursorPrefix`. Evidencia: commit `281018e`.
+- [x] 7.3 Verificar: `go test ./tests/unit/tui/` con 70 pruebas de nivel superior en verde (62 previas sin modificar + 8 nuevas) y `go test` de los paquetes no de integración en verde.
