@@ -32,10 +32,30 @@ func (c *SprintClient) ListOpen(ctx context.Context, projectID string) (APIRespo
 	return c.api.do(ctx, http.MethodGet, "/projects/"+url.PathEscape(projectID)+"/sprints/open", nil)
 }
 
+func (c *SprintClient) ListAssigned(ctx context.Context, projectID, sprintID string) (APIResponse, error) {
+	return c.api.do(ctx, http.MethodGet, "/projects/"+url.PathEscape(projectID)+"/sprints/"+url.PathEscape(sprintID)+"/stories", nil)
+}
+
 func (c *SprintClient) Assign(ctx context.Context, projectID, sprintID string, storyIDs []string) (APIResponse, error) {
 	return c.api.do(ctx, http.MethodPost, "/projects/"+url.PathEscape(projectID)+"/sprints/"+url.PathEscape(sprintID)+"/stories", struct {
 		StoryIDs []string `json:"story_ids"`
 	}{storyIDs})
+}
+
+type TaskInput struct {
+	Title          string   `json:"title"`
+	EstimatedHours *float64 `json:"estimated_hours,omitempty"`
+}
+
+type TaskClient struct{ api apiClient }
+
+func NewTaskClient(baseURL string) *TaskClient { return &TaskClient{api: newAPIClient(baseURL)} }
+
+func (c *TaskClient) Create(ctx context.Context, projectID, sprintID, storyID string, tasks []TaskInput) (APIResponse, error) {
+	path := "/projects/" + url.PathEscape(projectID) + "/sprints/" + url.PathEscape(sprintID) + "/stories/" + url.PathEscape(storyID) + "/tasks"
+	return c.api.do(ctx, http.MethodPost, path, struct {
+		Tasks []TaskInput `json:"tasks"`
+	}{tasks})
 }
 
 type SprintResultMsg struct {
@@ -51,7 +71,7 @@ func (m Model) updateSprints(key tea.KeyMsg) (Model, tea.Cmd) {
 			m.sprintCursor--
 		}
 	case tea.KeyDown:
-		if m.sprintCursor < 2 {
+		if m.sprintCursor < 3 {
 			m.sprintCursor++
 		}
 	case tea.KeyEsc:
@@ -60,9 +80,12 @@ func (m Model) updateSprints(key tea.KeyMsg) (Model, tea.Cmd) {
 		if m.sprintCursor == 0 {
 			m.Screen, m.sprintProjectID = "sprint-project", ""
 			m.sprintAction = "create"
-		} else if m.sprintCursor == 1 {
+		} else if m.sprintCursor == 1 || m.sprintCursor == 2 {
 			m.Screen, m.sprintProjectID = "sprint-project", ""
 			m.sprintAction = "assign"
+			if m.sprintCursor == 2 {
+				m.sprintAction = "tasks"
+			}
 		} else {
 			m.Screen, m.Cursor = "menu", 0
 		}
@@ -127,6 +150,14 @@ func (m Model) listAssignedBacklogCmd(sprintID string) tea.Cmd {
 	}
 }
 
+func (m Model) listAssignedSprintStoriesCmd(sprintID string) tea.Cmd {
+	client, projectID := m.sprintClient, m.sprintProjectID
+	return func() tea.Msg {
+		response, err := client.ListAssigned(context.Background(), projectID, sprintID)
+		return SprintResultMsg{Op: "assigned", Response: response, Err: err}
+	}
+}
+
 func (m Model) assignSprintStoriesCmd(sprintID string) tea.Cmd {
 	client, projectID := m.sprintClient, m.sprintProjectID
 	ids := make([]string, 0, len(m.selectedStories))
@@ -158,7 +189,67 @@ func (m Model) updateOpenSprints(key tea.KeyMsg) (Model, tea.Cmd) {
 			return m, nil
 		}
 		m.selectedSprintID = m.openSprints[m.sprintCursor].ID
+		if m.sprintAction == "tasks" {
+			return m, m.listAssignedSprintStoriesCmd(m.selectedSprintID)
+		}
 		return m, m.listAssignedBacklogCmd(m.selectedSprintID)
+	}
+	return m, nil
+}
+
+func (m Model) updateAssignedStories(key tea.KeyMsg) (Model, tea.Cmd) {
+	if key.Type == tea.KeyUp && m.sprintCursor > 0 {
+		m.sprintCursor--
+	}
+	if key.Type == tea.KeyDown && m.sprintCursor < len(m.sprintStories)-1 {
+		m.sprintCursor++
+	}
+	if key.Type == tea.KeyEsc {
+		m.Screen, m.sprintCursor = "sprint-open-list", 0
+	}
+	if key.Type == tea.KeyEnter && len(m.sprintStories) > 0 {
+		m.taskStoryID, m.taskTitle, m.taskHours, m.taskField, m.Screen = m.sprintStories[m.sprintCursor].ID, "", "", 0, "sprint-task-form"
+	}
+	return m, nil
+}
+
+func (m Model) updateSprintTaskForm(key tea.KeyMsg) (Model, tea.Cmd) {
+	value := &m.taskTitle
+	if m.taskField == 1 {
+		value = &m.taskHours
+	}
+	if key.Type == tea.KeyEsc {
+		m.Screen = "sprint-assigned-list"
+		return m, nil
+	}
+	if key.Type == tea.KeyTab || key.Type == tea.KeyDown || key.Type == tea.KeyUp {
+		m.taskField = (m.taskField + 1) % 2
+		return m, nil
+	}
+	if text, ok := editText(*value, key); ok {
+		*value = text
+		m.sprintMessage = ""
+		return m, nil
+	}
+	if key.Type == tea.KeyEnter {
+		if m.taskField == 0 {
+			m.taskField = 1
+			return m, nil
+		}
+		var hours *float64
+		if strings.TrimSpace(m.taskHours) != "" {
+			parsed, err := parseEstimatedHours(m.taskHours)
+			if err != nil {
+				m.sprintMessage = err.Error()
+				return m, nil
+			}
+			hours = parsed
+		}
+		client, projectID, sprintID, storyID, title := m.taskClient, m.sprintProjectID, m.selectedSprintID, m.taskStoryID, m.taskTitle
+		return m, func() tea.Msg {
+			response, err := client.Create(context.Background(), projectID, sprintID, storyID, []TaskInput{{Title: title, EstimatedHours: hours}})
+			return SprintResultMsg{Op: "tasks", Response: response, Err: err}
+		}
 	}
 	return m, nil
 }
@@ -214,6 +305,21 @@ func (m Model) applySprintResult(result SprintResultMsg) (Model, tea.Cmd) {
 		m.sprintStories, m.selectedStories, m.sprintCursor, m.Screen = listing.Stories, map[string]bool{}, 0, "sprint-story-select"
 		return m, nil
 	}
+	if result.Op == "assigned" {
+		if message, failed := sprintFailure(result); failed {
+			m.Screen, m.sprintMessage = "sprint-result", message
+			return m, nil
+		}
+		var listing struct {
+			Stories []Story `json:"stories"`
+		}
+		if err := json.Unmarshal(result.Response.Body, &listing); err != nil {
+			m.Screen, m.sprintMessage = "sprint-result", err.Error()
+			return m, nil
+		}
+		m.sprintStories, m.sprintCursor, m.Screen = listing.Stories, 0, "sprint-assigned-list"
+		return m, nil
+	}
 	m.Screen = "sprint-result"
 	if message, failed := sprintFailure(result); failed {
 		m.sprintMessage = message
@@ -221,6 +327,10 @@ func (m Model) applySprintResult(result SprintResultMsg) (Model, tea.Cmd) {
 	}
 	if result.Op == "assign" {
 		m.sprintMessage = "Stories assigned to Sprint"
+		return m, nil
+	}
+	if result.Op == "tasks" {
+		m.sprintMessage = fmt.Sprintf("Tasks created (%d)", result.Response.StatusCode)
 		return m, nil
 	}
 	var sprint Sprint

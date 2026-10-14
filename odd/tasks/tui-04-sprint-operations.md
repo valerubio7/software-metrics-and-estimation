@@ -49,7 +49,7 @@ Add only the minimal read-only discovery contracts for open Sprints and their as
 | TUI04-02 | Implement Sprint discovery in the API — **PARTIAL** | Composed both read contracts through existing API/query architecture with project/Sprint scoping and no write/business-policy behavior. Focused unit tests pass. Database-backed verification remains blocked because Docker/Testcontainers cannot start in this environment. |
 | TUI04-03 | Build Sprint-operation navigation and creation — **CLOSED** | Add a navigable Sprint workflow in `internal/tui/*` that collects a project and Sprint goal, submits creation to the API, and presents success or API errors. Verify keyboard/update/view behavior and client request behavior with focused TUI tests. |
 | TUI04-04 | Add batch story assignment and Sprint story selection — **CLOSED** | Allow selection of an open Sprint, show its project's backlog for choosing multiple stories, submit batch assignment, and show API outcomes. Do not locally reimplement project-membership validation. Focused tests cover navigation, request payload, and server error rendering. |
-| TUI04-05 | Add task decomposition for assigned stories | From a selected Sprint story, submit one or more titled tasks with estimated hours optional. Preserve the existing US-10 task-creation contract and let the API determine validity. Focused tests cover optional/omitted estimated hours, request construction, and response/error rendering. |
+| TUI04-05 | Add task decomposition for assigned stories — **CLOSED** | From a selected Sprint story, submit one or more titled tasks with estimated hours optional. Preserve the existing US-10 task-creation contract and let the API determine validity. Focused tests cover optional/omitted estimated hours, request construction, and response/error rendering. |
 | TUI04-06 | Add Sprint-scoped story completion and conflict rendering | Complete only through the existing Sprint-scoped API operation. Surface a closed-Sprint `409` and `409 story_not_in_sprint` as server outcomes. Repeated completion must not double count; rely on API semantics and present its outcome without a TUI-side counter or duplicate policy. Focused tests cover responses and repeated-operation behavior as observable through the API/TUI boundary. |
 | TUI04-07 | Verify, document, and prepare the candidate | Update relevant API documentation for discovery contracts and keep behavior changes with tests. Run focused API/TUI tests and `go test ./...`; record Docker/Testcontainers availability and actual integration results. Review the diff for scope, generated files, and authored-line forecast, then prepare the authorized single PR only when checks and candidate are ready. |
 
@@ -59,7 +59,7 @@ Rough forecast: **900–1,400 additions and 60–120 deletions** across implemen
 
 ## Progress and verification
 
-- **Status:** TUI04-01 closed; TUI04-02 implementation complete but partial pending database-backed verification; TUI04-03 and TUI04-04 closed; TUI04-05 through TUI04-07 remain open. TUI04-04 selects open Sprints and backlog stories for batch assignment.
+- **Status:** TUI04-01 closed; TUI04-02 implementation complete but partial pending database-backed verification; TUI04-03 through TUI04-05 closed; TUI04-06 and TUI04-07 remain open. TUI04-05 creates titled tasks for a selected Sprint-assigned story, with estimated hours optional.
 - **Baseline evidence:** current branch is `feat/tui-04-sprint-operations`, tracking `origin/main`; working tree was clean before this document. The strict TDD flag and runner were verified in `openspec/config.yaml`.
 - **Relevant verified code context:** TUI model/navigation is in `internal/tui/model.go`; existing TUI clients/screens are under `internal/tui/`; the closed-Sprint listing handler is `internal/sprint/transport/http/list_handler.go`; API route composition is `internal/api/api.go`; TUI unit tests are under `tests/unit/tui/`.
 - **Implemented routes:** `GET /projects/{project_id}/sprints/open` lists open Sprints; `GET /projects/{project_id}/sprints/{sprint_id}/stories` lists only assigned stories in the project-scoped Sprint. The existing `GET /projects/{project_id}/sprints` closed-history route remains unchanged.
@@ -76,8 +76,13 @@ Rough forecast: **900–1,400 additions and 60–120 deletions** across implemen
 - **TUI04-04 TDD:** the focused assignment test first failed because selecting the Sprint menu's assignment entry routed to the unrelated projects screen (RED). After implementing open-Sprint discovery, backlog multiselect, ordered selected-ID payload construction, and API response handling, `go test ./tests/unit/tui/...` passed (GREEN).
 - **TUI04-04 verification:** `go test ./tests/unit/tui/...` — PASS.
 - **TUI04-04 files:** `internal/tui/model.go`, `internal/tui/sprints.go`, `tests/unit/tui/sprint_test.go`, this tracker.
-- **TUI04-04 commit:** recorded in Git history; POST `/projects/{project_id}/sprints/{sprint_id}/stories` receives only the explicitly selected story IDs.
+- **TUI04-04 commit:** `e63e082 feat(tui): add batch Sprint story assignment`; POST `/projects/{project_id}/sprints/{sprint_id}/stories` receives only the explicitly selected story IDs.
+- **TUI04-05 TDD:** the focused client contract test first failed to compile because `NewTaskClient` and `TaskInput` did not exist (RED). After implementing task client and assigned-story task navigation/form, `go test ./tests/unit/tui/...` passed (GREEN).
+- **TUI04-05 verification:** `go test ./tests/unit/tui/...` — PASS.
+- **TUI04-05 files:** `internal/tui/model.go`, `internal/tui/sprints.go`, `tests/unit/tui/sprint_test.go`, this tracker.
+- **TUI04-05 contract:** POST `/projects/{project_id}/sprints/{sprint_id}/stories/{story_id}/tasks` sends `tasks` entries; `estimated_hours` is omitted for empty hours and included for supplied values. API conflict details render without local policy.
+- **TUI04-05 commit:** recorded in Git history.
 
 ## Next step
 
-Implement TUI04-05 and TUI04-06 in dependency order. Database-backed TUI04-02 verification remains pending Docker/Testcontainers; after the TUI workflows, run focused and full verification and record the blocker honestly.
+Implement TUI04-06. Database-backed TUI04-02 verification remains pending Docker/Testcontainers; after the TUI workflows, run focused and full verification and record the blocker honestly.

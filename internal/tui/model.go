@@ -42,6 +42,11 @@ type Model struct {
 	sprintMessage    string
 	sprintAction     string
 	selectedSprintID string
+	taskStoryID      string
+	taskTitle        string
+	taskHours        string
+	taskField        int
+	taskClient       *TaskClient
 	openSprints      []Sprint
 	sprintStories    []Story
 	selectedStories  map[string]bool
@@ -57,6 +62,7 @@ func NewModel(apiURL string) Model {
 
 		backlogClient: NewBacklogClient(apiURL),
 		sprintClient:  NewSprintClient(apiURL),
+		taskClient:    NewTaskClient(apiURL),
 	}
 }
 
@@ -112,6 +118,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateOpenSprints(key)
 	case "sprint-story-select":
 		return m.updateSprintStorySelection(key)
+	case "sprint-assigned-list":
+		return m.updateAssignedStories(key)
+	case "sprint-task-form":
+		return m.updateSprintTaskForm(key)
 	case "sprint-result":
 		if key.Type == tea.KeyEsc || key.Type == tea.KeyEnter {
 			m.Screen, m.sprintMessage = "sprints", ""
@@ -383,7 +393,7 @@ func (m Model) View() string {
 		b.WriteString(m.viewBacklogResult())
 	case "sprints":
 		b.WriteString("Operaciones de Sprint\n\n")
-		for i, option := range []string{"Crear Sprint", "Asignar historias", "Volver"} {
+		for i, option := range []string{"Crear Sprint", "Asignar historias", "Crear tareas", "Volver"} {
 			b.WriteString(choiceRow(i == m.sprintCursor, option) + "\n")
 		}
 	case "sprint-project":
@@ -410,6 +420,19 @@ func (m Model) View() string {
 			b.WriteString(fmt.Sprintf("%s %s · %s\n", mark, story.ID, story.Title))
 		}
 		b.WriteString("\nSpace para alternar; Enter para asignar.\n")
+	case "sprint-assigned-list":
+		b.WriteString("Historias asignadas al Sprint\n\n")
+		for i, story := range m.sprintStories {
+			b.WriteString(choiceRow(i == m.sprintCursor, story.ID+" · "+story.Title) + "\n")
+		}
+	case "sprint-task-form":
+		b.WriteString("Crear tarea para " + m.taskStoryID + "\n\n")
+		b.WriteString(choiceRow(m.taskField == 0, "Título: "+m.taskTitle) + "\n")
+		b.WriteString(choiceRow(m.taskField == 1, "Horas estimadas (opcional): "+m.taskHours) + "\n")
+		if m.sprintMessage != "" {
+			b.WriteString("\n" + errorBannerStyle.Render(m.sprintMessage) + "\n")
+		}
+		b.WriteString("\nTab para cambiar campo; Enter para continuar/enviar.\n")
 	default:
 		b.WriteString(screenTitleStyle.Render(m.Choices[m.Cursor]))
 		b.WriteString("  ")

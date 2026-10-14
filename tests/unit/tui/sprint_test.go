@@ -134,3 +134,41 @@ func TestSprintAssignmentSelectsOpenSprintAndPreservesSelectedStoryIDs(t *testin
 		t.Fatalf("story_ids = %v, want exact selected ID story-2", body.StoryIDs)
 	}
 }
+
+func TestTaskClientOmitsOptionalEstimatedHours(t *testing.T) {
+	server, rec := recordingServer(t, http.StatusCreated, `{"tasks":[{"id":"t1","title":"Implement"}]}`)
+	hours := 2.5
+	response, err := tui.NewTaskClient(server.URL).Create(t.Context(), "p1", "sp1", "story1", []tui.TaskInput{{Title: "Implement"}, {Title: "Test", EstimatedHours: &hours}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := onlyRequest(t, rec)
+	if request.Method != http.MethodPost || request.Path != "/projects/p1/sprints/sp1/stories/story1/tasks" {
+		t.Fatalf("request = %+v", request)
+	}
+	var body map[string][]map[string]json.RawMessage
+	if err := json.Unmarshal(request.Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body["tasks"]) != 2 || string(body["tasks"][0]["title"]) != `"Implement"` || string(body["tasks"][1]["title"]) != `"Test"` {
+		t.Fatalf("tasks body = %s", request.Body)
+	}
+	if _, exists := body["tasks"][0]["estimated_hours"]; exists {
+		t.Fatalf("optional estimated_hours was sent: %s", request.Body)
+	}
+	if got := string(body["tasks"][1]["estimated_hours"]); got != "2.5" {
+		t.Fatalf("estimated_hours = %s, want 2.5", got)
+	}
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201", response.StatusCode)
+	}
+}
+
+func TestTaskConflictResponseIsShownWithoutSuccess(t *testing.T) {
+	m := tui.NewModel("http://localhost")
+	updated, _ := m.Update(tui.SprintResultMsg{Op: "tasks", Response: tui.APIResponse{StatusCode: http.StatusConflict, Body: []byte(`{"error":"story_not_in_sprint","message":"story is not assigned to the selected sprint"}`)}})
+	view := updated.(tui.Model).View()
+	if !strings.Contains(view, "story_not_in_sprint") || strings.Contains(view, "Tasks created") {
+		t.Fatalf("task conflict view = %q", view)
+	}
+}
