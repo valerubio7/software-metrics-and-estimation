@@ -1,6 +1,10 @@
 package tui
 
-import "context"
+import (
+	"context"
+	"net/http"
+	"net/url"
+)
 
 // Story is a user story as serialized by the backlog API.
 type Story struct {
@@ -37,21 +41,27 @@ type StoryUpdateInput struct {
 type BacklogClient struct{ api apiClient }
 
 // NewBacklogClient creates a backlog API client using the configured base URL.
-func NewBacklogClient(baseURL string) *BacklogClient { return &BacklogClient{} }
+func NewBacklogClient(baseURL string) *BacklogClient {
+	return &BacklogClient{api: newAPIClient(baseURL)}
+}
 
 // List fetches the backlog of a project.
 func (c *BacklogClient) List(ctx context.Context, projectID string) (APIResponse, error) {
-	return APIResponse{}, nil
+	return c.api.do(ctx, http.MethodGet, storiesPath(projectID), nil)
 }
 
 // Create adds a story to the backlog of a project.
 func (c *BacklogClient) Create(ctx context.Context, projectID string, input StoryCreateInput) (APIResponse, error) {
-	return APIResponse{}, nil
+	return c.api.do(ctx, http.MethodPost, storiesPath(projectID), input)
 }
 
 // Update replaces a story of a project.
 func (c *BacklogClient) Update(ctx context.Context, projectID, storyID string, input StoryUpdateInput) (APIResponse, error) {
-	return APIResponse{}, nil
+	return c.api.do(ctx, http.MethodPut, storiesPath(projectID)+"/"+url.PathEscape(storyID), input)
+}
+
+func storiesPath(projectID string) string {
+	return "/projects/" + url.PathEscape(projectID) + "/stories"
 }
 
 // BacklogOp identifies which backlog operation produced a BacklogResultMsg.
