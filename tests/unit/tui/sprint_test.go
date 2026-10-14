@@ -172,3 +172,31 @@ func TestTaskConflictResponseIsShownWithoutSuccess(t *testing.T) {
 		t.Fatalf("task conflict view = %q", view)
 	}
 }
+
+func TestSprintClientCompletesStoryWithinSprintAndPreservesConflict(t *testing.T) {
+	server, rec := recordingServer(t, http.StatusConflict, `{"error":"story_already_completed","message":"story already completed in sprint"}`)
+	response, err := tui.NewSprintClient(server.URL).Complete(t.Context(), "p1", "sp1", "story1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := onlyRequest(t, rec)
+	if request.Method != http.MethodPost || request.Path != "/projects/p1/sprints/sp1/stories/story1/completion" || len(request.Body) != 0 {
+		t.Fatalf("completion request = %+v", request)
+	}
+	if response.StatusCode != http.StatusConflict || !strings.Contains(string(response.Body), "story_already_completed") {
+		t.Fatalf("response = %+v, want preserved repeated-completion conflict", response)
+	}
+}
+
+func TestCompletionConflictsAreRenderedAsAPIOutcomes(t *testing.T) {
+	for _, code := range []string{"sprint_closed", "story_not_in_sprint", "story_already_completed"} {
+		t.Run(code, func(t *testing.T) {
+			m := tui.NewModel("http://localhost")
+			updated, _ := m.Update(tui.SprintResultMsg{Op: "complete", Response: tui.APIResponse{StatusCode: http.StatusConflict, Body: []byte(`{"error":"` + code + `","message":"API rejected completion"}`)}})
+			view := updated.(tui.Model).View()
+			if !strings.Contains(view, code) || strings.Contains(view, "Story completed") {
+				t.Fatalf("completion conflict view = %q", view)
+			}
+		})
+	}
+}

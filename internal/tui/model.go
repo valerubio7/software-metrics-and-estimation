@@ -393,7 +393,7 @@ func (m Model) View() string {
 		b.WriteString(m.viewBacklogResult())
 	case "sprints":
 		b.WriteString("Operaciones de Sprint\n\n")
-		for i, option := range []string{"Crear Sprint", "Asignar historias", "Crear tareas", "Volver"} {
+		for i, option := range []string{"Crear Sprint", "Asignar historias", "Crear tareas", "Completar historia", "Volver"} {
 			b.WriteString(choiceRow(i == m.sprintCursor, option) + "\n")
 		}
 	case "sprint-project":
