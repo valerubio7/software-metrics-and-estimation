@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -57,6 +58,83 @@ func (r *PostgresSprintRepository) CloseSprint(ctx context.Context, projectID, s
 }
 
 var _ application.SprintCloser = (*PostgresSprintRepository)(nil)
+
+var _ application.SprintHistoryReader = (*PostgresSprintRepository)(nil)
+
+// historyRow is one row of the history query. Every column is nullable because the outer joins yield a
+// project row without sprints, and a sprint row without stories.
+type historyRow struct {
+	sprintID    *string
+	projectID   *string
+	sprintGoal  *string
+	storyID     *string
+	title       *string
+	priority    *string
+	storyPoints *int
+	completedAt *time.Time
+}
+
+// ListClosedByProject reads the closed sprints of a project and their planned stories in one statement,
+// so that project existence and the history come from the same snapshot. The is_closed filter lives in
+// the ON clause: in WHERE it would drop the project row of a project without closed sprints and make it
+// indistinguishable from a missing project. Sprints are ordered from the most recently created and stories
+// by creation, both through their database-assigned sequence.
+func (r *PostgresSprintRepository) ListClosedByProject(ctx context.Context, projectID string) ([]domain.ClosedSprint, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT sp.id::text, sp.project_id::text, sp.sprint_goal,
+		       st.id::text, st.title, st.priority, st.story_points, ss.completed_at
+		FROM projects p
+		LEFT JOIN sprints sp ON sp.project_id = p.id AND sp.is_closed
+		LEFT JOIN sprint_stories ss ON ss.sprint_id = sp.id AND ss.project_id = sp.project_id
+		LEFT JOIN stories st ON st.id = ss.story_id AND st.project_id = ss.project_id
+		WHERE p.id = $1
+		ORDER BY sp.seq DESC, st.seq ASC
+	`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	found := false
+	sprints := make([]domain.ClosedSprint, 0)
+	for rows.Next() {
+		var row historyRow
+		if err := rows.Scan(&row.sprintID, &row.projectID, &row.sprintGoal,
+			&row.storyID, &row.title, &row.priority, &row.storyPoints, &row.completedAt); err != nil {
+			return nil, err
+		}
+		found = true
+		if row.sprintID == nil {
+			continue
+		}
+		if len(sprints) == 0 || sprints[len(sprints)-1].ID != *row.sprintID {
+			sprints = append(sprints, domain.ClosedSprint{
+				ID:         *row.sprintID,
+				ProjectID:  *row.projectID,
+				SprintGoal: *row.sprintGoal,
+				Stories:    make([]domain.PlannedStory, 0),
+			})
+		}
+		if row.storyID == nil {
+			continue
+		}
+		current := &sprints[len(sprints)-1]
+		current.Stories = append(current.Stories, domain.PlannedStory{
+			ID:          *row.storyID,
+			Title:       *row.title,
+			Priority:    *row.priority,
+			StoryPoints: row.storyPoints,
+			CompletedAt: row.completedAt,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, application.ErrProjectNotFound
+	}
+	return sprints, nil
+}
 
 // Create inserts one sprint; only the named project FK identifies a missing project.
 func (r *PostgresSprintRepository) Create(ctx context.Context, sprint domain.Sprint) error {
