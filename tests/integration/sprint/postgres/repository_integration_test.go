@@ -170,6 +170,183 @@ func TestSprintRepositoryMapsOnlyNamedProjectForeignKey(t *testing.T) {
 	}
 }
 
+const sprintSeqConstraint = "sprints_project_id_seq_key"
+
+func TestSprintsSeqIsAnAlwaysIdentityNotNullColumn(t *testing.T) {
+	pool := sprintDatabase(t)
+
+	var dataType, nullable, isIdentity, generation string
+	err := pool.QueryRow(context.Background(), `
+		SELECT data_type, is_nullable, is_identity, identity_generation FROM information_schema.columns
+		WHERE table_schema = current_schema() AND table_name = 'sprints' AND column_name = 'seq'
+	`).Scan(&dataType, &nullable, &isIdentity, &generation)
+	if err != nil {
+		t.Fatalf("inspect sprints.seq: %v", err)
+	}
+	if dataType != "bigint" || nullable != "NO" || isIdentity != "YES" || generation != "ALWAYS" {
+		t.Errorf("sprints.seq = (%s, nullable %s, identity %s, %s), want (bigint, nullable NO, identity YES, ALWAYS)",
+			dataType, nullable, isIdentity, generation)
+	}
+}
+
+func TestSprintsSeqIsUniquePerProject(t *testing.T) {
+	pool := sprintDatabase(t)
+	var definition string
+	err := pool.QueryRow(context.Background(), `
+		SELECT pg_get_constraintdef(oid) FROM pg_constraint
+		WHERE conrelid = 'sprints'::regclass AND conname = $1
+	`, sprintSeqConstraint).Scan(&definition)
+	if err != nil {
+		t.Fatalf("named seq constraint missing: %v", err)
+	}
+	if definition != "UNIQUE (project_id, seq)" {
+		t.Errorf("%s = %q, want UNIQUE (project_id, seq)", sprintSeqConstraint, definition)
+	}
+
+	insertProject(t, pool)
+	repository := sprintpostgres.NewPostgresSprintRepository(pool)
+	if err := repository.Create(context.Background(), domain.Sprint{ID: sprintID, ProjectID: projectID, SprintGoal: "First"}); err != nil {
+		t.Fatalf("seed sprint: %v", err)
+	}
+	// Only OVERRIDING SYSTEM VALUE can repeat a seq, which is how the constraint is exercised.
+	_, err = pool.Exec(context.Background(), `
+		INSERT INTO sprints (id, project_id, sprint_goal, seq) OVERRIDING SYSTEM VALUE
+		SELECT $1::uuid, project_id, 'Duplicate seq', seq FROM sprints WHERE id = $2
+	`, "4991929f-4ef2-4412-9365-04235c3c1dbf", sprintID)
+	assertDatabaseError(t, err, "23505", sprintSeqConstraint)
+	if got := sprintCount(t, pool); got != 1 {
+		t.Errorf("sprint count after rejected duplicate seq = %d, want 1", got)
+	}
+}
+
+func TestSprintsSeqRejectsExplicitValuesWithoutOverriding(t *testing.T) {
+	pool := sprintDatabase(t)
+	insertProject(t, pool)
+
+	_, err := pool.Exec(context.Background(), `
+		INSERT INTO sprints (id, project_id, sprint_goal, seq) VALUES ($1, $2, 'Explicit seq', 99)
+	`, sprintID, projectID)
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "428C9" {
+		t.Fatalf("explicit seq error = %v, want PostgreSQL 428C9", err)
+	}
+	if got := sprintCount(t, pool); got != 0 {
+		t.Errorf("sprint count after rejected explicit seq = %d, want 0", got)
+	}
+}
+
+func TestSprintCreateAssignsIncreasingSeq(t *testing.T) {
+	pool := sprintDatabase(t)
+	insertProject(t, pool)
+	repository := sprintpostgres.NewPostgresSprintRepository(pool)
+	ids := []string{sprintID, "4991929f-4ef2-4412-9365-04235c3c1dbf"}
+	for index, id := range ids {
+		sprint := domain.Sprint{ID: id, ProjectID: projectID, SprintGoal: "Sprint " + string(rune('A'+index))}
+		if err := repository.Create(context.Background(), sprint); err != nil {
+			t.Fatalf("Create(%s) error = %v", id, err)
+		}
+	}
+
+	var first, second int64
+	if err := pool.QueryRow(context.Background(), "SELECT seq FROM sprints WHERE id = $1", ids[0]).Scan(&first); err != nil {
+		t.Fatalf("read first seq: %v", err)
+	}
+	if err := pool.QueryRow(context.Background(), "SELECT seq FROM sprints WHERE id = $1", ids[1]).Scan(&second); err != nil {
+		t.Fatalf("read second seq: %v", err)
+	}
+	if second <= first {
+		t.Errorf("seq of second sprint = %d, want greater than first sprint seq %d", second, first)
+	}
+}
+
+func TestSprintCreationSequenceMigrationCanBeReversedAndReapplied(t *testing.T) {
+	pool := sprintDatabase(t)
+	ctx := context.Background()
+	migrations := sprintMigrationsDir(t)
+	seedClosedSprintHistory(t, pool)
+	before := sprintBusinessSnapshot(t, pool)
+
+	applySprintMigration(t, pool, migrations, "000011_add_sprint_creation_sequence.down.sql")
+	var column, constraint int
+	err := pool.QueryRow(ctx, `
+		SELECT (SELECT count(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'sprints' AND column_name = 'seq'),
+		       (SELECT count(*) FROM pg_constraint WHERE conrelid = 'sprints'::regclass AND conname = $1)
+	`, sprintSeqConstraint).Scan(&column, &constraint)
+	if err != nil {
+		t.Fatalf("inspect schema after down: %v", err)
+	}
+	if column != 0 || constraint != 0 {
+		t.Fatalf("after down: seq column/constraint = %d/%d, want 0/0", column, constraint)
+	}
+	if after := sprintBusinessSnapshot(t, pool); after != before {
+		t.Fatalf("business data changed by down:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+
+	applySprintMigration(t, pool, migrations, "000011_add_sprint_creation_sequence.up.sql")
+	var sprints, distinct, withSeq int
+	err = pool.QueryRow(ctx, `
+		SELECT count(*), count(DISTINCT (project_id, seq)), count(seq) FROM sprints
+	`).Scan(&sprints, &distinct, &withSeq)
+	if err != nil {
+		t.Fatalf("inspect seq after reapply: %v", err)
+	}
+	if sprints != 3 || distinct != 3 || withSeq != 3 {
+		t.Errorf("after up: sprints/distinct seq/non-null seq = %d/%d/%d, want 3/3/3", sprints, distinct, withSeq)
+	}
+	if after := sprintBusinessSnapshot(t, pool); after != before {
+		t.Errorf("business data changed by reapplying up:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+// seedClosedSprintHistory seeds one closed and two open sprints with an association, a completion and a
+// task, so that the migration round trip covers business data.
+func seedClosedSprintHistory(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	insertProject(t, pool)
+	storyID := "a25b26b4-26bf-482e-a318-74e6cb845462"
+	statements := []struct {
+		sql  string
+		args []any
+	}{
+		{"INSERT INTO sprints (id, project_id, sprint_goal, is_closed) VALUES ($1, $2, 'Closed sprint', true)", []any{sprintID, projectID}},
+		{"INSERT INTO sprints (id, project_id, sprint_goal) VALUES ($1, $2, 'Open sprint')", []any{"4991929f-4ef2-4412-9365-04235c3c1dbf", projectID}},
+		{"INSERT INTO sprints (id, project_id, sprint_goal) VALUES ($1, $2, 'Second open sprint')", []any{"0b3c7d52-1a43-4f5e-9d4c-6a2f7a1e9b10", projectID}},
+		{`INSERT INTO stories (id, project_id, title, description, priority, status, acceptance_criteria)
+		  VALUES ($1, $2, 'Story', 'Description', 'alta', 'completada', ARRAY['criterion'])`, []any{storyID, projectID}},
+		{"INSERT INTO sprint_stories (sprint_id, story_id, project_id, completed_at) VALUES ($1, $2, $3, '2026-10-11T10:00:00Z')", []any{sprintID, storyID, projectID}},
+		{"INSERT INTO tasks (id, project_id, sprint_id, story_id, title, estimated_hours) VALUES ($1, $2, $3, $4, 'Preserved task', 2.5)",
+			[]any{"c631b683-b585-4df3-b6a3-10ed2fd11d9e", projectID, sprintID, storyID}},
+	}
+	for _, statement := range statements {
+		if _, err := pool.Exec(context.Background(), statement.sql, statement.args...); err != nil {
+			t.Fatalf("seed %q: %v", statement.sql, err)
+		}
+	}
+}
+
+// sprintBusinessSnapshot renders the business columns of the sprint tables, excluding the seq column
+// that the migration adds and removes.
+func sprintBusinessSnapshot(t *testing.T, pool *pgxpool.Pool) string {
+	t.Helper()
+	var snapshot string
+	err := pool.QueryRow(context.Background(), `
+		SELECT concat_ws(E'\n',
+			(SELECT coalesce(string_agg((to_jsonb(s) - 'seq')::text, E'\n' ORDER BY id), '') FROM sprints s),
+			(SELECT coalesce(string_agg(to_jsonb(ss)::text, E'\n' ORDER BY sprint_id, story_id), '') FROM sprint_stories ss),
+			(SELECT coalesce(string_agg(to_jsonb(st)::text, E'\n' ORDER BY id), '') FROM stories st),
+			(SELECT coalesce(string_agg(to_jsonb(tk)::text, E'\n' ORDER BY id), '') FROM tasks tk))
+	`).Scan(&snapshot)
+	if err != nil {
+		t.Fatalf("snapshot sprint business data: %v", err)
+	}
+	return snapshot
+}
+
+func sprintMigrationsDir(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(sprintModuleRoot(t), "internal", "project", "infrastructure", "postgres", "migrations")
+}
+
 func sprintDatabase(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	if testing.Short() {
@@ -228,6 +405,7 @@ var sprintMigrationNames = []string{
 	"000005_reconcile_story_hours_and_sprints.up.sql", "000006_create_project_members.up.sql",
 	"000007_create_sprint_stories.up.sql", "000008_add_sprint_closed.up.sql",
 	"000009_create_tasks.up.sql", "000010_add_sprint_story_completion.up.sql",
+	"000011_add_sprint_creation_sequence.up.sql",
 }
 
 func sprintDatabaseFromDSN(t *testing.T, dsn string) *pgxpool.Pool {
