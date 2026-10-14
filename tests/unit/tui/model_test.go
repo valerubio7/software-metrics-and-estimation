@@ -1,8 +1,14 @@
 package tui_test
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/tui"
@@ -10,6 +16,116 @@ import (
 
 func keyMsg(s string) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+}
+
+// spaceKey is the message Bubble Tea v1.3.10 emits for the space bar.
+func spaceKey() tea.KeyMsg {
+	return tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}}
+}
+
+// press applies a non-rune key to the model.
+func press(m tui.Model, keyType tea.KeyType) tui.Model {
+	updated, _ := m.Update(tea.KeyMsg{Type: keyType})
+	return updated.(tui.Model)
+}
+
+// typeText types s rune by rune, sending the space bar as tea.KeySpace like a real terminal.
+func typeText(m tui.Model, s string) tui.Model {
+	for _, r := range s {
+		var msg tea.KeyMsg
+		if r == ' ' {
+			msg = spaceKey()
+		} else {
+			msg = keyMsg(string(r))
+		}
+		updated, _ := m.Update(msg)
+		m = updated.(tui.Model)
+	}
+	return m
+}
+
+// isQuit reports whether cmd produces tea.QuitMsg.
+func isQuit(cmd tea.Cmd) bool {
+	if cmd == nil {
+		return false
+	}
+	_, ok := cmd().(tea.QuitMsg)
+	return ok
+}
+
+// fieldValue extracts the text rendered after "<label>: " on its line of the view.
+// The project-id prompt draws a trailing "_" cursor, which is not part of the value.
+func fieldValue(t *testing.T, view, label string) string {
+	t.Helper()
+	for _, line := range strings.Split(view, "\n") {
+		if _, value, found := strings.Cut(line, label+": "); found {
+			return strings.TrimSuffix(strings.TrimRight(value, "\r"), "_")
+		}
+	}
+	t.Fatalf("label %q not found in view %q", label, view)
+	return ""
+}
+
+func toProjectID(m tui.Model) tui.Model {
+	m = press(m, tea.KeyEnter) // menu -> projects
+	m = press(m, tea.KeyDown)
+	m = press(m, tea.KeyDown)
+	return press(m, tea.KeyEnter) // "Consultar estado" -> project-id
+}
+
+func toCreateProject(m tui.Model) tui.Model {
+	m = press(m, tea.KeyEnter) // menu -> projects
+	return press(m, tea.KeyEnter)
+}
+
+func toEditProject(m tui.Model, id string) tui.Model {
+	m = press(m, tea.KeyEnter) // menu -> projects
+	m = press(m, tea.KeyDown)
+	m = press(m, tea.KeyEnter) // "Modificar proyecto" -> project-id
+	m = typeText(m, id)
+	return press(m, tea.KeyEnter) // -> edit-project
+}
+
+// projectFieldCase describes a project text field reached from the menu.
+type projectFieldCase struct {
+	screen string
+	label  string
+	open   func(tui.Model) tui.Model
+}
+
+var projectTextFields = []projectFieldCase{
+	{"project-id", "ID", toProjectID},
+	{"create-project", "Nombre", toCreateProject},
+}
+
+// submitProject fills the create form and returns the model and the API command.
+func submitProject(t *testing.T, m tui.Model, name string) (tui.Model, tea.Cmd) {
+	t.Helper()
+	m = toCreateProject(m)
+	m = typeText(m, name)
+	m = press(m, tea.KeyTab)
+	m = typeText(m, "2026-10-01")
+	m = press(m, tea.KeyTab)
+	m = typeText(m, "2026-12-01")
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("submitting the project form should issue an API command")
+	}
+	return updated.(tui.Model), cmd
+}
+
+// capturingProjectServer records the raw body of every POST /projects.
+func capturingProjectServer(t *testing.T) (*httptest.Server, *[][]byte) {
+	t.Helper()
+	var bodies [][]byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, body)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"p1","name":"ok","status":"active"}`))
+	}))
+	t.Cleanup(server.Close)
+	return server, &bodies
 }
 
 func TestMenuShowsFourOptions(t *testing.T) {
@@ -140,5 +256,185 @@ func TestQuitOnQAndCtrlC(t *testing.T) {
 		if got := cmd(); got != quitMsg {
 			_ = got
 		}
+	}
+}
+
+func TestQuitOnQDoesNotExitInProjectTextFields(t *testing.T) {
+	for _, field := range projectTextFields {
+		for _, char := range []string{"q", "Q"} {
+			t.Run(field.screen+"/"+char, func(t *testing.T) {
+				m := field.open(tui.NewModel("http://localhost:8080"))
+				updated, cmd := m.Update(keyMsg(char))
+				m = updated.(tui.Model)
+				if isQuit(cmd) {
+					t.Fatalf("%q quit the TUI from %s, want it typed into the field", char, field.screen)
+				}
+				if m.Screen != field.screen {
+					t.Errorf("Screen = %q after %q, want %q", m.Screen, char, field.screen)
+				}
+				if got := fieldValue(t, m.View(), field.label); got != char {
+					t.Errorf("field %q = %q, want %q", field.label, got, char)
+				}
+			})
+		}
+	}
+}
+
+func TestCtrlCQuitsFromProjectForms(t *testing.T) {
+	screens := []struct {
+		screen string
+		open   func(tui.Model) tui.Model
+	}{
+		{"project-id", toProjectID},
+		{"create-project", toCreateProject},
+		{"edit-project", func(m tui.Model) tui.Model { return toEditProject(m, "p1") }},
+	}
+	for _, tc := range screens {
+		t.Run(tc.screen, func(t *testing.T) {
+			m := tc.open(tui.NewModel("http://localhost:8080"))
+			if m.Screen != tc.screen {
+				t.Fatalf("Screen = %q, want %q", m.Screen, tc.screen)
+			}
+			_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+			if !isQuit(cmd) {
+				t.Errorf("Ctrl+C from %s did not quit", tc.screen)
+			}
+		})
+	}
+}
+
+func TestQuitOnQFromMenuAndProjectLists(t *testing.T) {
+	screens := []struct {
+		screen string
+		open   func(tui.Model) tui.Model
+	}{
+		{"menu", func(m tui.Model) tui.Model { return m }},
+		{"projects", func(m tui.Model) tui.Model { return press(m, tea.KeyEnter) }},
+		{"project-result", func(m tui.Model) tui.Model {
+			updated, _ := m.Update(tui.ProjectResultMsg{Err: errors.New("connection refused")})
+			return updated.(tui.Model)
+		}},
+	}
+	for _, tc := range screens {
+		for _, char := range []string{"q", "Q"} {
+			t.Run(tc.screen+"/"+char, func(t *testing.T) {
+				m := tc.open(tui.NewModel("http://localhost:8080"))
+				if m.Screen != tc.screen {
+					t.Fatalf("Screen = %q, want %q", m.Screen, tc.screen)
+				}
+				_, cmd := m.Update(keyMsg(char))
+				if !isQuit(cmd) {
+					t.Errorf("%q from %s did not quit", char, tc.screen)
+				}
+			})
+		}
+	}
+}
+
+func TestSpaceIsAcceptedInProjectTextFields(t *testing.T) {
+	for _, field := range projectTextFields {
+		t.Run(field.screen, func(t *testing.T) {
+			m := field.open(tui.NewModel("http://localhost:8080"))
+			m = typeText(m, "a b")
+			if got := fieldValue(t, m.View(), field.label); got != "a b" {
+				t.Errorf("field %q = %q, want %q", field.label, got, "a b")
+			}
+		})
+	}
+}
+
+func TestSpaceInProjectNameIsSentToAPI(t *testing.T) {
+	server, bodies := capturingProjectServer(t)
+	_, cmd := submitProject(t, tui.NewModel(server.URL), "Proyecto Alfa")
+	cmd()
+	if len(*bodies) != 1 {
+		t.Fatalf("POST /projects count = %d, want 1", len(*bodies))
+	}
+	var sent map[string]string
+	if err := json.Unmarshal((*bodies)[0], &sent); err != nil {
+		t.Fatal(err)
+	}
+	if sent["name"] != "Proyecto Alfa" {
+		t.Errorf("name = %q, want %q", sent["name"], "Proyecto Alfa")
+	}
+}
+
+func TestBackspaceRemovesWholeRuneInProjectFields(t *testing.T) {
+	steps := []struct {
+		name  string
+		typed string
+		want  []string // value after each backspace
+	}{
+		{"accented-last-rune", "Canción", []string{"Canció"}},
+		{"accented-final-rune", "Canció", []string{"Canci"}},
+		{"multibyte-until-empty", "añá", []string{"añ", "a", ""}},
+	}
+	for _, field := range projectTextFields {
+		for _, step := range steps {
+			t.Run(field.screen+"/"+step.name, func(t *testing.T) {
+				m := field.open(tui.NewModel("http://localhost:8080"))
+				m = typeText(m, step.typed)
+				for i, want := range step.want {
+					m = press(m, tea.KeyBackspace)
+					got := fieldValue(t, m.View(), field.label)
+					if !utf8.ValidString(got) || strings.Contains(got, "�") {
+						t.Fatalf("backspace %d left invalid UTF-8: %q", i+1, got)
+					}
+					if got != want {
+						t.Errorf("backspace %d: field = %q, want %q", i+1, got, want)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestBackspaceOnEmptyFieldIsNoop(t *testing.T) {
+	for _, field := range projectTextFields {
+		t.Run(field.screen, func(t *testing.T) {
+			m := field.open(tui.NewModel("http://localhost:8080"))
+			m = press(m, tea.KeyBackspace)
+			if m.Screen != field.screen {
+				t.Errorf("Screen = %q, want %q", m.Screen, field.screen)
+			}
+			if got := fieldValue(t, m.View(), field.label); got != "" {
+				t.Errorf("field %q = %q, want empty", field.label, got)
+			}
+			m = typeText(m, "x")
+			if got := fieldValue(t, m.View(), field.label); got != "x" {
+				t.Errorf("field %q after typing = %q, want %q", field.label, got, "x")
+			}
+		})
+	}
+}
+
+func TestBackspaceThenTypeSendsValidUTF8Name(t *testing.T) {
+	server, bodies := capturingProjectServer(t)
+	m := tui.NewModel(server.URL)
+	m = toCreateProject(m)
+	m = typeText(m, "Gestión añ")
+	m = press(m, tea.KeyBackspace)
+	m = typeText(m, "o")
+	m = press(m, tea.KeyTab)
+	m = typeText(m, "2026-10-01")
+	m = press(m, tea.KeyTab)
+	m = typeText(m, "2026-12-01")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("submitting the project form should issue an API command")
+	}
+	cmd()
+	if len(*bodies) != 1 {
+		t.Fatalf("POST /projects count = %d, want 1", len(*bodies))
+	}
+	if !utf8.Valid((*bodies)[0]) {
+		t.Errorf("request body is not valid UTF-8: %q", (*bodies)[0])
+	}
+	var sent map[string]string
+	if err := json.Unmarshal((*bodies)[0], &sent); err != nil {
+		t.Fatal(err)
+	}
+	if sent["name"] != "Gestión ao" {
+		t.Errorf("name = %q, want %q", sent["name"], "Gestión ao")
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -24,6 +25,16 @@ type Model struct {
 	form          ProjectInput
 	message       string
 	client        *ProjectClient
+
+	backlogProjectID string // project confirmed for the session
+	backlogInput     string // text being edited in backlog-project
+	backlogCursor    int
+	backlogStories   []Story
+	backlogLoading   bool
+	backlogForm      storyForm
+	backlogMessage   string // text of backlog-result
+	backlogReturn    string // screen reached when leaving backlog-result
+	backlogClient    *BacklogClient
 }
 
 // NewModel creates the base navigation model.
@@ -33,6 +44,8 @@ func NewModel(apiURL string) Model {
 		Choices: []string{"Proyectos", "Backlog", "Sprints", "Salir"},
 		Screen:  "menu",
 		client:  NewProjectClient(apiURL),
+
+		backlogClient: NewBacklogClient(apiURL),
 	}
 }
 
@@ -44,11 +57,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if result, ok := msg.(ProjectResultMsg); ok {
 		return m.applyProjectResult(result)
 	}
+	if result, ok := msg.(BacklogResultMsg); ok {
+		return m.applyBacklogResult(result)
+	}
 	key, isKey := msg.(tea.KeyMsg)
 	if !isKey {
 		return m, nil
 	}
-	if key.Type == tea.KeyCtrlC || (key.Type == tea.KeyRunes && len(key.Runes) == 1 && (key.Runes[0] == 'q' || key.Runes[0] == 'Q')) {
+	if key.Type == tea.KeyCtrlC || (isQuitRune(key) && quitsOnQ(m.Screen)) {
 		return m, tea.Quit
 	}
 	switch m.Screen {
@@ -66,6 +82,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.message = ""
 		}
 		return m, nil
+	case "backlog":
+		return m.updateBacklog(key)
+	case "backlog-project":
+		return m.updateBacklogProject(key)
+	case "backlog-form":
+		return m.updateBacklogForm(key)
+	case "backlog-result":
+		return m.updateBacklogResult(key)
 	default:
 		if key.Type == tea.KeyEsc {
 			m.Screen = "menu"
@@ -73,6 +97,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+}
+
+// quitsOnQ reports whether q/Q exits from screen. Text-entry screens are not
+// listed, so q is a plain character there; Ctrl+C always quits.
+func quitsOnQ(screen string) bool {
+	switch screen {
+	case "menu", "projects", "project-result", "backlog", "backlog-result", "sprints":
+		return true
+	}
+	return false
+}
+
+func isQuitRune(key tea.KeyMsg) bool {
+	return key.Type == tea.KeyRunes && len(key.Runes) == 1 && (key.Runes[0] == 'q' || key.Runes[0] == 'Q')
+}
+
+// editText applies a text-editing key to value: runes and the space bar are
+// appended and backspace removes the last rune, so the value stays valid UTF-8.
+// The boolean reports whether the key was consumed.
+func editText(value string, key tea.KeyMsg) (string, bool) {
+	switch key.Type {
+	case tea.KeyRunes:
+		return value + string(key.Runes), true
+	case tea.KeySpace:
+		return value + " ", true
+	case tea.KeyBackspace:
+		_, size := utf8.DecodeLastRuneInString(value)
+		return value[:len(value)-size], true
+	}
+	return value, false
 }
 
 func (m Model) updateMenu(key tea.KeyMsg) (Model, tea.Cmd) {
@@ -90,7 +144,7 @@ func (m Model) updateMenu(key tea.KeyMsg) (Model, tea.Cmd) {
 		case 0:
 			m.Screen, m.projectCursor = "projects", 0
 		case 1:
-			m.Screen = "backlog"
+			return m.openBacklog()
 		case 2:
 			m.Screen = "sprints"
 		default:
@@ -135,12 +189,8 @@ func (m Model) updateProjectID(key tea.KeyMsg) (Model, tea.Cmd) {
 		m.Screen, m.message = "projects", ""
 		return m, nil
 	}
-	if key.Type == tea.KeyBackspace && len(m.projectID) > 0 {
-		m.projectID = m.projectID[:len(m.projectID)-1]
-		return m, nil
-	}
-	if key.Type == tea.KeyRunes {
-		m.projectID += string(key.Runes)
+	if value, ok := editText(m.projectID, key); ok {
+		m.projectID = value
 		return m, nil
 	}
 	if key.Type == tea.KeyEnter && strings.TrimSpace(m.projectID) != "" {
@@ -161,15 +211,8 @@ func (m Model) updateProjectForm(key tea.KeyMsg) (Model, tea.Cmd) {
 		m.Screen = "projects"
 		return m, nil
 	}
-	if key.Type == tea.KeyBackspace {
-		field := fields[m.formField]
-		if len(*field) > 0 {
-			*field = (*field)[:len(*field)-1]
-		}
-		return m, nil
-	}
-	if key.Type == tea.KeyRunes {
-		*fields[m.formField] += string(key.Runes)
+	if value, ok := editText(*fields[m.formField], key); ok {
+		*fields[m.formField] = value
 		return m, nil
 	}
 	if key.Type == tea.KeyTab || key.Type == tea.KeyDown {
@@ -303,6 +346,14 @@ func (m Model) View() string {
 		b.WriteString(m.message + "\n\nID: " + m.projectID + "_\nEnter para continuar, Esc para volver.\n")
 	case "project-result":
 		b.WriteString("Resultado\n\n" + m.message + "\n\nEnter/Esc para volver.\n")
+	case "backlog":
+		b.WriteString(m.viewBacklog())
+	case "backlog-project":
+		b.WriteString(m.viewBacklogProject())
+	case "backlog-form":
+		b.WriteString(m.viewBacklogForm())
+	case "backlog-result":
+		b.WriteString(m.viewBacklogResult())
 	default:
 		b.WriteString(screenTitleStyle.Render(m.Choices[m.Cursor]))
 		b.WriteString("  ")
@@ -326,8 +377,6 @@ func placeholderRelease(cursor int) string {
 	switch cursor {
 	case 0:
 		return "TUI-02"
-	case 1:
-		return "TUI-03"
 	default:
 		return "TUI-04/TUI-05"
 	}
