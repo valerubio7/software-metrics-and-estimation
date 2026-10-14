@@ -51,7 +51,7 @@ Add only the minimal read-only discovery contracts for open Sprints and their as
 | TUI04-04 | Add batch story assignment and Sprint story selection — **CLOSED** | Allow selection of an open Sprint, show its project's backlog for choosing multiple stories, submit batch assignment, and show API outcomes. Do not locally reimplement project-membership validation. Focused tests cover navigation, request payload, and server error rendering. |
 | TUI04-05 | Add task decomposition for assigned stories — **CLOSED** | From a selected Sprint story, submit one or more titled tasks with estimated hours optional. Preserve the existing US-10 task-creation contract and let the API determine validity. Focused tests cover optional/omitted estimated hours, request construction, and response/error rendering. |
 | TUI04-06 | Add Sprint-scoped story completion and conflict rendering — **CLOSED** | Complete only through the existing Sprint-scoped API operation. Surface a closed-Sprint `409` and `409 story_not_in_sprint` as server outcomes. Repeated completion must not double count; rely on API semantics and present its outcome without a TUI-side counter or duplicate policy. Focused tests cover responses and repeated-operation behavior as observable through the API/TUI boundary. |
-| TUI04-07 | Verify, document, and prepare the candidate | Update relevant API documentation for discovery contracts and keep behavior changes with tests. Run focused API/TUI tests and `go test ./...`; record Docker/Testcontainers availability and actual integration results. Review the diff for scope, generated files, and authored-line forecast, then prepare the authorized single PR only when checks and candidate are ready. |
+| TUI04-07 | Verify, document, and prepare the candidate — **PARTIAL** | API documentation and behavior changes are recorded with tests. Focused API/TUI tests pass. Full `go test ./...` was attempted; Docker/Testcontainers could not initialize providers, so PostgreSQL-backed verification and candidate readiness remain blocked. No push or PR was created. |
 
 ## Initial authored-lines forecast
 
@@ -59,13 +59,13 @@ Rough forecast: **900–1,400 additions and 60–120 deletions** across implemen
 
 ## Progress and verification
 
-- **Status:** TUI04-01 closed; TUI04-02 implementation complete but partial pending database-backed verification; TUI04-03 through TUI04-06 closed; TUI04-07 remains open for verification/candidate prep. TUI04-06 invokes Sprint-scoped completion and surfaces API conflicts without local counting.
+- **Status:** TUI04-01, TUI04-03, TUI04-04, TUI04-05, and TUI04-06 closed; TUI04-02 and TUI04-07 partial pending database-backed verification. TUI04-06 invokes Sprint-scoped completion and surfaces API conflicts without local counting.
 - **Baseline evidence:** current branch is `feat/tui-04-sprint-operations`, tracking `origin/main`; working tree was clean before this document. The strict TDD flag and runner were verified in `openspec/config.yaml`.
 - **Relevant verified code context:** TUI model/navigation is in `internal/tui/model.go`; existing TUI clients/screens are under `internal/tui/`; the closed-Sprint listing handler is `internal/sprint/transport/http/list_handler.go`; API route composition is `internal/api/api.go`; TUI unit tests are under `tests/unit/tui/`.
 - **Implemented routes:** `GET /projects/{project_id}/sprints/open` lists open Sprints; `GET /projects/{project_id}/sprints/{sprint_id}/stories` lists only assigned stories in the project-scoped Sprint. The existing `GET /projects/{project_id}/sprints` closed-history route remains unchanged.
 - **TDD evidence:** the new API route test first failed to compile because `OpenLister`, `AssignedLister`, and the assigned-story read model did not exist (RED). After implementation, `go test ./tests/unit/cmd/api` passed (GREEN); later focused package verification also passed.
 - **Focused verification:** `go test ./tests/unit/sprint/... ./tests/unit/story/... ./tests/unit/cmd/api` — PASS (all listed packages).
-- **Full verification:** `go test ./...` — BLOCKED/FAIL: integration packages could not create Docker providers (`checked path: $XDG_RUNTIME_DIR, failed to create Docker provider`). Unit packages and migration-file tests passed in that invocation; PostgreSQL/Testcontainers integration tests did not run.
+- **Full verification:** `go test ./...` — FAIL: PostgreSQL integration packages (project, projectmember, sprint, story, task) could not create Docker providers (`checked path: $XDG_RUNTIME_DIR, failed to create Docker provider`). Migration-file tests and all unit packages passed in that invocation; PostgreSQL/Testcontainers integration tests did not run.
 - **Source-code changes:** API route composition/startup, Sprint and story read ports/use cases/queries/HTTP handlers, focused API route tests, and `docs/sprint-history.md`. No TUI or task-creation/closed-Sprint policy behavior changed.
 - **Measured work-unit diff:** 535 additions and 6 deletions, including task tracking; this exceeds the advisory ~400 authored-line forecast. It remains one cohesive API discovery work unit with both routes, tests, documentation, and migration-backed composition; no content was cut to meet the advisory size.
 - **Commit:** `3c7192a feat(api): add Sprint discovery read routes`.
@@ -86,8 +86,10 @@ Rough forecast: **900–1,400 additions and 60–120 deletions** across implemen
 - **TUI04-06 verification:** `go test ./tests/unit/tui/...` — PASS.
 - **TUI04-06 files:** `internal/tui/model.go`, `internal/tui/sprints.go`, `tests/unit/tui/sprint_test.go`, this tracker.
 - **TUI04-06 behavior:** completion POST uses `/projects/{project_id}/sprints/{sprint_id}/stories/{story_id}/completion`; `sprint_closed`, `story_not_in_sprint`, and `story_already_completed` conflicts are shown as API responses. No local completion counter or policy was added.
-- **TUI04-06 commit:** recorded in Git history.
+- **TUI04-06 commit:** `c1a0f8c feat(tui): add Sprint story completion workflow`.
+- **Final TUI verification:** `go test ./tests/unit/tui/...` — PASS. Repeated-completion and conflict rendering are unit/API-boundary tested; live database behavior remains unverified because Docker provider initialization fails.
+- **Candidate review:** local branch `feat/tui-04-sprint-operations` is six commits ahead of `origin/main`; no remote operation, push, or PR creation was performed. Candidate preparation remains partial pending PostgreSQL-backed verification.
 
 ## Next step
 
-Run TUI04-07 focused/full verification, update final task evidence, and review the candidate. Database-backed TUI04-02 verification remains pending Docker/Testcontainers and must remain marked partial if still unavailable.
+When Docker/Testcontainers are available, rerun `go test ./...` to complete TUI04-02 and TUI04-07 verification, then review candidate readiness. No remote action is authorized by this execution.
