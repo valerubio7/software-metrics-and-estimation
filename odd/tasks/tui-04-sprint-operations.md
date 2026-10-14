@@ -67,7 +67,8 @@ Rough forecast: **900–1,400 additions and 60–120 deletions** across implemen
 - **Focused verification:** `go test ./tests/unit/sprint/... ./tests/unit/story/... ./tests/unit/cmd/api` — PASS (all listed packages).
 - **Full verification:** `go test ./...` — BLOCKED/FAIL: integration packages could not create Docker providers (`checked path: $XDG_RUNTIME_DIR, failed to create Docker provider`). Unit packages and migration-file tests passed in that invocation; PostgreSQL/Testcontainers integration tests did not run.
 - **Source-code changes:** API route composition/startup, Sprint and story read ports/use cases/queries/HTTP handlers, focused API route tests, and `docs/sprint-history.md`. No TUI or task-creation/closed-Sprint policy behavior changed.
-- **Commit:** pending after candidate review and work-unit completion.
+- **Measured work-unit diff:** 535 additions and 6 deletions, including task tracking; this exceeds the advisory ~400 authored-line forecast. It remains one cohesive API discovery work unit with both routes, tests, documentation, and migration-backed composition; no content was cut to meet the advisory size.
+- **Commit:** `3c7192a feat(api): add Sprint discovery read routes`.
 
 ## Next step
 
