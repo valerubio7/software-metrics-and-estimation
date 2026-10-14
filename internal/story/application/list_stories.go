@@ -8,6 +8,51 @@ import (
 	"github.com/valerubio7/software-metrics-and-estimation/internal/story/domain"
 )
 
+// AssignedSprintStoryReader reads stories assigned to a project-scoped sprint.
+type AssignedSprintStoryReader interface {
+	ListAssignedToSprint(ctx context.Context, projectID, sprintID string) ([]domain.AssignedSprintStory, error)
+}
+
+// ListAssignedSprintStoriesQuery identifies the project and sprint for assigned-story discovery.
+type ListAssignedSprintStoriesQuery struct {
+	ProjectID string
+	SprintID  string
+}
+
+// AssignedSprintStories is the project and sprint context plus assigned story results.
+type AssignedSprintStories struct {
+	ProjectID string
+	SprintID  string
+	Stories   []domain.AssignedSprintStory
+}
+
+// ListAssignedSprintStoriesUseCase reads only stories assigned to the selected sprint.
+type ListAssignedSprintStoriesUseCase struct {
+	reader AssignedSprintStoryReader
+}
+
+// NewListAssignedSprintStoriesUseCase builds an assigned-story listing use case.
+func NewListAssignedSprintStoriesUseCase(reader AssignedSprintStoryReader) *ListAssignedSprintStoriesUseCase {
+	return &ListAssignedSprintStoriesUseCase{reader: reader}
+}
+
+// Execute validates both route identifiers before reading the scoped assignments.
+func (u *ListAssignedSprintStoriesUseCase) Execute(ctx context.Context, query ListAssignedSprintStoriesQuery) (AssignedSprintStories, error) {
+	projectID, err := uuid.Parse(query.ProjectID)
+	if err != nil {
+		return AssignedSprintStories{}, &domain.ValidationError{Fields: map[string]string{"project_id": "must be a valid UUID"}}
+	}
+	sprintID, err := uuid.Parse(query.SprintID)
+	if err != nil {
+		return AssignedSprintStories{}, &domain.ValidationError{Fields: map[string]string{"sprint_id": "must be a valid UUID"}}
+	}
+	stories, err := u.reader.ListAssignedToSprint(ctx, projectID.String(), sprintID.String())
+	if err != nil {
+		return AssignedSprintStories{}, err
+	}
+	return AssignedSprintStories{ProjectID: projectID.String(), SprintID: sprintID.String(), Stories: stories}, nil
+}
+
 // ListStoriesQuery identifies the project whose Product Backlog is requested.
 type ListStoriesQuery struct {
 	ProjectID string

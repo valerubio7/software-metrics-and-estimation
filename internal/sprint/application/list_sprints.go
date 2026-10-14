@@ -14,6 +14,39 @@ type SprintHistoryReader interface {
 	ListClosedByProject(ctx context.Context, projectID string) ([]domain.ClosedSprint, error)
 }
 
+// OpenSprintReader reads the open sprints of an existing project in creation order.
+type OpenSprintReader interface {
+	ListOpenByProject(ctx context.Context, projectID string) ([]domain.Sprint, error)
+}
+
+// ListOpenSprintsQuery identifies the project whose open sprints are requested.
+type ListOpenSprintsQuery struct {
+	ProjectID string
+}
+
+// ListOpenSprintsUseCase reads open sprints through its read-only port.
+type ListOpenSprintsUseCase struct {
+	reader OpenSprintReader
+}
+
+// NewListOpenSprintsUseCase builds an open-sprint listing use case.
+func NewListOpenSprintsUseCase(reader OpenSprintReader) *ListOpenSprintsUseCase {
+	return &ListOpenSprintsUseCase{reader: reader}
+}
+
+// Execute validates the route project identifier before reading open sprints.
+func (u *ListOpenSprintsUseCase) Execute(ctx context.Context, query ListOpenSprintsQuery) ([]domain.Sprint, string, error) {
+	projectID, err := uuid.Parse(query.ProjectID)
+	if err != nil {
+		return nil, "", &domain.ValidationError{Fields: map[string]string{"project_id": "must be a valid UUID"}}
+	}
+	sprints, err := u.reader.ListOpenByProject(ctx, projectID.String())
+	if err != nil {
+		return nil, "", err
+	}
+	return sprints, projectID.String(), nil
+}
+
 // ListSprintsQuery identifies the project whose sprint history is requested.
 type ListSprintsQuery struct {
 	ProjectID string

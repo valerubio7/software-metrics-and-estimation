@@ -287,3 +287,47 @@ var (
 	_ application.StoryUpdater                     = (*PostgresStoryRepository)(nil)
 	_ application.StoryLister                      = (*PostgresStoryRepository)(nil)
 )
+
+var _ application.AssignedSprintStoryReader = (*PostgresStoryRepository)(nil)
+
+// ListAssignedToSprint reads the selected project's assigned stories in creation order.
+// The outer joins distinguish a missing project from a missing project-scoped sprint and an empty sprint.
+func (r *PostgresStoryRepository) ListAssignedToSprint(ctx context.Context, projectID, sprintID string) ([]domain.AssignedSprintStory, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT sp.id::text, st.id::text, st.title, st.priority
+		FROM projects p
+		LEFT JOIN sprints sp ON sp.project_id = p.id AND sp.id = $2
+		LEFT JOIN sprint_stories ss ON ss.sprint_id = sp.id AND ss.project_id = p.id
+		LEFT JOIN stories st ON st.id = ss.story_id AND st.project_id = p.id
+		WHERE p.id = $1
+		ORDER BY st.seq
+	`, projectID, sprintID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	projectFound, sprintFound := false, false
+	stories := make([]domain.AssignedSprintStory, 0)
+	for rows.Next() {
+		var sprintID, storyID, title, priority *string
+		if err := rows.Scan(&sprintID, &storyID, &title, &priority); err != nil {
+			return nil, err
+		}
+		projectFound = true
+		sprintFound = sprintFound || sprintID != nil
+		if storyID != nil {
+			stories = append(stories, domain.AssignedSprintStory{ID: *storyID, Title: *title, Priority: *priority})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if !projectFound {
+		return nil, application.ErrProjectNotFound
+	}
+	if !sprintFound {
+		return nil, application.ErrSprintNotFound
+	}
+	return stories, nil
+}

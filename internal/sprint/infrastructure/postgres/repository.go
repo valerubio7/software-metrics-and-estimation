@@ -60,6 +60,42 @@ func (r *PostgresSprintRepository) CloseSprint(ctx context.Context, projectID, s
 var _ application.SprintCloser = (*PostgresSprintRepository)(nil)
 
 var _ application.SprintHistoryReader = (*PostgresSprintRepository)(nil)
+var _ application.OpenSprintReader = (*PostgresSprintRepository)(nil)
+
+// ListOpenByProject returns open sprints in creation order and distinguishes an empty project from a missing one.
+func (r *PostgresSprintRepository) ListOpenByProject(ctx context.Context, projectID string) ([]domain.Sprint, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT sp.id::text, sp.project_id::text, sp.sprint_goal
+		FROM projects p
+		LEFT JOIN sprints sp ON sp.project_id = p.id AND NOT sp.is_closed
+		WHERE p.id = $1
+		ORDER BY sp.seq ASC
+	`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	found := false
+	sprints := make([]domain.Sprint, 0)
+	for rows.Next() {
+		var id, projectID, goal *string
+		if err := rows.Scan(&id, &projectID, &goal); err != nil {
+			return nil, err
+		}
+		found = true
+		if id != nil {
+			sprints = append(sprints, domain.Sprint{ID: *id, ProjectID: *projectID, SprintGoal: *goal})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, application.ErrProjectNotFound
+	}
+	return sprints, nil
+}
 
 // historyRow is one row of the history query. Every column is nullable because the outer joins yield a
 // project row without sprints, and a sprint row without stories.
