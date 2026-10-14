@@ -2,7 +2,7 @@
 
 **Modo**: Strict TDD (`go test ./...`). **Entrega**: `single-pr` con `size:exception` aceptada (un PR, 5 commits, uno por slice). **Cadena**: n/a.
 
-**Lote 1**: slices 1 y 2 (tareas 1.1-1.6 y 2.1-2.6). Los slices 3, 4 y 5 no se tocaron.
+**Lote 1**: slices 1 y 2 (tareas 1.1-1.6 y 2.1-2.6). **Lote 2**: slice 4 (tareas 4.1-4.5, handler HTTP; no depende de Docker). Los slices 3 y 5 no se tocaron (pendientes).
 
 ## Estado acumulado de tareas
 
@@ -15,7 +15,9 @@
 | 1.5 [DOCKER] | Pendiente de ejecución con Docker | No requiere código nuevo |
 | 1.6 | Hecha | Sin duplicación que extraer; `go test ./...` sin cambios respecto de la línea base |
 | 2.1 - 2.6 | Hechas | Evidencia completa abajo |
-| 3.x, 4.x, 5.x | Pendientes | Fuera de este lote |
+| 3.x | Pendientes | Slice 3 (Docker), fuera de este lote |
+| 4.1 - 4.5 | Hechas | Evidencia completa abajo (lote 2) |
+| 5.x | Pendientes | Fuera de este lote |
 
 ## Línea base (antes de tocar código)
 
@@ -33,13 +35,17 @@
 | 2.3 / 2.4 | `tests/unit/sprint/application/list_sprints_test.go` | Unitaria | N/A (archivo nuevo) | ✅ Falló la compilación: `undefined: application.NewListSprintsUseCase` y `ListSprintsQuery` | ✅ 2 pruebas en verde con la implementación mínima (que ignoraba el error del puerto a propósito) | ver 2.5 | ver 2.6 |
 | 2.5 | ídem | Unitaria | ✅ 2 pruebas en verde | ✅ **Falló de verdad**: `TestListSprintsPropagatesPortErrorsWithoutAPartialList` (`Execute() error = <nil>, want project not found` / `want connection reset`) | ✅ `ok` tras propagar el error y devolver `SprintHistory{}` | ✅ 5 identificadores hostiles; mayúsculas -> canónico en puerto y resultado; orden preservado (3 Sprints y 3 historias); `ErrProjectNotFound` e inesperado con Sprints devueltos junto al error | ✅ Ver 2.6 |
 | 2.6 | — | — | — | — | ✅ `go test ./...` igual a la línea base | — | ➖ Sin duplicación que justifique extraer |
+| 4.1 / 4.2 | `tests/unit/sprint/transport/http/list_handler_test.go` | Unitaria (`httptest`, caso de uso real sobre lector falso) | ✅ 7 pruebas del paquete en verde (create/close) | ✅ Falló la compilación: `undefined: transporthttp.NewListSprintsHandler` | ✅ 12/12 del paquete en verde con el handler mínimo (sin guarda de método ni normalización UTC a propósito) | ✅ 5 pruebas: contenedor y orden del lector; `[]` con `nil` en `sprints` y en `stories` (cuerpo crudo); `422` con cero lecturas; `404` sin clave `sprints`; `500` genérico sin filtrar el error ni la lista | ➖ Ver 4.5 |
+| 4.3 | ídem | Unitaria | ✅ 12/12 | ✅ **Falló de verdad**: `completed_at:"2026-10-11T07:30:00-03:00", want ... UTC instant`; las claves exactas (5 por Sprint, 6 por historia), la ausencia de campos prohibidos y `Content-Type` ya pasaban (caracterización del contrato, no fabricado como fallo) | ✅ `ok` tras `utcCopy` (copia UTC, `nil` se mantiene `nil`) | ✅ historia completada (`story_points` 8, UTC) y pendiente (`story_points`, `completed_at` `null`, `completed:false`) | ➖ Ver 4.5 |
+| 4.4 | ídem | Unitaria | ✅ 14/14 | ✅ **Falló de verdad**: `POST`/`PUT`/`DELETE`/`PATCH` devolvían `status=200 calls=1` | ✅ `ok` tras la guarda `GET`/`HEAD` | ✅ `HEAD` -> `200` con una lectura; 4 métodos -> `405 method_not_allowed` / `only GET is supported` con cero lecturas | ➖ Ver 4.5 |
+| 4.5 | — | — | — | — | ✅ `go test ./tests/unit/...` en verde; `go vet ./...` limpio | — | ➖ Ninguno previsto: `handler.go` no cambió; solo se añadió el helper privado `utcCopy` en `list_handler.go` |
 
 ### Resumen de pruebas
 
-- **Pruebas escritas**: 5 funciones de integración Docker (no ejecutadas), 1 de dominio (3 casos), 5 de aplicación (con subcasos: 5 identificadores hostiles y 2 de error) y la modificación de la prueba de archivos de migración (sin Docker).
-- **Capas**: unitaria (dominio y aplicación), archivos de migración, integración Docker (pendiente).
+- **Pruebas escritas**: 5 funciones de integración Docker (no ejecutadas), 1 de dominio (3 casos), 5 de aplicación (con subcasos: 5 identificadores hostiles y 2 de error), 8 funciones de handler HTTP (lote 2; 8 funciones con subcasos, 15 funciones en total en el paquete) y la modificación de la prueba de archivos de migración (sin Docker).
+- **Capas**: unitaria (dominio, aplicación y transporte), archivos de migración, integración Docker (pendiente).
 - **Pruebas de aprobación (refactor)**: ninguna.
-- **Funciones puras creadas**: 1 (`PlannedStory.Completed`).
+- **Funciones puras creadas**: 2 (`PlannedStory.Completed`, `utcCopy`).
 
 ## Work Unit Evidence
 
@@ -47,13 +53,15 @@
 |--------|---------------------------|--------------------|-----------------------|
 | 1 | `go test ./tests/integration/migrations/...` -> `ok` (de `FAIL` a `ok`). `go test ./tests/integration/sprint/postgres/... -run 'Seq|CreationSequence'` -> **no ejecutado** (requiere Docker); `go vet ./...` limpio y con `-short` las 5 pruebas se saltan | Testcontainers `postgres:16-alpine`: **pendiente de ejecución con Docker** | Revertir el commit 1: quita los dos `.sql` y los cambios de pruebas; `Create`/`CloseSprint` no nombran `seq` |
 | 2 | `go test ./tests/unit/sprint/domain ./tests/unit/sprint/application` -> `ok` ambos | N/A: tipos puros y fake del puerto; ninguna ruta expuesta | Revertir el commit 2: elimina tipos de lectura, `list_sprints.go` y sus pruebas; nada depende de ellos |
+| 4 | `go test ./tests/unit/sprint/transport/http` -> de `build failed` a `ok` (15 funciones de prueba del paquete, 8 nuevas); `go test ./tests/unit/...` -> todos `ok`; `go vet ./...` limpio | N/A: `httptest` con caso de uso real sobre lector falso; sin registro en el router, sin Docker | Revertir el commit 4: elimina `list_handler.go` y su prueba; sin ruta registrada, sin efecto |
 
 ## Commits
 
 | Slice | Mensaje | Hash |
 |-------|---------|------|
 | 1 | `feat(sprint): add the sprint creation sequence migration` | `fad7f86` |
-| 2 | `feat(sprint): add the list sprints use case` | ver `git log` (el hash propio de un commit no puede escribirse dentro de ese mismo commit) |
+| 2 | `feat(sprint): add the list sprints use case` | `30d68cb` (registrado después del commit; ese cambio de `apply-progress.md` se incluyó en el commit 4) |
+| 4 | `feat(sprint): serve the sprint history over HTTP` | ver `git log` (el hash no puede constar dentro del propio commit) |
 
 El commit 1 incluye además los artefactos de la carpeta `openspec/changes/us-13-consultar-sprints-anteriores/` que estaban sin seguimiento (propuesta, exploración, spec, diseño y tareas).
 
@@ -72,8 +80,8 @@ Ninguna: la implementación coincide con el diseño (Decisiones 2, 4 y 5). Detal
 ## Frontera de PR / carga de revisión
 
 - Modo: `size:exception` (un único PR, 5 commits, uno por slice).
-- Unidad actual: slices 1 y 2. Comienzan en `main` (`5b356fb`) y terminan en el commit 2.
-- Líneas aproximadas: commit 1 ~220 de código y pruebas (más los artefactos de openspec); commit 2 ~215.
+- Unidad actual: slices 1 y 2 (lote 1), luego slice 4 (lote 2, sobre el commit 2; el slice 3 sigue pendiente y no lo requiere). Comienzan en `main` (`5b356fb`).
+- Líneas aproximadas: commit 1 ~220 de código y pruebas (más los artefactos de openspec); commit 2 ~215; commit 4 ~370 (producción ~95, pruebas ~275).
 
 ## Pendiente de ejecución con Docker (no verificado)
 
