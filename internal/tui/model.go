@@ -25,6 +25,16 @@ type Model struct {
 	form          ProjectInput
 	message       string
 	client        *ProjectClient
+
+	backlogProjectID string // project confirmed for the session
+	backlogInput     string // text being edited in backlog-project
+	backlogCursor    int
+	backlogStories   []Story
+	backlogLoading   bool
+	backlogForm      storyForm
+	backlogMessage   string // text of backlog-result
+	backlogReturn    string // screen reached when leaving backlog-result
+	backlogClient    *BacklogClient
 }
 
 // NewModel creates the base navigation model.
@@ -34,6 +44,8 @@ func NewModel(apiURL string) Model {
 		Choices: []string{"Proyectos", "Backlog", "Sprints", "Salir"},
 		Screen:  "menu",
 		client:  NewProjectClient(apiURL),
+
+		backlogClient: NewBacklogClient(apiURL),
 	}
 }
 
@@ -44,6 +56,9 @@ func (m Model) Init() tea.Cmd { return nil }
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if result, ok := msg.(ProjectResultMsg); ok {
 		return m.applyProjectResult(result)
+	}
+	if result, ok := msg.(BacklogResultMsg); ok {
+		return m.applyBacklogResult(result)
 	}
 	key, isKey := msg.(tea.KeyMsg)
 	if !isKey {
@@ -67,6 +82,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.message = ""
 		}
 		return m, nil
+	case "backlog":
+		return m.updateBacklog(key)
+	case "backlog-project":
+		return m.updateBacklogProject(key)
+	case "backlog-form":
+		return m.updateBacklogForm(key)
+	case "backlog-result":
+		return m.updateBacklogResult(key)
 	default:
 		if key.Type == tea.KeyEsc {
 			m.Screen = "menu"
@@ -121,7 +144,7 @@ func (m Model) updateMenu(key tea.KeyMsg) (Model, tea.Cmd) {
 		case 0:
 			m.Screen, m.projectCursor = "projects", 0
 		case 1:
-			m.Screen = "backlog"
+			return m.openBacklog()
 		case 2:
 			m.Screen = "sprints"
 		default:
@@ -323,6 +346,14 @@ func (m Model) View() string {
 		b.WriteString(m.message + "\n\nID: " + m.projectID + "_\nEnter para continuar, Esc para volver.\n")
 	case "project-result":
 		b.WriteString("Resultado\n\n" + m.message + "\n\nEnter/Esc para volver.\n")
+	case "backlog":
+		b.WriteString(m.viewBacklog())
+	case "backlog-project":
+		b.WriteString(m.viewBacklogProject())
+	case "backlog-form":
+		b.WriteString(m.viewBacklogForm())
+	case "backlog-result":
+		b.WriteString(m.viewBacklogResult())
 	default:
 		b.WriteString(screenTitleStyle.Render(m.Choices[m.Cursor]))
 		b.WriteString("  ")
@@ -346,8 +377,6 @@ func placeholderRelease(cursor int) string {
 	switch cursor {
 	case 0:
 		return "TUI-02"
-	case 1:
-		return "TUI-03"
 	default:
 		return "TUI-04/TUI-05"
 	}
