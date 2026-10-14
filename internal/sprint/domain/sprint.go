@@ -1,6 +1,9 @@
 package domain
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 // Sprint represents a project iteration and its goal.
 type Sprint struct {
@@ -25,4 +28,32 @@ func NewSprint(id, projectID, sprintGoal string) (Sprint, error) {
 	}
 
 	return Sprint{ID: id, ProjectID: projectID, SprintGoal: sprintGoal}, nil
+}
+
+// ClosedSprint is a read-only snapshot of a closed sprint and the stories planned in it.
+type ClosedSprint struct {
+	ID         string
+	ProjectID  string
+	SprintGoal string
+	Stories    []PlannedStory
+}
+
+// PlannedStory is a story assigned to a sprint, with its completion in that sprint.
+type PlannedStory struct {
+	ID          string
+	Title       string
+	Priority    string
+	StoryPoints *int
+	CompletedAt *time.Time
+}
+
+// Completed reports whether the story was completed in the sprint that contains it.
+func (s PlannedStory) Completed() bool {
+	return s.CompletedAt != nil
+}
+
+// SprintHistory is the history of a project's closed sprints, from the most recent to the oldest.
+type SprintHistory struct {
+	ProjectID string
+	Sprints   []ClosedSprint
 }

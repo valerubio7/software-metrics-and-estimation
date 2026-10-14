@@ -84,6 +84,7 @@ func TestSprintCompositionIsOptionalAndPreservesExistingRoutes(t *testing.T) {
 	if created.Code != http.StatusCreated || len(sprints.sprints) != 1 {
 		t.Fatalf("sprint status=%d writes=%d body=%s", created.Code, len(sprints.sprints), created.Body.String())
 	}
+	// This composition has creation but no history reader, so GET on the collection is still 405.
 	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(method, "/projects/"+projectID+"/sprints", strings.NewReader(`{"sprint_goal":"Must not write"}`)))

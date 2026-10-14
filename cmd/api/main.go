@@ -35,7 +35,8 @@ func main() {
 
 	// Story creation needs schema version 2, story update version 3 and the backlog query
 	// version 4; sprint creation needs reconciled schema version 5. Task creation needs
-	// schema version 9 and story completion schema version 10. All of them require a clean externally managed migration state.
+	// schema version 9 and story completion schema version 10; the closed sprint history needs
+	// schema version 11 (migration 000011, sprints.seq). All of them require a clean externally managed migration state.
 	var version int
 	var dirty bool
 	migrationErr := pool.QueryRow(ctx, "SELECT version, dirty FROM schema_migrations").Scan(&version, &dirty)
@@ -63,6 +64,10 @@ func main() {
 		if readiness.SprintClose {
 			sprintDependencies.Closer = repository
 			log.Printf("sprint closure available (schema version=%d)", version)
+		}
+		if readiness.SprintHistory {
+			sprintDependencies.Lister = repository
+			log.Printf("sprint history available (schema version=%d)", version)
 		}
 		dependencies.Sprints = sprintDependencies
 	} else {

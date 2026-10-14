@@ -3,6 +3,7 @@ package domain_test
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/valerubio7/software-metrics-and-estimation/internal/sprint/domain"
 )
@@ -46,6 +47,28 @@ func TestNewSprintRejectsMissingOrBlankGoal(t *testing.T) {
 			}
 			if validation.Fields["sprint_goal"] != "is required" {
 				t.Errorf("validation fields = %#v, want sprint_goal required", validation.Fields)
+			}
+		})
+	}
+}
+
+func TestPlannedStoryCompletedFollowsTheCompletionMark(t *testing.T) {
+	mark := time.Date(2026, 10, 11, 10, 0, 0, 0, time.UTC)
+	zeroMark := time.Time{}
+	tests := []struct {
+		name        string
+		completedAt *time.Time
+		want        bool
+	}{
+		{name: "no completion in the sprint", completedAt: nil, want: false},
+		{name: "completion mark present", completedAt: &mark, want: true},
+		{name: "zero time is still a recorded mark", completedAt: &zeroMark, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			story := domain.PlannedStory{ID: "story-id", Title: "Story", Priority: "alta", CompletedAt: tt.completedAt}
+			if got := story.Completed(); got != tt.want {
+				t.Errorf("Completed() = %v, want %v", got, tt.want)
 			}
 		})
 	}

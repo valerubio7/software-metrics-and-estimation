@@ -58,10 +58,13 @@ type StoryDependencies struct {
 }
 
 // SprintDependencies enables sprint creation after reconciliation migration 000005 is clean.
+// Closer and Lister are optional: closure is registered only when Closer is supplied (migration 000008)
+// and the closed-sprint history only when Lister is supplied (migration 000011), independently of each other.
 type SprintDependencies struct {
 	Repository sprintapplication.SprintRepository
 	GenerateID sprintapplication.IDGenerator
-	Closer     sprintapplication.SprintCloser // supplied only after migration 000008 is clean
+	Closer     sprintapplication.SprintCloser        // supplied only after migration 000008 is clean
+	Lister     sprintapplication.SprintHistoryReader // supplied only after migration 000011 is clean; nil: GET is not registered
 }
 
 // MemberDependencies enables project-member registration after migration v6 is clean.
@@ -101,6 +104,8 @@ type MigrationReadiness struct {
 	SprintClose bool
 	Tasks       bool
 	Completion  bool
+	// SprintHistory is true for a clean schema at version 11 or later (sprints.seq from migration 000011).
+	SprintHistory bool
 }
 
 // ResolveMigrationReadiness keeps project creation available while gating schema-backed routes.
@@ -116,6 +121,7 @@ func ResolveMigrationReadiness(version int, dirty bool, lookupErr error) Migrati
 	readiness.SprintClose = version >= 8
 	readiness.Tasks = version >= 9
 	readiness.Completion = version >= 10
+	readiness.SprintHistory = version >= 11
 	return readiness
 }
 
@@ -165,6 +171,10 @@ func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, ge
 		if dependencies.Sprints.Closer != nil {
 			closeUseCase := sprintapplication.NewCloseSprintUseCase(dependencies.Sprints.Closer)
 			mux.Handle("POST /projects/{project_id}/sprints/{sprint_id}/closure", sprinthttp.NewCloseSprintHandler(closeUseCase))
+		}
+		if dependencies.Sprints.Lister != nil {
+			listSprintsUseCase := sprintapplication.NewListSprintsUseCase(dependencies.Sprints.Lister)
+			mux.Handle("GET /projects/{project_id}/sprints", sprinthttp.NewListSprintsHandler(listSprintsUseCase))
 		}
 	}
 	if dependencies.Members != nil {
