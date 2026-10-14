@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -48,7 +49,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !isKey {
 		return m, nil
 	}
-	if key.Type == tea.KeyCtrlC || (key.Type == tea.KeyRunes && len(key.Runes) == 1 && (key.Runes[0] == 'q' || key.Runes[0] == 'Q')) {
+	if key.Type == tea.KeyCtrlC || (isQuitRune(key) && quitsOnQ(m.Screen)) {
 		return m, tea.Quit
 	}
 	switch m.Screen {
@@ -73,6 +74,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+}
+
+// quitsOnQ reports whether q/Q exits from screen. Text-entry screens are not
+// listed, so q is a plain character there; Ctrl+C always quits.
+func quitsOnQ(screen string) bool {
+	switch screen {
+	case "menu", "projects", "project-result", "backlog", "backlog-result", "sprints":
+		return true
+	}
+	return false
+}
+
+func isQuitRune(key tea.KeyMsg) bool {
+	return key.Type == tea.KeyRunes && len(key.Runes) == 1 && (key.Runes[0] == 'q' || key.Runes[0] == 'Q')
+}
+
+// editText applies a text-editing key to value: runes and the space bar are
+// appended and backspace removes the last rune, so the value stays valid UTF-8.
+// The boolean reports whether the key was consumed.
+func editText(value string, key tea.KeyMsg) (string, bool) {
+	switch key.Type {
+	case tea.KeyRunes:
+		return value + string(key.Runes), true
+	case tea.KeySpace:
+		return value + " ", true
+	case tea.KeyBackspace:
+		_, size := utf8.DecodeLastRuneInString(value)
+		return value[:len(value)-size], true
+	}
+	return value, false
 }
 
 func (m Model) updateMenu(key tea.KeyMsg) (Model, tea.Cmd) {
@@ -135,12 +166,8 @@ func (m Model) updateProjectID(key tea.KeyMsg) (Model, tea.Cmd) {
 		m.Screen, m.message = "projects", ""
 		return m, nil
 	}
-	if key.Type == tea.KeyBackspace && len(m.projectID) > 0 {
-		m.projectID = m.projectID[:len(m.projectID)-1]
-		return m, nil
-	}
-	if key.Type == tea.KeyRunes {
-		m.projectID += string(key.Runes)
+	if value, ok := editText(m.projectID, key); ok {
+		m.projectID = value
 		return m, nil
 	}
 	if key.Type == tea.KeyEnter && strings.TrimSpace(m.projectID) != "" {
@@ -161,15 +188,8 @@ func (m Model) updateProjectForm(key tea.KeyMsg) (Model, tea.Cmd) {
 		m.Screen = "projects"
 		return m, nil
 	}
-	if key.Type == tea.KeyBackspace {
-		field := fields[m.formField]
-		if len(*field) > 0 {
-			*field = (*field)[:len(*field)-1]
-		}
-		return m, nil
-	}
-	if key.Type == tea.KeyRunes {
-		*fields[m.formField] += string(key.Runes)
+	if value, ok := editText(*fields[m.formField], key); ok {
+		*fields[m.formField] = value
 		return m, nil
 	}
 	if key.Type == tea.KeyTab || key.Type == tea.KeyDown {
