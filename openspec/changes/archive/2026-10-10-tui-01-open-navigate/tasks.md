@@ -18,6 +18,7 @@
 
 - [x] 3.1 GREEN: crear `cmd/tui/main.go` que compone config+model con `tea.NewProgram` y agregar `bubbletea` a `go.mod`; verificar con `go build ./...`.
 - [ ] 3.2 Verificación global: ejecutar `go test ./...`, `go vet ./...`, `openspec validate tui-01-open-navigate` y manual `API_URL=... go run ./cmd/tui`; verificar sin regresiones.
+  - **Estado al archivar (2026-10-13): pendiente.** `go vet ./...` pasó el 2026-10-13. `go test ./...` no tiene una corrida limpia registrada (ver `archive-report.md`). `openspec validate` no se pudo ejecutar porque el CLI no está instalado. No hay registro de la ejecución manual de `go run ./cmd/tui`.
 
 ## Workflow follow-up
 
