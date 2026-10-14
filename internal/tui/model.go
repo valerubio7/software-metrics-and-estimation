@@ -35,6 +35,11 @@ type Model struct {
 	backlogMessage   string // text of backlog-result
 	backlogReturn    string // screen reached when leaving backlog-result
 	backlogClient    *BacklogClient
+	sprintClient     *SprintClient
+	sprintCursor     int
+	sprintProjectID  string
+	sprintGoal       string
+	sprintMessage    string
 }
 
 // NewModel creates the base navigation model.
@@ -46,6 +51,7 @@ func NewModel(apiURL string) Model {
 		client:  NewProjectClient(apiURL),
 
 		backlogClient: NewBacklogClient(apiURL),
+		sprintClient:  NewSprintClient(apiURL),
 	}
 }
 
@@ -59,6 +65,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if result, ok := msg.(BacklogResultMsg); ok {
 		return m.applyBacklogResult(result)
+	}
+	if result, ok := msg.(SprintResultMsg); ok {
+		return m.applySprintResult(result)
 	}
 	key, isKey := msg.(tea.KeyMsg)
 	if !isKey {
@@ -90,6 +99,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateBacklogForm(key)
 	case "backlog-result":
 		return m.updateBacklogResult(key)
+	case "sprints":
+		return m.updateSprints(key)
+	case "sprint-project", "sprint-goal":
+		return m.updateSprintForm(key)
+	case "sprint-result":
+		if key.Type == tea.KeyEsc || key.Type == tea.KeyEnter {
+			m.Screen, m.sprintMessage = "sprints", ""
+		}
+		return m, nil
 	default:
 		if key.Type == tea.KeyEsc {
 			m.Screen = "menu"
@@ -354,6 +372,17 @@ func (m Model) View() string {
 		b.WriteString(m.viewBacklogForm())
 	case "backlog-result":
 		b.WriteString(m.viewBacklogResult())
+	case "sprints":
+		b.WriteString("Operaciones de Sprint\n\n")
+		for i, option := range []string{"Crear Sprint", "Volver"} {
+			b.WriteString(choiceRow(i == m.sprintCursor, option) + "\n")
+		}
+	case "sprint-project":
+		b.WriteString("Proyecto del Sprint\n\nID del proyecto: " + m.sprintProjectID + "_\nEnter para continuar, Esc para volver.\n")
+	case "sprint-goal":
+		b.WriteString("Crear Sprint\n\nObjetivo: " + m.sprintGoal + "_\nEnter para enviar, Esc para volver.\n")
+	case "sprint-result":
+		b.WriteString("Resultado\n\n" + m.sprintMessage + "\n\nEnter/Esc para volver.\n")
 	default:
 		b.WriteString(screenTitleStyle.Render(m.Choices[m.Cursor]))
 		b.WriteString("  ")
