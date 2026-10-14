@@ -377,62 +377,106 @@ func storyRow(story Story) string {
 	return fmt.Sprintf("%s · prioridad %s · estado %s · puntos %s", story.Title, story.Priority, story.Status, points)
 }
 
+// Backlog screens reuse the menu styles. The row styles drop the menu padding so
+// the plain text of every row stays exactly what it was before styling.
+var (
+	backlogSelectedStyle = selectedStyle.UnsetPadding()
+	backlogItemStyle     = itemStyle.UnsetPadding()
+)
+
+// choiceRow renders a selectable row like the menu does: a cursor and the
+// highlighted text when selected, an indented item otherwise.
+func choiceRow(selected bool, text string) string {
+	if selected {
+		return cursorStyle.Render("▸") + " " + backlogSelectedStyle.Render(text)
+	}
+	return "  " + backlogItemStyle.Render(text)
+}
+
+// styledHint renders a footer hint in the muted style, highlighting each key.
+func styledHint(text string, keys ...string) string {
+	var b strings.Builder
+	for text != "" {
+		at, found := -1, ""
+		for _, key := range keys {
+			if i := strings.Index(text, key); i >= 0 && (at < 0 || i < at) {
+				at, found = i, key
+			}
+		}
+		if at < 0 {
+			b.WriteString(hintStyle.Render(text))
+			break
+		}
+		if at > 0 {
+			b.WriteString(hintStyle.Render(text[:at]))
+		}
+		b.WriteString(hintKeyStyle.Render(found))
+		text = text[at+len(found):]
+	}
+	return b.String()
+}
+
 func (m Model) viewBacklog() string {
 	var b strings.Builder
 	hasProject := m.backlogProjectID != ""
 	if hasProject {
-		b.WriteString("Backlog del proyecto " + m.backlogProjectID + "\n\n")
+		b.WriteString(screenTitleStyle.Render("Backlog del proyecto "+m.backlogProjectID) + "\n\n")
 	} else {
-		b.WriteString("Backlog\n\nTodavía no elegiste un proyecto.\n\n")
+		b.WriteString(screenTitleStyle.Render("Backlog") + "\n\n")
+		b.WriteString(hintStyle.Render("Todavía no elegiste un proyecto.") + "\n\n")
 	}
 	actions := backlogActions(hasProject)
 	for i, action := range actions {
-		b.WriteString(cursorPrefix(i == m.backlogCursor) + action + "\n")
+		b.WriteString(choiceRow(i == m.backlogCursor, action) + "\n")
 	}
 	b.WriteString("\n")
 	switch {
 	case m.backlogLoading:
-		b.WriteString("Cargando backlog…\n")
+		b.WriteString(hintStyle.Render("Cargando backlog…") + "\n")
 	case hasProject && len(m.backlogStories) == 0:
-		b.WriteString("El backlog no tiene historias.\n")
+		b.WriteString(hintStyle.Render("El backlog no tiene historias.") + "\n")
 	}
 	for i, story := range m.backlogStories {
-		b.WriteString(cursorPrefix(len(actions)+i == m.backlogCursor) + storyRow(story) + "\n")
+		b.WriteString(choiceRow(len(actions)+i == m.backlogCursor, storyRow(story)) + "\n")
 	}
-	b.WriteString("\n↑/↓ para moverte, Enter para elegir, Esc para volver al menú.\n")
+	b.WriteString("\n" + styledHint("↑/↓ para moverte, Enter para elegir, Esc para volver al menú.", "↑/↓", "Enter", "Esc") + "\n")
 	return b.String()
 }
 
 func (m Model) viewBacklogProject() string {
-	return "Proyecto del backlog\n\nID del proyecto: " + m.backlogInput + "_\n\nEnter para continuar, Esc para volver.\n"
+	return screenTitleStyle.Render("Proyecto del backlog") + "\n\nID del proyecto: " + m.backlogInput + "_\n\n" +
+		styledHint("Enter para continuar, Esc para volver.", "Enter", "Esc") + "\n"
 }
 
 func (m Model) viewBacklogForm() string {
 	form := m.backlogForm
 	var b strings.Builder
 	if form.storyID == "" {
-		b.WriteString("Crear historia\n\n")
+		b.WriteString(screenTitleStyle.Render("Crear historia") + "\n\n")
 	} else {
-		b.WriteString("Modificar historia " + form.storyID + "\n\n")
+		b.WriteString(screenTitleStyle.Render("Modificar historia "+form.storyID) + "\n\n")
 	}
 	for i, field := range form.fields() {
-		b.WriteString(cursorPrefix(i == form.field) + field.label + ": " + *field.value + "\n")
+		b.WriteString(choiceRow(i == form.field, field.label+": "+*field.value) + "\n")
 	}
 	if form.err != "" {
-		b.WriteString("\n" + form.err + "\n")
+		b.WriteString("\n" + errorBannerStyle.Render(form.err) + "\n")
 	}
-	b.WriteString("\nTab/↑/↓ para cambiar campo; Enter en el último para enviar; Esc para volver.\n")
-	b.WriteString("Separá los criterios de aceptación con punto y coma.\n")
+	b.WriteString("\n" + styledHint("Tab/↑/↓ para cambiar campo; Enter en el último para enviar; Esc para volver.", "Tab/↑/↓", "Enter", "Esc") + "\n")
+	b.WriteString(hintStyle.Render("Separá los criterios de aceptación con punto y coma.") + "\n")
 	return b.String()
 }
 
+// viewBacklogResult shows failures in the error banner and successes in the ok
+// style. Only a successful mutation returns to the backlog list afterwards.
 func (m Model) viewBacklogResult() string {
-	return "Resultado\n\n" + m.backlogMessage + "\n\nEnter/Esc para volver.\n"
-}
-
-func cursorPrefix(selected bool) string {
-	if selected {
-		return "▸ "
+	var body string
+	if m.backlogReturn != "backlog" {
+		body = errorBannerStyle.Render(m.backlogMessage)
+	} else if head, rest, found := strings.Cut(m.backlogMessage, "\n\n"); found {
+		body = statusOkStyle.Render(head) + "\n\n" + rest
+	} else {
+		body = statusOkStyle.Render(m.backlogMessage)
 	}
-	return "  "
+	return screenTitleStyle.Render("Resultado") + "\n\n" + body + "\n\n" + styledHint("Enter/Esc para volver.", "Enter/Esc") + "\n"
 }
