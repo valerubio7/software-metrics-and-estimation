@@ -121,7 +121,7 @@ func (m Model) updateSprintForm(key tea.KeyMsg) (Model, tea.Cmd) {
 	if key.Type == tea.KeyEnter {
 		if m.Screen == "sprint-project" && strings.TrimSpace(m.sprintProjectID) != "" {
 			m.sprintProjectID = strings.TrimSpace(m.sprintProjectID)
-			if m.sprintAction == "assign" {
+			if m.sprintAction == "assign" || m.sprintAction == "tasks" || m.sprintAction == "complete" {
 				return m, m.listOpenSprintsCmd()
 			}
 			m.Screen = "sprint-goal"

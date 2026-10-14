@@ -135,6 +135,79 @@ func TestSprintAssignmentSelectsOpenSprintAndPreservesSelectedStoryIDs(t *testin
 	}
 }
 
+func TestSprintTaskAndCompletionMenusNavigateThroughAssignedStories(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		menuDowns  int
+		wantScreen string
+		wantOp     string
+	}{
+		{name: "create tasks", menuDowns: 2, wantScreen: "sprint-task-form", wantOp: "tasks"},
+		{name: "complete story", menuDowns: 3, wantScreen: "sprint-result", wantOp: "complete"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var paths []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				paths = append(paths, r.Method+" "+r.URL.EscapedPath())
+				switch r.URL.Path {
+				case "/projects/p1/sprints/open":
+					_, _ = w.Write([]byte(`{"sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Goal"}]}`))
+				case "/projects/p1/sprints/sp1/stories":
+					_, _ = w.Write([]byte(`{"stories":[{"id":"story1","title":"Story"}]}`))
+				default:
+					_, _ = w.Write([]byte(`{"ok":true}`))
+				}
+			}))
+			defer server.Close()
+
+			m := tui.NewModel(server.URL)
+			m = press(m, tea.KeyDown)
+			m = press(m, tea.KeyDown)
+			m = press(m, tea.KeyEnter)
+			for range tt.menuDowns {
+				m = press(m, tea.KeyDown)
+			}
+			m = press(m, tea.KeyEnter)
+			m = typeText(m, "p1")
+			updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			if cmd == nil {
+				t.Fatal("entering a project ID must request open Sprints")
+			}
+			updated, _ = updated.(tui.Model).Update(cmd())
+			updated, cmd = updated.(tui.Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+			if cmd == nil {
+				t.Fatal("selecting an open Sprint must request assigned stories")
+			}
+			updated, _ = updated.(tui.Model).Update(cmd())
+			m = updated.(tui.Model)
+			if len(paths) != 2 || paths[0] != "GET /projects/p1/sprints/open" || paths[1] != "GET /projects/p1/sprints/sp1/stories" {
+				t.Fatalf("discovery requests = %v, want open Sprints then assigned stories", paths)
+			}
+			if m.Screen != "sprint-assigned-list" {
+				t.Fatalf("screen = %q, want assigned story selection", m.Screen)
+			}
+
+			updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			if tt.wantOp == "tasks" {
+				if cmd != nil || updated.(tui.Model).Screen != tt.wantScreen {
+					t.Fatalf("task selection = screen %q, cmd %v; want task form without API request", updated.(tui.Model).Screen, cmd != nil)
+				}
+				return
+			}
+			if cmd == nil {
+				t.Fatal("selecting a story to complete must issue the completion request")
+			}
+			result := cmd()
+			if got := result.(tui.SprintResultMsg).Op; got != tt.wantOp {
+				t.Fatalf("operation = %q, want %q", got, tt.wantOp)
+			}
+			if updated.(tui.Model).Screen != "sprint-assigned-list" || paths[2] != "POST /projects/p1/sprints/sp1/stories/story1/completion" {
+				t.Fatalf("completion state/requests = screen %q, paths %v", updated.(tui.Model).Screen, paths)
+			}
+		})
+	}
+}
+
 func TestTaskClientOmitsOptionalEstimatedHours(t *testing.T) {
 	server, rec := recordingServer(t, http.StatusCreated, `{"tasks":[{"id":"t1","title":"Implement"}]}`)
 	hours := 2.5
