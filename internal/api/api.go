@@ -50,11 +50,12 @@ func NewProjectID() string {
 // supplied and the backlog query only when Lister is supplied, which the caller does
 // after verifying migrations 000003 and 000004 respectively.
 type StoryDependencies struct {
-	Repository storyapplication.StoryRepository
-	GenerateID storyapplication.IDGenerator
-	Updater    storyapplication.StoryUpdater
-	Lister     storyapplication.StoryLister         // nil: GET on the collection is not registered (the mux answers 405)
-	Assigner   storyapplication.StorySprintAssigner // supplied only after migration 000008 is clean
+	Repository     storyapplication.StoryRepository
+	GenerateID     storyapplication.IDGenerator
+	Updater        storyapplication.StoryUpdater
+	Lister         storyapplication.StoryLister               // nil: GET on the collection is not registered (the mux answers 405)
+	Assigner       storyapplication.StorySprintAssigner       // supplied only after migration 000008 is clean
+	AssignedLister storyapplication.AssignedSprintStoryReader // supplied only after migration 000008 is clean
 }
 
 // SprintDependencies enables sprint creation after reconciliation migration 000005 is clean.
@@ -65,6 +66,7 @@ type SprintDependencies struct {
 	GenerateID sprintapplication.IDGenerator
 	Closer     sprintapplication.SprintCloser        // supplied only after migration 000008 is clean
 	Lister     sprintapplication.SprintHistoryReader // supplied only after migration 000011 is clean; nil: GET is not registered
+	OpenLister sprintapplication.OpenSprintReader    // supplied only after migration 000011 is clean; nil: GET is not registered
 }
 
 // MemberDependencies enables project-member registration after migration v6 is clean.
@@ -165,6 +167,10 @@ func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, ge
 		assignUseCase := storyapplication.NewAssignStoriesUseCase(dependencies.Stories.Assigner)
 		mux.Handle("POST /projects/{project_id}/sprints/{sprint_id}/stories", storyhttp.NewAssignStoriesHandler(assignUseCase))
 	}
+	if dependencies.Stories != nil && dependencies.Stories.AssignedLister != nil {
+		listAssignedUseCase := storyapplication.NewListAssignedSprintStoriesUseCase(dependencies.Stories.AssignedLister)
+		mux.Handle("GET /projects/{project_id}/sprints/{sprint_id}/stories", storyhttp.NewListAssignedSprintStoriesHandler(listAssignedUseCase))
+	}
 	if dependencies.Sprints != nil {
 		sprintUseCase := sprintapplication.NewCreateSprintUseCase(dependencies.Sprints.Repository, dependencies.Sprints.GenerateID)
 		mux.Handle("POST /projects/{project_id}/sprints", sprinthttp.NewCreateSprintHandler(sprintUseCase))
@@ -175,6 +181,10 @@ func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, ge
 		if dependencies.Sprints.Lister != nil {
 			listSprintsUseCase := sprintapplication.NewListSprintsUseCase(dependencies.Sprints.Lister)
 			mux.Handle("GET /projects/{project_id}/sprints", sprinthttp.NewListSprintsHandler(listSprintsUseCase))
+		}
+		if dependencies.Sprints.OpenLister != nil {
+			listOpenSprintsUseCase := sprintapplication.NewListOpenSprintsUseCase(dependencies.Sprints.OpenLister)
+			mux.Handle("GET /projects/{project_id}/sprints/open", sprinthttp.NewListOpenSprintsHandler(listOpenSprintsUseCase))
 		}
 	}
 	if dependencies.Members != nil {

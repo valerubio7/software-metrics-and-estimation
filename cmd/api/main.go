@@ -67,6 +67,7 @@ func main() {
 		}
 		if readiness.SprintHistory {
 			sprintDependencies.Lister = repository
+			sprintDependencies.OpenLister = repository
 			log.Printf("sprint history available (schema version=%d)", version)
 		}
 		dependencies.Sprints = sprintDependencies
@@ -80,7 +81,9 @@ func main() {
 		log.Printf("project member registration unavailable until migration 000006 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}
 	if readiness := api.ResolveMigrationReadiness(version, dirty, migrationErr); readiness.Assignment {
-		dependencies.Stories.Assigner = storypostgres.NewPostgresStoryRepository(pool)
+		stories := storypostgres.NewPostgresStoryRepository(pool)
+		dependencies.Stories.Assigner = stories
+		dependencies.Stories.AssignedLister = stories
 		log.Printf("story assignment available (schema version=%d)", version)
 	} else {
 		log.Printf("story assignment unavailable until migration 000008 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)

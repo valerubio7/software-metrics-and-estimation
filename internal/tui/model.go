@@ -35,6 +35,21 @@ type Model struct {
 	backlogMessage   string // text of backlog-result
 	backlogReturn    string // screen reached when leaving backlog-result
 	backlogClient    *BacklogClient
+	sprintClient     *SprintClient
+	sprintCursor     int
+	sprintProjectID  string
+	sprintGoal       string
+	sprintMessage    string
+	sprintAction     string
+	selectedSprintID string
+	taskStoryID      string
+	taskTitle        string
+	taskHours        string
+	taskField        int
+	taskClient       *TaskClient
+	openSprints      []Sprint
+	sprintStories    []Story
+	selectedStories  map[string]bool
 }
 
 // NewModel creates the base navigation model.
@@ -46,6 +61,8 @@ func NewModel(apiURL string) Model {
 		client:  NewProjectClient(apiURL),
 
 		backlogClient: NewBacklogClient(apiURL),
+		sprintClient:  NewSprintClient(apiURL),
+		taskClient:    NewTaskClient(apiURL),
 	}
 }
 
@@ -59,6 +76,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if result, ok := msg.(BacklogResultMsg); ok {
 		return m.applyBacklogResult(result)
+	}
+	if result, ok := msg.(SprintResultMsg); ok {
+		return m.applySprintResult(result)
 	}
 	key, isKey := msg.(tea.KeyMsg)
 	if !isKey {
@@ -90,6 +110,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateBacklogForm(key)
 	case "backlog-result":
 		return m.updateBacklogResult(key)
+	case "sprints":
+		return m.updateSprints(key)
+	case "sprint-project", "sprint-goal":
+		return m.updateSprintForm(key)
+	case "sprint-open-list":
+		return m.updateOpenSprints(key)
+	case "sprint-story-select":
+		return m.updateSprintStorySelection(key)
+	case "sprint-assigned-list":
+		return m.updateAssignedStories(key)
+	case "sprint-task-form":
+		return m.updateSprintTaskForm(key)
+	case "sprint-result":
+		if key.Type == tea.KeyEsc || key.Type == tea.KeyEnter {
+			m.Screen, m.sprintMessage = "sprints", ""
+		}
+		return m, nil
 	default:
 		if key.Type == tea.KeyEsc {
 			m.Screen = "menu"
@@ -354,6 +391,48 @@ func (m Model) View() string {
 		b.WriteString(m.viewBacklogForm())
 	case "backlog-result":
 		b.WriteString(m.viewBacklogResult())
+	case "sprints":
+		b.WriteString("Operaciones de Sprint\n\n")
+		for i, option := range []string{"Crear Sprint", "Asignar historias", "Crear tareas", "Completar historia", "Volver"} {
+			b.WriteString(choiceRow(i == m.sprintCursor, option) + "\n")
+		}
+	case "sprint-project":
+		b.WriteString("Proyecto del Sprint\n\nID del proyecto: " + m.sprintProjectID + "_\nEnter para continuar, Esc para volver.\n")
+	case "sprint-goal":
+		b.WriteString("Crear Sprint\n\nObjetivo: " + m.sprintGoal + "_\nEnter para enviar, Esc para volver.\n")
+	case "sprint-result":
+		b.WriteString("Resultado\n\n" + m.sprintMessage + "\n\nEnter/Esc para volver.\n")
+	case "sprint-open-list":
+		b.WriteString("Elegir Sprint abierto\n\n")
+		for i, sprint := range m.openSprints {
+			b.WriteString(choiceRow(i == m.sprintCursor, sprint.ID+" · "+sprint.SprintGoal) + "\n")
+		}
+		if len(m.openSprints) == 0 {
+			b.WriteString("No hay Sprints abiertos.\n")
+		}
+	case "sprint-story-select":
+		b.WriteString("Elegir historias para asignar\n\n")
+		for _, story := range m.sprintStories {
+			mark := "[ ]"
+			if m.selectedStories[story.ID] {
+				mark = "[x]"
+			}
+			b.WriteString(fmt.Sprintf("%s %s · %s\n", mark, story.ID, story.Title))
+		}
+		b.WriteString("\nSpace para alternar; Enter para asignar.\n")
+	case "sprint-assigned-list":
+		b.WriteString("Historias asignadas al Sprint\n\n")
+		for i, story := range m.sprintStories {
+			b.WriteString(choiceRow(i == m.sprintCursor, story.ID+" · "+story.Title) + "\n")
+		}
+	case "sprint-task-form":
+		b.WriteString("Crear tarea para " + m.taskStoryID + "\n\n")
+		b.WriteString(choiceRow(m.taskField == 0, "Título: "+m.taskTitle) + "\n")
+		b.WriteString(choiceRow(m.taskField == 1, "Horas estimadas (opcional): "+m.taskHours) + "\n")
+		if m.sprintMessage != "" {
+			b.WriteString("\n" + errorBannerStyle.Render(m.sprintMessage) + "\n")
+		}
+		b.WriteString("\nTab para cambiar campo; Enter para continuar/enviar.\n")
 	default:
 		b.WriteString(screenTitleStyle.Render(m.Choices[m.Cursor]))
 		b.WriteString("  ")

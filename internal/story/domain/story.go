@@ -54,6 +54,13 @@ type Story struct {
 	EstimatedHours     *float64
 }
 
+// AssignedSprintStory is the minimal read model for a story assigned to a Sprint.
+type AssignedSprintStory struct {
+	ID       string
+	Title    string
+	Priority string
+}
+
 // ValidationError describes invalid story input by field.
 type ValidationError struct {
 	Fields map[string]string

@@ -1,5 +1,7 @@
 # Historial de Sprints cerrados (US-13)
 
+> La ruta de historial de esta página mantiene su contrato de Sprints cerrados. Para descubrir Sprints abiertos y sus historias asignadas, consulta las rutas adicionales documentadas al final.
+
 La API permite consultar los Sprints cerrados de un proyecto, con las historias planificadas en cada uno:
 
 ```http
@@ -84,3 +86,57 @@ La ruta está disponible únicamente con el esquema PostgreSQL limpio en versió
 - **Sin paginación:** la respuesta incluye todos los Sprints cerrados del proyecto y todas sus historias. Es un riesgo aceptado mientras los volúmenes sean pequeños; un contenedor con `project_id` permite agregar metadatos de paginación sin romper el contrato.
 - **Sprints anteriores a la migración:** `seq` se asigna a los Sprints que ya existían al aplicar `000011` en un orden que PostgreSQL no garantiza. Los Sprints creados después siguen el orden real de creación; el orden relativo de los previos puede no coincidir con el orden histórico.
 - **Migraciones externas:** las migraciones se aplican fuera de la aplicación; esta consulta no agrega ninguna acción de migración al arranque.
+
+## Descubrimiento para operaciones de Sprint
+
+Estas consultas son de solo lectura y no modifican Sprints, historias ni asociaciones. Las respuestas usan identificadores UUID canónicos. Las listas vacías se representan como `[]`, nunca como `null`.
+
+### Sprints abiertos de un proyecto
+
+```http
+GET /projects/{project_id}/sprints/open
+```
+
+Devuelve `200` con los Sprints abiertos del proyecto, en orden de creación ascendente:
+
+```json
+{
+  "project_id": "5c21cbd4-d9a7-42df-9c3a-c0866f058746",
+  "sprints": [
+    {
+      "id": "e99c05a4-03ea-4c19-8f59-286dd59e7aa1",
+      "project_id": "5c21cbd4-d9a7-42df-9c3a-c0866f058746",
+      "sprint_goal": "Entregar el flujo de métricas",
+      "is_closed": false
+    }
+  ]
+}
+```
+
+Un proyecto existente sin Sprints abiertos devuelve `200` y `"sprints":[]`. Un UUID de proyecto inválido devuelve `422 validation_failed`; un proyecto inexistente devuelve `404 project_not_found`. Se acepta `HEAD` sin cuerpo. La ruta requiere el esquema limpio de versión 11 o superior, porque el orden estable usa `sprints.seq`.
+
+### Historias asignadas a un Sprint
+
+```http
+GET /projects/{project_id}/sprints/{sprint_id}/stories
+```
+
+Devuelve `200` con las historias asociadas al Sprint indicado, en orden de creación ascendente:
+
+```json
+{
+  "project_id": "5c21cbd4-d9a7-42df-9c3a-c0866f058746",
+  "sprint_id": "e99c05a4-03ea-4c19-8f59-286dd59e7aa1",
+  "stories": [
+    {
+      "id": "5a3e0000-0000-4000-8000-000000000001",
+      "title": "Registrar esfuerzo",
+      "priority": "alta"
+    }
+  ]
+}
+```
+
+Un Sprint existente sin historias asignadas devuelve `200` con `"stories":[]`. Los UUID inválidos de proyecto o Sprint devuelven `422 validation_failed`, indicando el campo correspondiente. Un proyecto inexistente devuelve `404 project_not_found`; un Sprint inexistente o que no pertenece al proyecto de la ruta devuelve `404 sprint_not_found`. Se acepta `HEAD` sin cuerpo. Esta ruta requiere el esquema limpio de versión 8 o superior, que contiene la asociación `sprint_stories`.
+
+Ambas rutas devuelven `500 internal_error` ante fallos inesperados sin exponer detalles internos. Ninguna amplía ni altera el contrato `GET /projects/{project_id}/sprints` de historial cerrado.
