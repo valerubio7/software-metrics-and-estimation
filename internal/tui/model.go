@@ -48,6 +48,7 @@ type Model struct {
 	taskField        int
 	taskClient       *TaskClient
 	openSprints      []Sprint
+	sprintHistory    SprintHistory
 	sprintStories    []Story
 	selectedStories  map[string]bool
 }
@@ -78,6 +79,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.applyBacklogResult(result)
 	}
 	if result, ok := msg.(SprintResultMsg); ok {
+		if result.Op == "close" || result.Op == "history" {
+			return m.applyClosureHistoryResult(result)
+		}
 		return m.applySprintResult(result)
 	}
 	key, isKey := msg.(tea.KeyMsg)
@@ -111,10 +115,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "backlog-result":
 		return m.updateBacklogResult(key)
 	case "sprints":
-		return m.updateSprints(key)
+		return m.updateClosureHistoryMenu(key)
 	case "sprint-project", "sprint-goal":
 		return m.updateSprintForm(key)
+	case "sprint-close-project", "sprint-history-project":
+		return m.updateClosureHistoryProject(key)
+	case "sprint-history":
+		if key.Type == tea.KeyEsc || key.Type == tea.KeyEnter {
+			m.Screen, m.sprintMessage = "sprints", ""
+		}
+		return m, nil
 	case "sprint-open-list":
+		if m.sprintAction == "close" {
+			return m.updateClosureOpenSprints(key)
+		}
 		return m.updateOpenSprints(key)
 	case "sprint-story-select":
 		return m.updateSprintStorySelection(key)
@@ -393,11 +407,15 @@ func (m Model) View() string {
 		b.WriteString(m.viewBacklogResult())
 	case "sprints":
 		b.WriteString("Operaciones de Sprint\n\n")
-		for i, option := range []string{"Crear Sprint", "Asignar historias", "Crear tareas", "Completar historia", "Volver"} {
+		for i, option := range []string{"Crear Sprint", "Asignar historias", "Crear tareas", "Completar historia", "Cerrar Sprint", "Ver historial", "Volver"} {
 			b.WriteString(choiceRow(i == m.sprintCursor, option) + "\n")
 		}
 	case "sprint-project":
 		b.WriteString("Proyecto del Sprint\n\nID del proyecto: " + m.sprintProjectID + "_\nEnter para continuar, Esc para volver.\n")
+	case "sprint-close-project", "sprint-history-project":
+		b.WriteString("Proyecto del Sprint\n\nID del proyecto: " + m.sprintProjectID + "_\nEnter para continuar, Esc para volver.\n")
+	case "sprint-history":
+		b.WriteString(m.viewSprintHistory())
 	case "sprint-goal":
 		b.WriteString("Crear Sprint\n\nObjetivo: " + m.sprintGoal + "_\nEnter para enviar, Esc para volver.\n")
 	case "sprint-result":
