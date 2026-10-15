@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -21,6 +22,52 @@ type Sprint struct {
 type SprintClient struct{ api apiClient }
 
 func NewSprintClient(baseURL string) *SprintClient { return &SprintClient{api: newAPIClient(baseURL)} }
+
+// SprintHistory is the response from GET /projects/{project_id}/sprints.
+type SprintHistory struct {
+	ProjectID string         `json:"project_id"`
+	Sprints   []ClosedSprint `json:"sprints"`
+}
+
+// ClosedSprint is a closed Sprint and its planned stories.
+type ClosedSprint struct {
+	ID         string        `json:"id"`
+	ProjectID  string        `json:"project_id"`
+	SprintGoal string        `json:"sprint_goal"`
+	IsClosed   bool          `json:"is_closed"`
+	Stories    []SprintStory `json:"stories"`
+}
+
+// SprintStory retains completion and planning details from Sprint history.
+type SprintStory struct {
+	ID          string     `json:"id"`
+	Title       string     `json:"title"`
+	Priority    string     `json:"priority"`
+	StoryPoints *int       `json:"story_points"`
+	CompletedAt *time.Time `json:"completed_at"`
+	Completed   bool       `json:"completed"`
+}
+
+// SprintClosure is the success response from the Sprint closure endpoint.
+type SprintClosure struct {
+	ProjectID string `json:"project_id"`
+	SprintID  string `json:"sprint_id"`
+	IsClosed  bool   `json:"is_closed"`
+}
+
+// History fetches closed Sprint history without issuing a mutation.
+func (c *SprintClient) History(ctx context.Context, projectID string) (APIResponse, error) {
+	return c.api.do(ctx, http.MethodGet, sprintsPath(projectID), nil)
+}
+
+// Close closes a Sprint using the existing closure endpoint.
+func (c *SprintClient) Close(ctx context.Context, projectID, sprintID string) (APIResponse, error) {
+	return c.api.do(ctx, http.MethodPost, sprintsPath(projectID)+"/"+url.PathEscape(sprintID)+"/closure", nil)
+}
+
+func sprintsPath(projectID string) string {
+	return "/projects/" + url.PathEscape(projectID) + "/sprints"
+}
 
 func (c *SprintClient) Create(ctx context.Context, projectID, goal string) (APIResponse, error) {
 	return c.api.do(ctx, http.MethodPost, "/projects/"+url.PathEscape(projectID)+"/sprints", struct {
