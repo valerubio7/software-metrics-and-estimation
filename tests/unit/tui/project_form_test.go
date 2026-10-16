@@ -193,3 +193,73 @@ func TestProjectDateRowIsHighlightedWhenFocused(t *testing.T) {
 		t.Errorf("focused date row %q has no background, want the selection bar", line)
 	}
 }
+
+// openBrowser opens the project browser from the menu and seeds it with projects.
+func openBrowser(t *testing.T, projects ...tui.ProjectSummary) tui.Model {
+	t.Helper()
+	return seedProjects(t, press(tui.NewModel("http://localhost:8080"), tea.KeyEnter), projects...)
+}
+
+func TestEditProjectPrefillsFromSelectedSummary(t *testing.T) {
+	m := openBrowser(t, tui.ProjectSummary{ID: "p1", Name: "Portal Alfa", StartDate: "2026-03-05", PlannedFinishDate: "2026-09-30", Status: "active"})
+	m = typeText(m, "e")
+	if m.Screen != "edit-project" {
+		t.Fatalf("Screen = %q, want edit-project", m.Screen)
+	}
+	if got := fieldValue(t, m.View(), "Nombre"); got != "Portal Alfa" {
+		t.Errorf("name = %q, want the selected project prefilled", got)
+	}
+	view := stripANSI(m.View())
+	for _, want := range []string{"2026", "03", "05", "09", "30"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("View() = %q, want the prefilled date segment %q", view, want)
+		}
+	}
+}
+
+func TestProjectResultFailureReturnsToFormWithError(t *testing.T) {
+	m := openProjectForm(t, "http://localhost:8080")
+	m = typeText(m, "Alfa")
+	m = press(m, tea.KeyTab)
+	m = typeDateInto(m, "2026", "10", "01")
+	m = press(m, tea.KeyTab)
+	m = typeDateInto(m, "2026", "12", "01")
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = apply(m, tui.ProjectResultMsg{Response: tui.APIResponse{StatusCode: 422, Body: []byte(`{"error":"validation_failed","message":"fechas inválidas"}`)}})
+	if m.Screen != "project-result" {
+		t.Fatalf("Screen = %q, want project-result", m.Screen)
+	}
+	m = press(m, tea.KeyEnter)
+	if m.Screen != "create-project" {
+		t.Fatalf("Screen = %q, want create-project after a failed request", m.Screen)
+	}
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "422") || !strings.Contains(view, "fechas inválidas") {
+		t.Errorf("View() = %q, want the API error kept in the form", view)
+	}
+	if got := fieldValue(t, m.View(), "Nombre"); got != "Alfa" {
+		t.Errorf("name = %q, want the typed value kept", got)
+	}
+}
+
+func TestProjectResultSuccessReturnsToBrowser(t *testing.T) {
+	m := openBrowser(t, tui.ProjectSummary{ID: "p1", Name: "Alpha", StartDate: "2026-01-01", PlannedFinishDate: "2026-12-31", Status: "active"})
+	m = typeText(m, "e")
+	m = press(m, tea.KeyEnter) // -> fecha inicio
+	m = press(m, tea.KeyEnter) // -> fecha fin
+	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("submitting the edit form should issue a command")
+	}
+	m, _ = apply(m, tui.ProjectResultMsg{Response: tui.APIResponse{StatusCode: 200, Body: []byte(`{"id":"p1","name":"Alpha"}`)}})
+	if m.Screen != "project-result" {
+		t.Fatalf("Screen = %q, want project-result", m.Screen)
+	}
+	m, cmd = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.Screen != "project-picker" {
+		t.Fatalf("Screen = %q, want project-picker after success", m.Screen)
+	}
+	if cmd == nil {
+		t.Fatal("returning to the browser should reload the collection")
+	}
+}

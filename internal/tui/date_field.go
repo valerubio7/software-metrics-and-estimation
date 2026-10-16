@@ -67,6 +67,31 @@ func (d dateField) value() (string, bool) {
 	return fmt.Sprintf("%s-%s-%s", zeroPad(d.Year, 4), zeroPad(d.Month, 2), zeroPad(d.Day, 2)), true
 }
 
+// dateFieldFromISO splits a stored YYYY-MM-DD date into its segments, dropping
+// leading zeros so backspace behaves naturally while editing. A malformed value
+// yields an empty field rather than a broken one.
+func dateFieldFromISO(s string) dateField {
+	parts := strings.Split(strings.TrimSpace(s), "-")
+	if len(parts) != 3 {
+		return dateField{}
+	}
+	return dateField{
+		Year:  trimLeadingZeros(parts[0]),
+		Month: trimLeadingZeros(parts[1]),
+		Day:   trimLeadingZeros(parts[2]),
+	}
+}
+
+// trimLeadingZeros drops the zero padding of a stored date segment, keeping a
+// lone zero intact so a value of "0" does not vanish.
+func trimLeadingZeros(s string) string {
+	trimmed := strings.TrimLeft(s, "0")
+	if trimmed == "" && s != "" {
+		return "0"
+	}
+	return trimmed
+}
+
 // validate returns the normalized date and an empty error, or a human message
 // describing what is missing or wrong.
 func (d dateField) validate() (string, string) {

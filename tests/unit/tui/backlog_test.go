@@ -163,12 +163,14 @@ func startBacklog(url string) (tui.Model, tea.Cmd) {
 	return apply(m, tea.KeyMsg{Type: tea.KeyEnter})
 }
 
-// confirmProjectInPicker runs the picker's load command, filters by pid and confirms
-// the first match, returning the model and the command of the next step.
+// confirmProjectInPicker runs the picker's load command, searches by pid and
+// confirms the first match, returning the model and the command of the next step.
 func confirmProjectInPicker(t *testing.T, m tui.Model, load tea.Cmd, pid string) (tui.Model, tea.Cmd) {
 	t.Helper()
 	m = run(t, m, load)
+	m, _ = apply(m, keyMsg("/"))
 	m = typeText(m, pid)
+	m = press(m, tea.KeyEnter) // stop searching, keep the filter
 	return apply(m, tea.KeyMsg{Type: tea.KeyEnter})
 }
 
@@ -249,12 +251,17 @@ func TestBacklogPickerFiltersAndConfirmsProject(t *testing.T) {
 	server, _ := fakeBacklogAPI(t, apiStubs{})
 	m, load := startBacklog(server.URL)
 	m = run(t, m, load)
+	m, _ = apply(m, keyMsg("/"))
 	m = typeText(m, "Beta")
 	view := m.View()
 	if !strings.Contains(view, "Beta") || strings.Contains(view, "Alpha") {
 		t.Errorf("View() = %q, want only the matching project", view)
 	}
-	m = press(m, tea.KeyEsc)
+	m = press(m, tea.KeyEsc) // clear the search, stay in the browser
+	if m.Screen != "project-picker" {
+		t.Errorf("Screen = %q after clearing the search, want project-picker", m.Screen)
+	}
+	m = press(m, tea.KeyEsc) // leave the browser
 	if m.Screen != "menu" {
 		t.Errorf("Screen = %q after Esc, want menu", m.Screen)
 	}
@@ -999,7 +1006,7 @@ func backlogScreens(t *testing.T, url string) []struct {
 		label  string
 		model  tui.Model
 	}{
-		{"project-picker", "Buscar", picker},
+		{"project-picker", "", picker},
 		{"backlog-form", "Título", press(loaded, tea.KeyEnter)},
 		{"backlog", "", loaded},
 		{"backlog-result", "", result},
@@ -1058,6 +1065,7 @@ func TestSpaceAndBackspaceByRuneInBacklogFields(t *testing.T) {
 	}{
 		{"project-picker", "Buscar", func(t *testing.T) tui.Model {
 			m, _ := startBacklog(server.URL)
+			m, _ = apply(m, keyMsg("/"))
 			return m
 		}},
 		{"backlog-form", "Título", func(t *testing.T) tui.Model {

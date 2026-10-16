@@ -80,7 +80,7 @@ El usuario DEBERÁ poder salir limpiamente con `Ctrl+C` desde cualquier pantalla
 - **THEN** la TUI se cierra con código 0
 
 #### Scenario: `q` sale desde una lista
-- **GIVEN** que una lista seleccionable está activa (proyectos o backlog)
+- **GIVEN** que una lista seleccionable está activa (el navegador de proyectos o el backlog)
 - **WHEN** el usuario presiona `q`
 - **THEN** la TUI se cierra con código 0
 
@@ -114,11 +114,17 @@ La navegación entre el menú y las pantallas DEBERÁ ser de solo lectura y NO m
 - **THEN** las únicas requests emitidas son las consultas `GET` (del catálogo de proyectos y del backlog) y no se emite ningún `POST` ni `PUT`
 ### Requirement: Operar proyectos mediante la TUI
 
-La TUI DEBERÁ permitir operar proyectos desde la opción correspondiente. La gestión consume la API existente y no incorpora lógica de negocio. La navegación de menú existente se conserva.
+La TUI DEBERÁ permitir operar proyectos desde la opción «Proyectos», que abre directamente el navegador buscable de proyectos (Requirement: Listar y elegir proyectos con un buscador) en lugar de un submenú con un pedido manual de identificador. Desde el navegador el usuario fija el proyecto activo, crea uno nuevo y modifica el proyecto resaltado. La gestión consume la API existente y no incorpora lógica de negocio. La navegación de menú existente se conserva.
+
+#### Scenario: La opción Proyectos abre el navegador
+- **GIVEN** que la TUI muestra el menú inicial
+- **WHEN** el usuario confirma la opción «Proyectos»
+- **THEN** la TUI emite `GET /projects` y presenta el navegador buscable
+- **AND** no pide ningún identificador a mano
 
 #### Scenario: Crear un proyecto
 
-- **GIVEN** que el usuario completa nombre, fecha de inicio y fecha planificada de finalización
+- **GIVEN** que el usuario abre la creación desde el navegador (tecla `n`) y completa nombre, fecha de inicio y fecha planificada de finalización
 - **WHEN** confirma la creación
 - **THEN** la TUI envía esos campos al endpoint HTTP de creación y presenta el resultado de la API
 
@@ -130,27 +136,21 @@ La TUI DEBERÁ permitir operar proyectos desde la opción correspondiente. La ge
 
 #### Scenario: Modificar un proyecto existente
 
-- **GIVEN** que el usuario identifica un proyecto y completa sus datos básicos
+- **GIVEN** que el usuario resalta un proyecto en el navegador y abre su modificación con `e`
 - **WHEN** confirma la modificación
 - **THEN** la TUI envía los campos al endpoint HTTP de actualización sin duplicar validaciones de negocio
 
 #### Scenario: Proyecto inexistente al modificar
 
-- **GIVEN** que el identificador no corresponde a un proyecto existente
-- **WHEN** la API responde HTTP 404
+- **GIVEN** que la API responde HTTP 404 al modificar
+- **WHEN** la TUI presenta el resultado
 - **THEN** la TUI informa que el proyecto no existe y presenta el detalle de la API
 
-#### Scenario: Consultar el estado derivado
+#### Scenario: El estado derivado se muestra en el navegador
 
-- **GIVEN** un identificador de proyecto válido
-- **WHEN** el usuario consulta su estado
-- **THEN** la TUI muestra el estado informado por la API (`planned`, `active` o `overdue`) sin recalcularlo
-
-#### Scenario: Proyecto inexistente al consultar
-
-- **GIVEN** que el identificador no corresponde a un proyecto existente
-- **WHEN** la API responde HTTP 404
-- **THEN** la TUI informa que el proyecto no existe y presenta el detalle de la API
+- **GIVEN** que el catálogo informa el estado de cada proyecto (`planned`, `active` o `overdue`)
+- **WHEN** la TUI presenta el navegador
+- **THEN** cada fila muestra ese estado tal como lo informa la API, sin recalcularlo
 
 #### Scenario: Error de transporte
 
@@ -197,7 +197,13 @@ La TUI DEBERÁ permitir consultar, crear y modificar historias de usuario de un 
 - **AND** no consulta el backlog hasta que el usuario confirme un proyecto
 
 ### Requirement: Listar y elegir proyectos con un buscador
-La TUI DEBERÁ obtener el catálogo de proyectos con `GET /projects` y presentarlo en un selector buscable, de modo que el usuario NO necesite recordar ni escribir identificadores. El selector DEBERÁ permitir filtrar por nombre o identificador, navegar con las teclas de flecha y confirmar con `Enter`, y ofrecer `Esc` para volver sin cambiar el proyecto. Cada fila DEBERÁ mostrar el nombre, el estado derivado y una forma corta del identificador. Si el catálogo está vacío o la búsqueda no arroja coincidencias, la TUI DEBERÁ informarlo sin cerrarse.
+La TUI DEBERÁ obtener el catálogo de proyectos con `GET /projects` y presentarlo en un navegador buscable, de modo que el usuario NO necesite recordar ni escribir identificadores. El navegador se abre desde la opción «Proyectos» del menú y también sirve de selector a Backlog y Sprints. DEBERÁ permitir filtrar por nombre o identificador (la búsqueda se activa con `/` y cualquier otro carácter la inicia ya escrito), navegar con las teclas de flecha, fijar el proyecto activo con `Enter`, abrir la creación con `n`, abrir la modificación del proyecto resaltado con `e`, y volver con `Esc` sin cambiar el proyecto. Cada fila DEBERÁ mostrar el nombre, el estado derivado, una forma corta del identificador, y una marca en el proyecto activo. Si el catálogo está vacío o la búsqueda no arroja coincidencias, la TUI DEBERÁ informarlo sin cerrarse.
+
+#### Scenario: Abrir el navegador desde Proyectos
+- **GIVEN** que el menú está activo en la opción «Proyectos»
+- **WHEN** el usuario la confirma
+- **THEN** la TUI emite `GET /projects` y muestra el navegador
+- **AND** cada fila muestra el nombre, el estado y la forma corta del identificador
 
 #### Scenario: Abrir el selector desde el backlog
 - **GIVEN** que no hay proyecto activo
@@ -206,10 +212,20 @@ La TUI DEBERÁ obtener el catálogo de proyectos con `GET /projects` y presentar
 - **AND** cada fila muestra el nombre, el estado y la forma corta del identificador
 
 #### Scenario: Filtrar el catálogo
-- **GIVEN** que el selector muestra el catálogo
-- **WHEN** el usuario escribe parte de un nombre o identificador
+- **GIVEN** que el navegador muestra el catálogo
+- **WHEN** el usuario activa la búsqueda con `/` (o empieza a escribir) y tipea parte de un nombre o identificador
 - **THEN** la lista se reduce a las coincidencias
 - **AND** con `Enter` se elige la primera coincidencia
+
+#### Scenario: Editar el proyecto resaltado
+- **GIVEN** que el navegador muestra el catálogo con un proyecto resaltado
+- **WHEN** el usuario presiona `e`
+- **THEN** la TUI abre el formulario de modificación precargado con ese proyecto
+
+#### Scenario: Crear un proyecto desde el navegador
+- **GIVEN** que el navegador está activo
+- **WHEN** el usuario presiona `n`
+- **THEN** la TUI abre el formulario de creación vacío
 
 #### Scenario: Volver sin cambiar de proyecto
 - **GIVEN** que el selector está abierto sobre un proyecto ya activo
@@ -227,6 +243,24 @@ La TUI DEBERÁ obtener el catálogo de proyectos con `GET /projects` y presentar
 - **WHEN** la TUI presenta la lista filtrada
 - **THEN** muestra un mensaje de «sin coincidencias»
 - **AND** el usuario puede borrar el filtro
+
+### Requirement: Precargar la modificación de proyecto y resolver el resultado
+El formulario de modificación DEBERÁ abrirse precargado con el nombre, la fecha de inicio y la fecha fin planificada del proyecto resaltado en el navegador, para no reescribirlos. Tras una creación o modificación exitosa, la TUI DEBERÁ volver al navegador recargando el catálogo. Ante un rechazo de la API, la TUI DEBERÁ volver al formulario conservando los valores escritos y mostrando el motivo informado por la API.
+
+#### Scenario: Formulario de modificación precargado
+- **GIVEN** que el navegador muestra un proyecto con nombre y fechas
+- **WHEN** el usuario abre su modificación con `e`
+- **THEN** el formulario muestra el nombre y las dos fechas ya cargados en sus segmentos
+
+#### Scenario: Vuelta al navegador tras el éxito
+- **GIVEN** que una creación o modificación responde con éxito
+- **WHEN** el usuario cierra la pantalla de resultado
+- **THEN** la TUI vuelve al navegador y recarga `GET /projects`
+
+#### Scenario: Vuelta al formulario tras el rechazo
+- **GIVEN** que la API rechaza los datos con un error
+- **WHEN** el usuario cierra la pantalla de resultado
+- **THEN** la TUI vuelve al formulario con los valores escritos y muestra el motivo informado por la API
 
 ### Requirement: Proyecto activo único por sesión
 La TUI DEBERÁ fijar el proyecto elegido en el selector como proyecto activo de la sesión, conservarlo para todas las operaciones del backlog y los sprints, y ofrecer las acciones «Cambiar proyecto» y el atajo `p` para reemplazarlo. La TUI NO validará localmente el identificador; la validación queda en la API.

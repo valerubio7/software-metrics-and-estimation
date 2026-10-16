@@ -8,13 +8,15 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// openProjectPicker shows the searchable project list. purpose selects what
-// happens once a project is confirmed, so the same screen serves every flow.
+// openProjectPicker shows the searchable project list (the "browser").
+// purpose selects what Enter does with the confirmed project, so the same
+// screen serves the Projects menu, Backlog and Sprints.
 func (m Model) openProjectPicker(purpose string) (Model, tea.Cmd) {
 	m.pickerReturn = m.Screen
 	m.pickerPurpose = purpose
 	m.Screen = "project-picker"
 	m.projectFilter = ""
+	m.projectFiltering = false
 	m.projectCursor = 0
 	m.message = ""
 	m.projectsLoading = true
@@ -71,32 +73,75 @@ func (m Model) filteredProjects() []ProjectSummary {
 
 func (m Model) updateProjectPicker(key tea.KeyMsg) (Model, tea.Cmd) {
 	list := m.filteredProjects()
+
+	if m.projectFiltering {
+		switch key.Type {
+		case tea.KeyEsc:
+			m.projectFiltering, m.projectFilter, m.projectCursor = false, "", 0
+			return m, nil
+		case tea.KeyEnter:
+			// Stop searching but keep the filter, as the backlog does, so the
+			// filtered list can then be acted on with Enter / e / n.
+			m.projectFiltering = false
+			return m, nil
+		case tea.KeyUp:
+			if m.projectCursor > 0 {
+				m.projectCursor--
+			}
+			return m, nil
+		case tea.KeyDown:
+			if m.projectCursor < len(list)-1 {
+				m.projectCursor++
+			}
+			return m, nil
+		}
+		if value, ok := editText(m.projectFilter, key); ok {
+			m.projectFilter = value
+			m.projectCursor = 0
+		}
+		return m, nil
+	}
+
 	switch key.Type {
 	case tea.KeyEsc:
-		m.Screen, m.message = m.pickerReturn, ""
+		m.message = ""
+		m.Screen = m.pickerReturn
 		if m.Screen == "" {
 			m.Screen = "menu"
 		}
-		return m, nil
 	case tea.KeyUp:
 		if m.projectCursor > 0 {
 			m.projectCursor--
 		}
-		return m, nil
 	case tea.KeyDown:
 		if m.projectCursor < len(list)-1 {
 			m.projectCursor++
 		}
-		return m, nil
+	case tea.KeyRunes:
+		switch string(key.Runes) {
+		case "/":
+			m.projectFiltering = true
+		case "e":
+			return m.editSelectedProject()
+		case "n":
+			return m.openProjectForm("create", ProjectSummary{})
+		case "p":
+			// p is the global «change project» shortcut; the browser already is
+			// that changer, so keep it inert instead of seeding a search.
+		default:
+			// Any other character starts a search seeded with it, so typing
+			// still feels immediate while e and n stay reserved for actions.
+			m.projectFiltering = true
+			if value, ok := editText(m.projectFilter, key); ok {
+				m.projectFilter = value
+				m.projectCursor = 0
+			}
+		}
 	case tea.KeyEnter:
 		if len(list) == 0 {
 			return m, nil
 		}
 		return m.selectProject(list[m.projectCursor])
-	}
-	if value, ok := editText(m.projectFilter, key); ok {
-		m.projectFilter = value
-		m.projectCursor = 0
 	}
 	return m, nil
 }
@@ -127,20 +172,35 @@ func (m Model) selectProject(project ProjectSummary) (Model, tea.Cmd) {
 	default:
 		m.Screen = returnTo
 		if m.Screen == "" {
-			m.Screen = "projects"
+			m.Screen = "menu"
+		}
+		if m.Screen == "menu" {
+			m.Cursor = 0
 		}
 		return m, nil
 	}
 }
 
 func (m Model) viewProjectPicker() string {
+	title, hint := "Elegí un proyecto", "Enter usa el proyecto para Backlog y Sprints."
+	if m.pickerPurpose == "projects" {
+		title = "Proyectos"
+		hint = "Enter usa el proyecto · e edita · n crea · / busca por nombre o ID."
+	}
 	var b strings.Builder
-	b.WriteString(screenTitleStyle.Render("Elegí un proyecto"))
+	b.WriteString(screenTitleStyle.Render(title))
 	b.WriteString("\n")
-	b.WriteString(hintStyle.Render("Buscá por nombre o identificador. Escribí para filtrar; Enter para elegir."))
+	b.WriteString(hintStyle.Render(hint))
 	b.WriteString("\n\n")
-	b.WriteString(cursorStyle.Render("⌕ ") + hintStyle.Render("Buscar: ") + m.projectFilter + "_")
-	b.WriteString("\n\n")
+
+	if m.projectFiltering || m.projectFilter != "" {
+		cursor := ""
+		if m.projectFiltering {
+			cursor = "_"
+		}
+		b.WriteString(cursorStyle.Render("⌕ ") + hintStyle.Render("Buscar: ") + m.projectFilter + cursor)
+		b.WriteString("\n\n")
+	}
 
 	if m.message != "" {
 		b.WriteString(m.errorBlock(m.message))
@@ -151,25 +211,29 @@ func (m Model) viewProjectPicker() string {
 		b.WriteString(statusMutedStyle.Render("Cargando proyectos…"))
 		return b.String()
 	case len(m.projects) == 0:
-		b.WriteString(emptyState("◇", "No hay proyectos todavía.", "Creá uno desde Proyectos para empezar."))
+		b.WriteString(emptyState("◇", "No hay proyectos todavía.", "Creá uno con n para empezar."))
 		return b.String()
 	}
 
 	list := m.filteredProjects()
 	if len(list) == 0 {
-		b.WriteString(emptyState("⌕", "Sin coincidencias.", "Probá con otro nombre o borrá el filtro."))
+		b.WriteString(emptyState("⌕", "Sin coincidencias.", "Probá con otro nombre o borrá el filtro con Esc."))
 		return b.String()
 	}
 	for i, project := range list {
-		b.WriteString(m.row(i == m.projectCursor, projectPickerRow(project)) + "\n")
+		b.WriteString(m.row(i == m.projectCursor, projectPickerRow(project, project.ID == m.activeProjectID)) + "\n")
 	}
 	return b.String()
 }
 
-func projectPickerRow(project ProjectSummary) string {
+func projectPickerRow(project ProjectSummary, active bool) string {
 	name := project.Name
 	if project.Status != "" {
 		name += "  " + projectStatusBadge(project.Status)
 	}
-	return name + hintStyle.Render("   "+shortID(project.ID))
+	row := name + hintStyle.Render("   "+shortID(project.ID))
+	if active {
+		row += statusOkStyle.Render("   ✓ en uso")
+	}
+	return row
 }

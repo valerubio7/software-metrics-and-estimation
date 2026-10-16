@@ -27,25 +27,27 @@ type Model struct {
 	activeProjectID   string
 	activeProjectName string
 
-	// Project picker.
-	projects        []ProjectSummary
-	projectsLoading bool
-	projectFilter   string
-	projectCursor   int
-	pickerReturn    string
-	pickerPurpose   string
+	// Project browser (the searchable project list).
+	projects         []ProjectSummary
+	projectsLoading  bool
+	projectFilter    string
+	projectFiltering bool
+	projectCursor    int
+	pickerReturn     string
+	pickerPurpose    string
 
-	projectCursorLegacy int
-	projectID           string
-	projectAction       string
-	formField           int
-	formSegment         int
-	form                ProjectInput
-	formStart           dateField
-	formFinish          dateField
-	formErr             string
-	message             string
-	client              *ProjectClient
+	projectID        string
+	formField        int
+	formSegment      int
+	form             ProjectInput
+	formStart        dateField
+	formFinish       dateField
+	formErr          string
+	formReturn       string
+	projectResultOK  bool
+	resultFormScreen string
+	message          string
+	client           *ProjectClient
 
 	backlogCursor    int
 	backlogStories   []Story
@@ -129,7 +131,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.showHelp = true
 		return m, nil
 	}
-	if key.Type == tea.KeyRunes && string(key.Runes) == "p" && quitsOnQ(m.Screen) && !m.filtering() {
+	if key.Type == tea.KeyRunes && string(key.Runes) == "p" && quitsOnQ(m.Screen) && m.Screen != "project-picker" && !m.filtering() {
 		return m.openProjectPicker("project")
 	}
 	if isQuitRune(key) && quitsOnQ(m.Screen) && !m.filtering() {
@@ -138,18 +140,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.Screen {
 	case "menu":
 		return m.updateMenu(key)
-	case "projects":
-		return m.updateProjects(key)
 	case "project-picker":
 		return m.updateProjectPicker(key)
 	case "create-project", "edit-project":
 		return m.updateProjectForm(key)
-	case "project-id":
-		return m.updateProjectID(key)
 	case "project-result":
 		if key.Type == tea.KeyEsc || key.Type == tea.KeyEnter {
-			m.Screen = "projects"
-			m.message = ""
+			return m.leaveProjectResult()
 		}
 		return m, nil
 	case "backlog":
@@ -196,7 +193,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // plain character rather than the help shortcut.
 func entersText(screen string) bool {
 	switch screen {
-	case "create-project", "edit-project", "project-id", "backlog-form", "sprint-goal", "sprint-task-form", "project-picker":
+	case "create-project", "edit-project", "backlog-form", "sprint-goal", "sprint-task-form":
 		return true
 	}
 	return false
@@ -206,7 +203,7 @@ func entersText(screen string) bool {
 // listed, so q is a plain character there; Ctrl+C always quits.
 func quitsOnQ(screen string) bool {
 	switch screen {
-	case "menu", "projects", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-open-list", "sprint-assigned-list", "sprint-story-select":
+	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-open-list", "sprint-assigned-list", "sprint-story-select":
 		return true
 	}
 	return false
@@ -216,10 +213,11 @@ func isQuitRune(key tea.KeyMsg) bool {
 	return key.Type == tea.KeyRunes && len(key.Runes) == 1 && (key.Runes[0] == 'q' || key.Runes[0] == 'Q')
 }
 
-// filtering reports whether the backlog search box owns the keyboard, so global
+// filtering reports whether a search box owns the keyboard, so global
 // shortcuts (?, p, q) must be typed into it instead of triggering.
 func (m Model) filtering() bool {
-	return m.Screen == "backlog" && m.backlogFiltering
+	return (m.Screen == "backlog" && m.backlogFiltering) ||
+		(m.Screen == "project-picker" && m.projectFiltering)
 }
 
 // editText applies a text-editing key to value: runes and the space bar are
@@ -251,7 +249,7 @@ func (m Model) updateMenu(key tea.KeyMsg) (Model, tea.Cmd) {
 	case tea.KeyEnter:
 		switch m.Cursor {
 		case 0:
-			m.Screen, m.projectCursorLegacy = "projects", 0
+			return m.openProjectPicker("projects")
 		case 1:
 			return m.openBacklog()
 		case 2:
@@ -259,65 +257,6 @@ func (m Model) updateMenu(key tea.KeyMsg) (Model, tea.Cmd) {
 		default:
 			return m, tea.Quit
 		}
-	}
-	return m, nil
-}
-
-func (m Model) updateProjects(key tea.KeyMsg) (Model, tea.Cmd) {
-	options := projectMenuOptions()
-	switch key.Type {
-	case tea.KeyUp:
-		if m.projectCursorLegacy > 0 {
-			m.projectCursorLegacy--
-		}
-	case tea.KeyDown:
-		if m.projectCursorLegacy < len(options)-1 {
-			m.projectCursorLegacy++
-		}
-	case tea.KeyEsc:
-		m.Screen, m.Cursor = "menu", 0
-	case tea.KeyEnter:
-		switch options[m.projectCursorLegacy] {
-		case "Crear proyecto":
-			m.Screen = "create-project"
-			m.resetProjectForm()
-		case "Elegir proyecto":
-			return m.openProjectPicker("projects")
-		case "Modificar proyecto":
-			m.Screen, m.projectID, m.projectAction = "project-id", "", "edit"
-			m.resetProjectForm()
-			m.message = "Ingresá el ID del proyecto para editar."
-		case "Consultar estado":
-			m.Screen, m.projectID, m.projectAction = "project-id", "", "status"
-			m.message = "Ingresá el ID del proyecto para consultar estado."
-		default:
-			m.Screen, m.Cursor = "menu", 0
-		}
-	}
-	return m, nil
-}
-
-func projectMenuOptions() []string {
-	return []string{"Crear proyecto", "Elegir proyecto", "Modificar proyecto", "Consultar estado", "Volver"}
-}
-
-func (m Model) updateProjectID(key tea.KeyMsg) (Model, tea.Cmd) {
-	if key.Type == tea.KeyEsc {
-		m.Screen, m.message = "projects", ""
-		return m, nil
-	}
-	if value, ok := editText(m.projectID, key); ok {
-		m.projectID = value
-		return m, nil
-	}
-	if key.Type == tea.KeyEnter && strings.TrimSpace(m.projectID) != "" {
-		id := strings.TrimSpace(m.projectID)
-		if m.projectAction == "edit" {
-			m.resetProjectForm()
-			m.Screen = "edit-project"
-			return m, nil
-		}
-		return m, m.statusCmd(id)
 	}
 	return m, nil
 }
@@ -334,10 +273,65 @@ func (m *Model) resetProjectForm() {
 	m.formField, m.formSegment, m.formErr = 0, 0, ""
 }
 
+// openProjectForm enters the project form. "edit" prefills it from the summary
+// chosen in the browser; "create" starts empty. Esc and a finished request
+// return to the browser.
+func (m Model) openProjectForm(mode string, summary ProjectSummary) (Model, tea.Cmd) {
+	m.resetProjectForm()
+	m.formReturn = "project-picker"
+	m.projectID = summary.ID
+	if mode == "edit" {
+		m.form.Name = summary.Name
+		m.formStart = dateFieldFromISO(summary.StartDate)
+		m.formFinish = dateFieldFromISO(summary.PlannedFinishDate)
+		m.Screen = "edit-project"
+	} else {
+		m.Screen = "create-project"
+	}
+	return m, nil
+}
+
+// editSelectedProject opens the form for the project highlighted in the browser.
+func (m Model) editSelectedProject() (Model, tea.Cmd) {
+	list := m.filteredProjects()
+	if m.projectCursor < 0 || m.projectCursor >= len(list) {
+		return m, nil
+	}
+	return m.openProjectForm("edit", list[m.projectCursor])
+}
+
+// leaveProjectResult returns to the form on a failed request so it can be
+// corrected, or to the freshly reloaded browser on success.
+func (m Model) leaveProjectResult() (Model, tea.Cmd) {
+	if m.projectResultOK {
+		m.message = ""
+		return m.reopenProjectPicker()
+	}
+	m.formErr = strings.TrimSpace(m.message)
+	m.message = ""
+	m.Screen = m.resultFormScreen
+	if m.Screen == "" {
+		m.Screen = "project-picker"
+	}
+	return m, nil
+}
+
+// reopenProjectPicker reloads the project list, used after a create or edit so
+// the browser shows the change.
+func (m Model) reopenProjectPicker() (Model, tea.Cmd) {
+	m.Screen = "project-picker"
+	m.projectFilter, m.projectFiltering, m.projectCursor = "", false, 0
+	m.projectsLoading = true
+	return m, m.listProjectsCmd()
+}
+
 func (m Model) updateProjectForm(key tea.KeyMsg) (Model, tea.Cmd) {
 	if key.Type == tea.KeyEsc {
-		m.Screen = "projects"
 		m.formErr = ""
+		m.Screen = m.formReturn
+		if m.Screen == "" {
+			m.Screen = "menu"
+		}
 		return m, nil
 	}
 	if m.formField == 0 {
@@ -462,16 +456,10 @@ func (m Model) updateCmd(id string, input ProjectInput) tea.Cmd {
 	}
 }
 
-func (m Model) statusCmd(id string) tea.Cmd {
-	client := m.client
-	return func() tea.Msg {
-		response, err := client.Status(context.Background(), id)
-		return ProjectResultMsg{Response: response, Err: err}
-	}
-}
-
 func (m Model) applyProjectResult(result ProjectResultMsg) (Model, tea.Cmd) {
+	m.resultFormScreen = m.Screen
 	m.Screen = "project-result"
+	m.projectResultOK = false
 	if result.Err != nil {
 		m.message = "Error de conexión: " + result.Err.Error()
 		return m, nil
@@ -485,13 +473,14 @@ func (m Model) applyProjectResult(result ProjectResultMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	m.projectResultOK = true
 	var status struct {
 		ID     string `json:"id"`
 		Name   string `json:"name"`
 		Status string `json:"status"`
 	}
-	if json.Unmarshal(result.Response.Body, &status) == nil && status.Status != "" {
-		m.message = fmt.Sprintf("Proyecto %s: %s (%s)", status.ID, status.Name, status.Status)
+	if json.Unmarshal(result.Response.Body, &status) == nil && status.Name != "" {
+		m.message = fmt.Sprintf("Proyecto %s: %s", status.Name, status.ID)
 	} else {
 		m.message = strings.TrimSpace(string(result.Response.Body))
 	}
@@ -524,14 +513,10 @@ func (m Model) viewBody() string {
 	switch m.Screen {
 	case "menu":
 		return m.viewMenu()
-	case "projects":
-		return m.viewProjects()
 	case "project-picker":
 		return m.viewProjectPicker()
 	case "create-project", "edit-project":
 		return m.viewProjectForm()
-	case "project-id":
-		return m.viewProjectID()
 	case "project-result":
 		return m.viewProjectResult()
 	case "backlog":
@@ -565,7 +550,7 @@ func (m Model) viewMenu() string {
 	var b strings.Builder
 	b.WriteString(screenTitleStyle.Render("Panel de control"))
 	b.WriteString("\n")
-	context := "Sin proyecto activo · elegí uno en Backlog o Sprints"
+	context := "Sin proyecto activo · elegí uno en Proyectos"
 	if m.activeProjectID != "" {
 		context = "Proyecto activo: " + m.activeProjectName
 	}
@@ -577,23 +562,19 @@ func (m Model) viewMenu() string {
 	return b.String()
 }
 
-func (m Model) viewProjects() string {
-	var b strings.Builder
-	b.WriteString(screenTitleStyle.Render("Proyectos"))
-	b.WriteString("\n\n")
-	for i, option := range projectMenuOptions() {
-		b.WriteString(m.row(i == m.projectCursorLegacy, option) + "\n")
-	}
-	return b.String()
-}
-
 func (m Model) viewProjectForm() string {
 	title := "Crear proyecto"
 	if m.Screen == "edit-project" {
-		title = "Modificar proyecto " + m.projectID
+		title = "Modificar proyecto"
 	}
 	var b strings.Builder
 	b.WriteString(screenTitleStyle.Render(title))
+	b.WriteString("\n")
+	if m.Screen == "edit-project" {
+		b.WriteString(hintStyle.Render("ID: " + shortID(m.projectID)))
+	} else {
+		b.WriteString(hintStyle.Render("Completá los datos del nuevo proyecto."))
+	}
 	b.WriteString("\n\n")
 	b.WriteString(m.projectTextRow(0, "Nombre", m.form.Name) + "\n")
 	b.WriteString(m.projectDateRow(1, "Fecha inicio", m.formStart) + "\n")
@@ -609,23 +590,11 @@ func (m Model) viewProjectForm() string {
 	return b.String()
 }
 
-func (m Model) viewProjectID() string {
-	var b strings.Builder
-	b.WriteString(screenTitleStyle.Render("Identificador de proyecto"))
-	b.WriteString("\n\n")
-	b.WriteString(hintStyle.Render(m.message))
-	b.WriteString("\n\n")
-	b.WriteString(m.formRow(true, "ID", m.projectID))
-	b.WriteString("\n\n")
-	b.WriteString(hintStyle.Render("Enter para continuar, Esc para volver."))
-	return b.String()
-}
-
 func (m Model) viewProjectResult() string {
 	var b strings.Builder
 	b.WriteString(screenTitleStyle.Render("Resultado"))
 	b.WriteString("\n\n")
-	b.WriteString(m.resultBlock(m.message, !strings.HasPrefix(m.message, "Error") && !strings.Contains(m.message, "no existe")))
+	b.WriteString(m.resultBlock(m.message, m.projectResultOK))
 	return b.String()
 }
 
@@ -672,15 +641,13 @@ func (m Model) crumbParts() []string {
 	switch m.Screen {
 	case "menu":
 		return []string{"Panel de control"}
-	case "projects", "create-project", "edit-project", "project-id", "project-result":
+	case "create-project", "edit-project", "project-result":
 		parts = append(parts, "Proyectos")
 		switch m.Screen {
 		case "create-project":
 			parts = append(parts, "Crear")
 		case "edit-project":
 			parts = append(parts, "Modificar")
-		case "project-id":
-			parts = append(parts, "Identificador")
 		case "project-result":
 			parts = append(parts, "Resultado")
 		}
@@ -693,7 +660,9 @@ func (m Model) crumbParts() []string {
 		default:
 			parts = append(parts, "Proyectos")
 		}
-		parts = append(parts, "Elegir proyecto")
+		if m.pickerPurpose != "projects" {
+			parts = append(parts, "Elegir proyecto")
+		}
 	case "backlog", "backlog-form", "backlog-result":
 		parts = append(parts, "Backlog")
 		switch m.Screen {
@@ -735,7 +704,7 @@ func (m Model) crumbParts() []string {
 
 func isProjectScreen(screen string) bool {
 	switch screen {
-	case "projects", "project-picker", "create-project", "edit-project", "project-id", "project-result":
+	case "project-picker", "create-project", "edit-project", "project-result":
 		return true
 	}
 	return false
@@ -748,11 +717,12 @@ func (m Model) footer() string {
 	switch m.Screen {
 	case "menu":
 		return keyHints("↑/↓", "mover", "Enter", "elegir", "?", "ayuda", "q", "salir")
-	case "projects":
-		return keyHints("↑/↓", "mover", "Enter", "elegir", "Esc", "volver", "q", "salir")
 	case "project-picker":
-		return keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "elegir", "Esc", "volver")
-	case "create-project", "edit-project", "project-id":
+		if m.projectFiltering {
+			return keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "elegir", "Esc", "limpiar")
+		}
+		return keyHints("↑/↓", "mover", "Enter", "usar", "e", "editar", "n", "crear", "/", "buscar", "Esc", "volver")
+	case "create-project", "edit-project":
 		return keyHints("Tab/↑/↓", "campo", "Enter", "continuar", "Esc", "volver", "Ctrl+C", "salir")
 	case "project-result":
 		return keyHints("Enter/Esc", "volver", "q", "salir")
