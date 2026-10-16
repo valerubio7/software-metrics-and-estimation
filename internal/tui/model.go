@@ -73,7 +73,7 @@ type Model struct {
 func NewModel(apiURL string) Model {
 	return Model{
 		APIURL:  apiURL,
-		Choices: []string{"Proyectos", "Backlog", "Sprints", "Ayuda", "Salir"},
+		Choices: []string{"Proyectos", "Backlog", "Sprints", "Salir"},
 		Screen:  "menu",
 		client:  NewProjectClient(apiURL),
 
@@ -251,8 +251,6 @@ func (m Model) updateMenu(key tea.KeyMsg) (Model, tea.Cmd) {
 			return m.openBacklog()
 		case 2:
 			m.Screen = "sprints"
-		case 3:
-			m.showHelp = true
 		default:
 			return m, tea.Quit
 		}

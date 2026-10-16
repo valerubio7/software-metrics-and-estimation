@@ -138,6 +138,9 @@ func TestMenuShowsFourOptions(t *testing.T) {
 			t.Errorf("View() = %q, want option %q", view, want)
 		}
 	}
+	if strings.Contains(view, "Ayuda") {
+		t.Errorf("View() = %q, want no Ayuda menu option", view)
+	}
 }
 
 func TestCursorMovesDownAndUp(t *testing.T) {

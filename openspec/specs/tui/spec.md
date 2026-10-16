@@ -20,11 +20,11 @@ El sistema DEBERÁ permitir abrir la TUI configurando la conexión vía `API_URL
 - **THEN** la TUI usa `http://localhost:8080` por defecto
 
 ### Requirement: Mostrar menú base de navegación
-La TUI DEBERÁ mostrar un menú con las opciones proyectos, backlog, sprints, ayuda y salir. Las opciones proyectos, backlog y sprints dan acceso a su gestión respectiva. La TUI DEBERÁ mostrar siempre un encabezado con el nombre del producto y el estado de conexión con la API, y un pie con las teclas disponibles para la pantalla activa.
+La TUI DEBERÁ mostrar un menú con las opciones proyectos, backlog, sprints y salir. Las opciones proyectos, backlog y sprints dan acceso a su gestión respectiva. La TUI DEBERÁ mostrar siempre un encabezado con el nombre del producto y el estado de conexión con la API, y un pie con las teclas disponibles para la pantalla activa.
 
 #### Scenario: Menú inicial
 - **WHEN** la TUI arranca correctamente
-- **THEN** muestra las 5 opciones y permite moverse entre ellas
+- **THEN** muestra las 4 opciones y permite moverse entre ellas
 - **AND** muestra el encabezado con el estado de conexión y el pie con las teclas de la pantalla
 
 #### Scenario: Backlog abre su gestión desde el menú
