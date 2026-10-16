@@ -20,17 +20,31 @@ El sistema DEBERÁ permitir abrir la TUI configurando la conexión vía `API_URL
 - **THEN** la TUI usa `http://localhost:8080` por defecto
 
 ### Requirement: Mostrar menú base de navegación
-La TUI DEBERÁ mostrar un menú con opciones proyectos, backlog, sprints y salir. Las opciones proyectos y backlog dan acceso a su gestión respectiva; solo la opción sprints sigue sin pantallas funcionales.
-(Previously: la opción backlog seguía sin pantallas funcionales junto con sprints.)
+La TUI DEBERÁ mostrar un menú con las opciones proyectos, backlog, sprints, ayuda y salir. Las opciones proyectos, backlog y sprints dan acceso a su gestión respectiva. La TUI DEBERÁ mostrar siempre un encabezado con el nombre del producto y el estado de conexión con la API, y un pie con las teclas disponibles para la pantalla activa.
 
 #### Scenario: Menú inicial
 - **WHEN** la TUI arranca correctamente
-- **THEN** muestra las 4 opciones y permite moverse entre ellas
+- **THEN** muestra las 5 opciones y permite moverse entre ellas
+- **AND** muestra el encabezado con el estado de conexión y el pie con las teclas de la pantalla
 
-#### Scenario: Backlog conserva la pantalla `backlog` desde el menú
+#### Scenario: Backlog abre su gestión desde el menú
 - **GIVEN** que el menú está activo con la selección en la primera opción
 - **WHEN** el usuario presiona «Abajo» y luego «Enter»
-- **THEN** la pantalla activa es `backlog`
+- **THEN** la TUI presenta el flujo de gestión del backlog (el selector de proyectos si no hay proyecto activo, o la lista del backlog si ya lo hay)
+
+### Requirement: Mostrar la ayuda de teclado
+La TUI DEBERÁ ofrecer una ayuda de teclado accesible con `?` desde las pantallas que no son de entrada de texto, y cerrarla con `Esc`, `Enter` o `?`. Dentro de un campo de texto `?` se trata como un carácter más.
+
+#### Scenario: Abrir y cerrar la ayuda
+- **GIVEN** que una pantalla que no es de entrada de texto está activa
+- **WHEN** el usuario presiona `?`
+- **THEN** la TUI muestra la ayuda con las teclas principales
+- **AND** al presionar `Esc` la ayuda se cierra y se vuelve a la pantalla previa
+
+#### Scenario: `?` se escribe en un campo de texto
+- **GIVEN** que el foco está en un campo de texto
+- **WHEN** el usuario presiona `?`
+- **THEN** el carácter se agrega al campo y la ayuda no se abre
 
 ### Requirement: Informar API no disponible sin cierre abrupto
 
@@ -65,13 +79,13 @@ El usuario DEBERÁ poder salir limpiamente con `Ctrl+C` desde cualquier pantalla
 - **THEN** la TUI se cierra con código 0
 
 #### Scenario: `q` en un campo de texto no sale
-- **GIVEN** que el foco está en un campo de texto de un formulario o de la solicitud del identificador del proyecto
+- **GIVEN** que el foco está en un campo de texto de un formulario o en el buscador
 - **WHEN** el usuario presiona `q` o `Q`
 - **THEN** la TUI permanece abierta
 - **AND** el carácter se agrega al valor del campo
 
 #### Scenario: `Ctrl+C` sale desde cualquier pantalla
-- **GIVEN** que cualquier pantalla está activa, incluidos los formularios y la solicitud del identificador del proyecto
+- **GIVEN** que cualquier pantalla está activa, incluidos los formularios y los buscadores
 - **WHEN** el usuario presiona `Ctrl+C`
 - **THEN** la TUI se cierra con código 0 sin traza de error
 
@@ -86,7 +100,7 @@ La navegación entre el menú y las pantallas DEBERÁ ser de solo lectura y NO m
 #### Scenario: Consultar el backlog no muta
 - **GIVEN** un proyecto activo
 - **WHEN** el usuario abre la lista del backlog o cambia de proyecto
-- **THEN** la única request emitida es la consulta `GET` del backlog y no se emite ningún `POST` ni `PUT`
+- **THEN** las únicas requests emitidas son las consultas `GET` (del catálogo de proyectos y del backlog) y no se emite ningún `POST` ni `PUT`
 ### Requirement: Operar proyectos mediante la TUI
 
 La TUI DEBERÁ permitir operar proyectos desde la opción correspondiente. La gestión consume la API existente y no incorpora lógica de negocio. La navegación de menú existente se conserva.
@@ -141,32 +155,63 @@ La TUI DEBERÁ permitir consultar, crear y modificar historias de usuario de un 
 - **THEN** la TUI deja de mostrar el marcador de posición TUI-03 y presenta el flujo de gestión del backlog
 - **AND** la pantalla activa conserva el nombre `backlog`
 
-#### Scenario: Acceder sin proyecto conocido solicita el identificador
-- **GIVEN** que en la sesión aún no se ingresó ningún identificador de proyecto
+#### Scenario: Acceder sin proyecto activo abre el selector
+- **GIVEN** que en la sesión aún no se eligió ningún proyecto
 - **WHEN** el usuario confirma la opción «Backlog»
-- **THEN** la TUI presenta primero la solicitud del identificador del proyecto
-- **AND** no emite ninguna request a la API hasta que el usuario lo confirma
+- **THEN** la TUI presenta el selector de proyectos con el catálogo de la API
+- **AND** no consulta el backlog hasta que el usuario confirme un proyecto
 
-### Requirement: Identificador de proyecto único por sesión
-La TUI DEBERÁ solicitar el identificador del proyecto una sola vez por sesión, conservarlo para todas las operaciones del backlog y ofrecer la acción «Cambiar proyecto» para reemplazarlo. La TUI NO validará localmente el formato del identificador; la validación queda en la API.
+### Requirement: Listar y elegir proyectos con un buscador
+La TUI DEBERÁ obtener el catálogo de proyectos con `GET /projects` y presentarlo en un selector buscable, de modo que el usuario NO necesite recordar ni escribir identificadores. El selector DEBERÁ permitir filtrar por nombre o identificador, navegar con las teclas de flecha y confirmar con `Enter`, y ofrecer `Esc` para volver sin cambiar el proyecto. Cada fila DEBERÁ mostrar el nombre, el estado derivado y una forma corta del identificador. Si el catálogo está vacío o la búsqueda no arroja coincidencias, la TUI DEBERÁ informarlo sin cerrarse.
 
-#### Scenario: El identificador se solicita una sola vez
-- **GIVEN** que el usuario ya ingresó un identificador de proyecto en la sesión
+#### Scenario: Abrir el selector desde el backlog
+- **GIVEN** que no hay proyecto activo
+- **WHEN** el usuario confirma «Backlog»
+- **THEN** la TUI emite `GET /projects` y muestra el selector
+- **AND** cada fila muestra el nombre, el estado y la forma corta del identificador
+
+#### Scenario: Filtrar el catálogo
+- **GIVEN** que el selector muestra el catálogo
+- **WHEN** el usuario escribe parte de un nombre o identificador
+- **THEN** la lista se reduce a las coincidencias
+- **AND** con `Enter` se elige la primera coincidencia
+
+#### Scenario: Volver sin cambiar de proyecto
+- **GIVEN** que el selector está abierto sobre un proyecto ya activo
+- **WHEN** el usuario presiona `Esc`
+- **THEN** la TUI vuelve a la pantalla previa conservando el proyecto activo
+
+#### Scenario: Catálogo vacío
+- **GIVEN** que la API responde `GET /projects` con una lista vacía
+- **WHEN** la TUI presenta el resultado
+- **THEN** muestra un mensaje que indica que todavía no hay proyectos
+- **AND** permanece abierta
+
+#### Scenario: Búsqueda sin coincidencias
+- **GIVEN** que el usuario escribe un filtro que no coincide con ningún proyecto
+- **WHEN** la TUI presenta la lista filtrada
+- **THEN** muestra un mensaje de «sin coincidencias»
+- **AND** el usuario puede borrar el filtro
+
+### Requirement: Proyecto activo único por sesión
+La TUI DEBERÁ fijar el proyecto elegido en el selector como proyecto activo de la sesión, conservarlo para todas las operaciones del backlog y los sprints, y ofrecer las acciones «Cambiar proyecto» y el atajo `p` para reemplazarlo. La TUI NO validará localmente el identificador; la validación queda en la API.
+
+#### Scenario: El proyecto se elige una sola vez
+- **GIVEN** que el usuario ya eligió un proyecto en la sesión
 - **WHEN** vuelve al menú, elige nuevamente «Backlog» y accede a la gestión
-- **THEN** la TUI no vuelve a solicitar el identificador
+- **THEN** la TUI no vuelve a abrir el selector
 - **AND** consulta el backlog del proyecto conservado
 
 #### Scenario: Cambiar el proyecto activo
-- **GIVEN** que el usuario está en la lista del backlog con un proyecto conservado
-- **WHEN** elige la acción «Cambiar proyecto» e ingresa otro identificador
-- **THEN** la TUI reemplaza el identificador conservado por el nuevo
-- **AND** las operaciones siguientes usan el nuevo identificador
+- **GIVEN** que el usuario está en la lista del backlog con un proyecto activo
+- **WHEN** elige la acción «Cambiar proyecto» y confirma otro proyecto en el selector
+- **THEN** la TUI reemplaza el proyecto activo por el nuevo
+- **AND** las operaciones siguientes usan el nuevo proyecto
 
-#### Scenario: Identificador vacío
-- **GIVEN** que el usuario está en la solicitud del identificador del proyecto
-- **WHEN** confirma sin haber escrito nada
-- **THEN** la TUI no emite ninguna request a la API
-- **AND** permanece en la solicitud del identificador
+#### Scenario: El proyecto activo se refleja en la navegación
+- **GIVEN** que hay un proyecto activo
+- **WHEN** el usuario navega entre el menú y las pantallas del backlog
+- **THEN** el encabezado de ruta y el menú muestran el nombre del proyecto activo
 
 ### Requirement: Listar el backlog del proyecto
 La TUI DEBERÁ consultar el backlog del proyecto activo y presentar las historias en el mismo orden que informa la API, sin reordenarlas. Cada historia DEBERÁ mostrar al menos su título, prioridad y estado, y `story_points` solo como lectura. Cuando `story_points` sea nulo la TUI DEBERÁ mostrar «—». La lista DEBERÁ ser seleccionable.
@@ -193,6 +238,30 @@ La TUI DEBERÁ consultar el backlog del proyecto activo y presentar las historia
 - **WHEN** la TUI presenta el resultado
 - **THEN** muestra un mensaje que indica que el backlog no tiene historias
 - **AND** sigue ofreciendo crear una historia y cambiar de proyecto
+
+### Requirement: Buscar y refrescar en el backlog
+La lista del backlog DEBERÁ ofrecer una búsqueda por título activada con `/` y cancelable con `Esc`, y un refresco de la consulta activado con `r`. La búsqueda NO emitirá requests y solo filtrará las historias ya cargadas. Mientras la búsqueda tiene el foco, `q`, `?` y `p` se tratan como caracteres de texto.
+
+#### Scenario: Filtrar historias por título
+- **GIVEN** que la lista del backlog está cargada
+- **WHEN** el usuario presiona `/` y escribe parte de un título
+- **THEN** la lista muestra solo las historias cuyo título coincide
+- **AND** no se emite ninguna request a la API
+
+#### Scenario: Búsqueda sin coincidencias
+- **GIVEN** que la búsqueda está activa con un filtro que no coincide
+- **WHEN** la TUI presenta la lista
+- **THEN** muestra un mensaje de «sin coincidencias»
+
+#### Scenario: Cancelar la búsqueda
+- **GIVEN** que la búsqueda está activa
+- **WHEN** el usuario presiona `Esc`
+- **THEN** el filtro se borra y la lista vuelve a mostrar todas las historias
+
+#### Scenario: Refrescar el backlog
+- **GIVEN** que la lista del backlog está cargada
+- **WHEN** el usuario presiona `r`
+- **THEN** la TUI vuelve a consultar `GET /projects/{pid}/stories`
 
 ### Requirement: Crear historias mediante la TUI
 La TUI DEBERÁ permitir crear una historia con título, descripción, prioridad y criterios de aceptación, y enviarla al endpoint HTTP de creación del proyecto activo. La prioridad se ingresa como texto libre y la TUI NO validará sus valores permitidos. Los criterios de aceptación se ingresan en una sola línea separada por `;`; la TUI DEBERÁ recortar los espacios de cada elemento, descartar los elementos vacíos y enviarlos como lista. El cuerpo enviado DEBERÁ contener solo las claves `title`, `description`, `priority` y `acceptance_criteria`.
@@ -302,11 +371,11 @@ La TUI DEBERÁ presentar el resultado de cada operación del backlog sin cerrars
 - **THEN** presenta un error de la API que incluye el código de estado recibido
 - **AND** no falla al interpretar el cuerpo ni se cierra
 
-#### Scenario: HTTP 422 al consultar la lista por identificador inválido
-- **GIVEN** que el usuario ingresó un identificador de proyecto que la API rechaza con HTTP 422
+#### Scenario: HTTP 422 al consultar la lista del proyecto activo
+- **GIVEN** que la API rechaza la consulta del backlog con HTTP 422
 - **WHEN** la TUI presenta el resultado de la consulta
 - **THEN** muestra el detalle de `fields` como lista formateada
-- **AND** permite cambiar el proyecto
+- **AND** permite volver al selector para cambiar de proyecto
 
 #### Scenario: Error de transporte
 - **GIVEN** que no se puede establecer conexión con la API
