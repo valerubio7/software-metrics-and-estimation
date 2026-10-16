@@ -151,6 +151,10 @@ func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, ge
 		statusUseCase := application.NewGetProjectStatusUseCase(statusReader)
 		mux.Handle("GET /projects/{project_id}", transporthttp.NewGetProjectStatusHandler(statusUseCase, func() time.Time { return time.Now().UTC() }))
 	}
+	if projectLister, supportsProjectList := repository.(application.ProjectLister); supportsProjectList {
+		listUseCase := application.NewListProjectsUseCase(projectLister)
+		mux.Handle("GET /projects", transporthttp.NewListProjectsHandler(listUseCase, func() time.Time { return time.Now().UTC() }))
+	}
 	if dependencies.Stories != nil {
 		storyUseCase := storyapplication.NewCreateStoryUseCase(dependencies.Stories.Repository, dependencies.Stories.GenerateID)
 		mux.Handle("POST /projects/{project_id}/stories", storyhttp.NewCreateStoryHandler(storyUseCase))
