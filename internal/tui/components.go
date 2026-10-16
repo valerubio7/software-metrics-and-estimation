@@ -1,11 +1,37 @@
 package tui
 
 import (
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 )
+
+var ansiPattern = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+// stripANSI removes SGR sequences so a styled string can be repainted in one
+// pass without its inner resets cutting the background short.
+func stripANSI(s string) string { return ansiPattern.ReplaceAllString(s, "") }
+
+// row renders a selectable list row that spans the content width, so the
+// selection reads as a full-width bar instead of a text highlight.
+func (m Model) row(selected bool, text string) string {
+	width := m.innerWidth()
+	marker := "  "
+	if selected {
+		marker = "▸ "
+		text = stripANSI(text)
+	}
+	line := marker + text
+	if pad := width - lipgloss.Width(line); pad > 0 {
+		line += strings.Repeat(" ", pad)
+	}
+	if selected {
+		return selectedBarStyle.Render(line)
+	}
+	return rowStyle.Render(line)
+}
 
 // tone is a semantic color role for badges and inline cues.
 type tone int
@@ -184,27 +210,93 @@ func shortID(id string) string {
 	return id[:8]
 }
 
-// formRow renders a labelled input row. The focused row carries the selection
-// style and a trailing cursor; the plain text keeps the "Label: value" shape.
-func formRow(selected bool, label, value string) string {
+// formRow renders a labelled input row that fills the content width. The
+// focused row carries the selection bar and a trailing cursor; the plain text
+// keeps the "Label: value" shape.
+func (m Model) formRow(selected bool, label, value string) string {
 	text := label + ": " + value
+	marker := "  "
 	if selected {
+		marker = "▸ "
 		text += "_"
-		return cursorStyle.Render("▸") + " " + backlogSelectedStyle.Render(text)
 	}
-	return "  " + backlogItemStyle.Render(text)
+	line := marker + text
+	if pad := m.innerWidth() - lipgloss.Width(line); pad > 0 {
+		line += strings.Repeat(" ", pad)
+	}
+	if selected {
+		return selectedBarStyle.Render(line)
+	}
+	return rowStyle.Render(line)
 }
 
-// resultBody renders a result message, using the ok style for successes and the
-// error banner for failures.
-func resultBody(message string, success bool) string {
-	head, rest, found := strings.Cut(message, "\n\n")
-	if success {
-		rendered := statusOkStyle.Render(head)
-		if found {
-			return rendered + "\n\n" + rest
-		}
-		return rendered
+// wrapPlain word-wraps unstyled text to width, preserving explicit breaks.
+func wrapPlain(s string, width int) []string {
+	if width <= 0 || lipgloss.Width(s) <= width {
+		return []string{s}
 	}
-	return errorBannerStyle.Render(message)
+	var lines []string
+	current := ""
+	for _, word := range strings.Fields(s) {
+		candidate := word
+		if current != "" {
+			candidate = current + " " + word
+		}
+		if lipgloss.Width(candidate) > width && current != "" {
+			lines = append(lines, current)
+			current = word
+		} else {
+			current = candidate
+		}
+	}
+	if current != "" {
+		lines = append(lines, current)
+	}
+	if len(lines) == 0 {
+		return []string{""}
+	}
+	return lines
+}
+
+// errorBlock renders a failed operation as wrapped, danger-colored lines with a
+// leading marker. It has no border of its own: the surrounding panel provides it.
+func (m Model) errorBlock(message string) string {
+	width := m.innerWidth() - 2
+	head := lipgloss.NewStyle().Foreground(danger).Bold(true)
+	body := lipgloss.NewStyle().Foreground(danger)
+	var b strings.Builder
+	for i, raw := range strings.Split(message, "\n") {
+		for j, line := range wrapPlain(raw, width) {
+			if i == 0 && j == 0 {
+				b.WriteString(head.Render("✗ "+line) + "\n")
+				continue
+			}
+			b.WriteString(body.Render("  "+line) + "\n")
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// okBlock renders a successful message head in the ok style, wrapped to width.
+func (m Model) okBlock(message string) string {
+	head, rest, found := strings.Cut(message, "\n\n")
+	width := m.innerWidth() - 2
+	wrapped := wrapPlain(head, width)
+	for i, line := range wrapped {
+		wrapped[i] = statusOkStyle.Render(line)
+	}
+	out := strings.Join(wrapped, "\n")
+	if found {
+		out += "\n\n" + rest
+	}
+	return out
+}
+
+// resultBlock renders a result message: ok style for successes, the error block
+// for failures.
+func (m Model) resultBlock(message string, success bool) string {
+	if success {
+		return m.okBlock(message)
+	}
+	return m.errorBlock(message)
 }

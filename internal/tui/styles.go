@@ -16,6 +16,39 @@ var (
 	info       = lipgloss.AdaptiveColor{Light: "#1D4ED8", Dark: "#60A5FA"}
 	line       = lipgloss.AdaptiveColor{Light: "#D1D5DB", Dark: "#3F3F46"}
 	onAccent   = lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#1E1B4B"}
+	barBg      = lipgloss.AdaptiveColor{Light: "#EDE9FE", Dark: "#312E81"}
+	barBrand   = lipgloss.AdaptiveColor{Light: "#5B21B6", Dark: "#DDD6FE"}
+)
+
+var (
+	// Top application bar: a solid full-width band with the brand on the left
+	// and the connection state as a filled badge on the right.
+	appBarBrandStyle = lipgloss.NewStyle().
+				Background(barBg).
+				Foreground(barBrand).
+				Bold(true)
+
+	appBarFillStyle = lipgloss.NewStyle().
+			Background(barBg)
+
+	appBarOkStyle = lipgloss.NewStyle().
+			Background(ok).
+			Foreground(onAccent).
+			Bold(true)
+
+	appBarDangerStyle = lipgloss.NewStyle().
+				Background(danger).
+				Foreground(onAccent).
+				Bold(true)
+
+	// Selection bar: fills the content width so the focus reads as a bar.
+	selectedBarStyle = lipgloss.NewStyle().
+				Background(accent).
+				Foreground(onAccent).
+				Bold(true)
+
+	rowStyle = lipgloss.NewStyle().
+			Foreground(ink)
 )
 
 var (
@@ -85,25 +118,6 @@ var (
 
 	statusMutedStyle = lipgloss.NewStyle().
 				Foreground(muted)
-
-	errorBannerStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(danger).
-				Foreground(danger).
-				Bold(true).
-				Padding(0, 1)
-
-	successBannerStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(ok).
-				Foreground(ok).
-				Padding(0, 1)
-
-	warnBannerStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(warn).
-			Foreground(warn).
-			Padding(0, 1)
 
 	errorHintStyle = lipgloss.NewStyle().
 			Foreground(muted)

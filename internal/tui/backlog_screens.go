@@ -425,15 +425,6 @@ var (
 	backlogItemStyle     = itemStyle.UnsetPadding()
 )
 
-// choiceRow renders a selectable row like the menu does: a cursor and the
-// highlighted text when selected, an indented item otherwise.
-func choiceRow(selected bool, text string) string {
-	if selected {
-		return cursorStyle.Render("▸") + " " + backlogSelectedStyle.Render(text)
-	}
-	return "  " + backlogItemStyle.Render(text)
-}
-
 // projectLabel is the human-readable name of the session project, falling back to
 // its identifier when the picker did not supply a name.
 func (m Model) projectLabel() string {
@@ -460,7 +451,7 @@ func (m Model) viewBacklog() string {
 
 	actions := backlogActions(hasProject)
 	for i, action := range actions {
-		b.WriteString(choiceRow(i == m.backlogCursor, action) + "\n")
+		b.WriteString(m.row(i == m.backlogCursor, action) + "\n")
 	}
 	b.WriteString("\n")
 
@@ -488,7 +479,7 @@ func (m Model) viewBacklog() string {
 		return b.String()
 	}
 	for i, story := range stories {
-		b.WriteString(choiceRow(len(actions)+i == m.backlogCursor, storyRow(story)) + "\n")
+		b.WriteString(m.row(len(actions)+i == m.backlogCursor, storyRow(story)) + "\n")
 	}
 	return b.String()
 }
@@ -505,10 +496,10 @@ func (m Model) viewBacklogForm() string {
 	b.WriteString(hintStyle.Render("Proyecto: " + m.projectLabel()))
 	b.WriteString("\n\n")
 	for i, field := range form.fields() {
-		b.WriteString(formRow(i == form.field, field.label, *field.value) + "\n")
+		b.WriteString(m.formRow(i == form.field, field.label, *field.value) + "\n")
 	}
 	if form.err != "" {
-		b.WriteString("\n" + errorBannerStyle.Render(form.err) + "\n")
+		b.WriteString("\n" + m.errorBlock(form.err) + "\n")
 	}
 	b.WriteString("\n" + hintStyle.Render("Separá los criterios de aceptación con punto y coma."))
 	return b.String()
@@ -519,9 +510,9 @@ func (m Model) viewBacklogForm() string {
 func (m Model) viewBacklogResult() string {
 	var body string
 	if m.backlogReturn != "backlog" {
-		body = errorBannerStyle.Render(m.backlogMessage)
+		body = m.errorBlock(m.backlogMessage)
 	} else {
-		body = resultBody(m.backlogMessage, true)
+		body = m.resultBlock(m.backlogMessage, true)
 	}
 	return screenTitleStyle.Render("Resultado") + "\n\n" + body
 }

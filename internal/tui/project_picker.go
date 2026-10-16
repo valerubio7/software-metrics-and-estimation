@@ -143,7 +143,7 @@ func (m Model) viewProjectPicker() string {
 	b.WriteString("\n\n")
 
 	if m.message != "" {
-		b.WriteString(errorBannerStyle.Render(m.message))
+		b.WriteString(m.errorBlock(m.message))
 		b.WriteString("\n\n")
 	}
 	switch {
@@ -161,7 +161,7 @@ func (m Model) viewProjectPicker() string {
 		return b.String()
 	}
 	for i, project := range list {
-		b.WriteString(choiceRow(i == m.projectCursor, projectPickerRow(project)) + "\n")
+		b.WriteString(m.row(i == m.projectCursor, projectPickerRow(project)) + "\n")
 	}
 	return b.String()
 }

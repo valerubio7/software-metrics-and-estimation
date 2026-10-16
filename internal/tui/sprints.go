@@ -391,7 +391,7 @@ func (m Model) viewSprintsMenu() string {
 	b.WriteString(hintStyle.Render("Proyecto: " + m.projectLabel()))
 	b.WriteString("\n\n")
 	for i, option := range sprintMenuOptions() {
-		b.WriteString(choiceRow(i == m.sprintCursor, option) + "\n")
+		b.WriteString(m.row(i == m.sprintCursor, option) + "\n")
 	}
 	return b.String()
 }
@@ -406,7 +406,7 @@ func (m Model) viewSprintGoal() string {
 	b.WriteString("\n")
 	b.WriteString(hintStyle.Render("Proyecto: " + m.projectLabel()))
 	b.WriteString("\n\n")
-	b.WriteString(formRow(true, "Objetivo", m.sprintGoal))
+	b.WriteString(m.formRow(true, "Objetivo", m.sprintGoal))
 	return b.String()
 }
 
@@ -427,7 +427,7 @@ func (m Model) viewOpenSprints() string {
 		if row == "" {
 			row = "(sin objetivo)"
 		}
-		b.WriteString(choiceRow(i == m.sprintCursor, row+hintStyle.Render("   "+shortID(sprint.ID))) + "\n")
+		b.WriteString(m.row(i == m.sprintCursor, row+hintStyle.Render("   "+shortID(sprint.ID))) + "\n")
 	}
 	return b.String()
 }
@@ -451,7 +451,7 @@ func (m Model) viewSprintStorySelect() string {
 		if story.Priority != "" {
 			row += "  " + priorityBadge(story.Priority)
 		}
-		b.WriteString(choiceRow(i == m.sprintCursor, row) + "\n")
+		b.WriteString(m.row(i == m.sprintCursor, row) + "\n")
 	}
 	return b.String()
 }
@@ -478,7 +478,7 @@ func (m Model) viewAssignedStories() string {
 		if story.Status != "" {
 			row += "  " + storyStatusBadge(story.Status)
 		}
-		b.WriteString(choiceRow(i == m.sprintCursor, row) + "\n")
+		b.WriteString(m.row(i == m.sprintCursor, row) + "\n")
 	}
 	return b.String()
 }
@@ -489,15 +489,15 @@ func (m Model) viewSprintTaskForm() string {
 	b.WriteString("\n")
 	b.WriteString(hintStyle.Render("Historia: " + shortID(m.taskStoryID)))
 	b.WriteString("\n\n")
-	b.WriteString(formRow(m.taskField == 0, "Título", m.taskTitle) + "\n")
-	b.WriteString(formRow(m.taskField == 1, "Horas estimadas (opcional)", m.taskHours) + "\n")
+	b.WriteString(m.formRow(m.taskField == 0, "Título", m.taskTitle) + "\n")
+	b.WriteString(m.formRow(m.taskField == 1, "Horas estimadas (opcional)", m.taskHours) + "\n")
 	if m.sprintMessage != "" {
-		b.WriteString("\n" + errorBannerStyle.Render(m.sprintMessage) + "\n")
+		b.WriteString("\n" + m.errorBlock(m.sprintMessage) + "\n")
 	}
 	return b.String()
 }
 
 func (m Model) viewSprintResult() string {
 	success := !strings.HasPrefix(m.sprintMessage, "Error") && !strings.Contains(m.sprintMessage, "API rechazó") && !strings.Contains(m.sprintMessage, "no existe")
-	return screenTitleStyle.Render("Resultado") + "\n\n" + resultBody(m.sprintMessage, success)
+	return screenTitleStyle.Render("Resultado") + "\n\n" + m.resultBlock(m.sprintMessage, success)
 }

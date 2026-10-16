@@ -59,7 +59,11 @@ func fieldValue(t *testing.T, view, label string) string {
 	t.Helper()
 	for _, line := range strings.Split(view, "\n") {
 		if _, value, found := strings.Cut(line, label+": "); found {
-			return strings.TrimSuffix(strings.TrimRight(value, "\r"), "_")
+			value = strings.TrimRight(value, "\r ")
+			value = strings.TrimSuffix(value, "│")
+			value = strings.TrimRight(value, " ")
+			value = strings.TrimSuffix(value, "_")
+			return strings.TrimRight(value, " ")
 		}
 	}
 	t.Fatalf("label %q not found in view %q", label, view)

@@ -59,6 +59,24 @@ func wantPlainBody(t *testing.T, view, body string) {
 // hasBackground reports whether the line carries a 24-bit background color.
 func hasBackground(line string) bool { return strings.Contains(line, "48;2;") }
 
+func TestSelectionRowSpansContentWidth(t *testing.T) {
+	m := tui.NewModel("http://localhost:8080")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
+	view := stripANSI(updated.(tui.Model).View())
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "▸ Proyectos") {
+			if w := lipgloss.Width(line); w != 60 {
+				t.Errorf("selected row width = %d, want 60 (line %q)", w, line)
+			}
+			if !strings.HasPrefix(line, "│") || !strings.HasSuffix(line, "│") {
+				t.Errorf("selected row = %q, want it inside the content panel", line)
+			}
+			return
+		}
+	}
+	t.Fatalf("selected row not found in %q", view)
+}
+
 func TestStyledChromeShowsBrandAndBreadcrumb(t *testing.T) {
 	forceColor(t)
 	server, _ := fakeBacklogAPI(t, apiStubs{})
@@ -80,8 +98,10 @@ func TestStyledBacklogListUsesMenuStyle(t *testing.T) {
 	m := openBacklogWithProject(t, server.URL, "p1")
 	view := m.View()
 
-	wantPlainBody(t, view, "Backlog del proyecto Alpha\n\n"+
-		"▸ Crear historia\n  Cambiar proyecto\n  Refrescar\n  Volver\n")
+	wantPlainBody(t, view, "Backlog del proyecto Alpha")
+	for _, action := range []string{"Crear historia", "Cambiar proyecto", "Refrescar", "Volver"} {
+		wantPlainBody(t, view, action)
+	}
 	wantPlainBody(t, view, "Login")
 	wantPlainBody(t, view, "Alta de usuarios")
 
@@ -89,6 +109,9 @@ func TestStyledBacklogListUsesMenuStyle(t *testing.T) {
 	selected := wantStyled(t, view, "▸ Crear historia")
 	if !hasBackground(selected) {
 		t.Errorf("selected row %q has no background, want the menu selection style", selected)
+	}
+	if w := lipgloss.Width(stripANSI(selected)); w != 80 {
+		t.Errorf("selected row width = %d, want it to fill the 80-column content width", w)
 	}
 	for _, needle := range []string{"Cambiar proyecto"} {
 		line := wantStyled(t, view, needle)
@@ -121,13 +144,13 @@ func TestStyledBacklogEmptyAndLoadingMessagesAreMuted(t *testing.T) {
 	t.Run("loading", func(t *testing.T) {
 		server, _ := fakeBacklogAPI(t, apiStubs{})
 		view := loadingBacklog(t, server.URL, "p1").View()
-		wantPlainBody(t, view, "Cargando backlog…\n")
+		wantPlainBody(t, view, "Cargando backlog…")
 		wantStyled(t, view, "Cargando backlog…")
 	})
 	t.Run("empty", func(t *testing.T) {
 		server, _ := fakeBacklogAPI(t, apiStubs{list: stub{http.StatusOK, storiesBody(t, nil)}})
 		view := openBacklogWithProject(t, server.URL, "p1").View()
-		wantPlainBody(t, view, "El backlog no tiene historias.\n")
+		wantPlainBody(t, view, "El backlog no tiene historias.")
 		wantStyled(t, view, "El backlog no tiene historias.")
 	})
 	t.Run("picker loading", func(t *testing.T) {
@@ -157,7 +180,7 @@ func TestStyledBacklogFormUsesSelectionStyleAndErrorBanner(t *testing.T) {
 	m := press(openBacklogWithProject(t, server.URL, "p1"), tea.KeyEnter) // Crear historia
 	view := m.View()
 
-	wantPlainBody(t, view, "Crear historia\n")
+	wantPlainBody(t, view, "Crear historia")
 	wantPlainBody(t, view, "▸ Título: ")
 	wantPlainBody(t, view, "  Descripción: ")
 	wantStyled(t, view, "Crear historia")
@@ -169,7 +192,7 @@ func TestStyledBacklogFormUsesSelectionStyleAndErrorBanner(t *testing.T) {
 	}
 	wantStyled(t, view, "Separá los criterios")
 
-	t.Run("local error uses the error banner", func(t *testing.T) {
+	t.Run("local error uses the error style", func(t *testing.T) {
 		edit := selectStory(openBacklogWithProject(t, server.URL, "p1"), 0)
 		edit = advanceFields(edit, 5)
 		edit = typeText(edit, "abc")
@@ -177,13 +200,13 @@ func TestStyledBacklogFormUsesSelectionStyleAndErrorBanner(t *testing.T) {
 		view := edit.View()
 		wantPlainBody(t, view, "Horas estimadas debe ser un número")
 		line := wantStyled(t, view, "Horas estimadas debe ser un número")
-		if !strings.Contains(line, "│") {
-			t.Errorf("error line %q has no banner border, want the error banner style", line)
+		if !strings.Contains(stripANSI(line), "✗") {
+			t.Errorf("error line %q lacks the error marker, want the error style", line)
 		}
 	})
 }
 
-func TestStyledBacklogFailureResultUsesErrorBanner(t *testing.T) {
+func TestStyledBacklogFailureResultUsesErrorStyle(t *testing.T) {
 	forceColor(t)
 	server, _ := fakeBacklogAPI(t, apiStubs{})
 	m := openBacklogWithProject(t, server.URL, "p1")
@@ -195,14 +218,12 @@ func TestStyledBacklogFailureResultUsesErrorBanner(t *testing.T) {
 		wantPlainBody(t, view, want)
 	}
 	wantStyled(t, view, "Resultado")
-	for _, needle := range []string{"La API rechazó los datos (422)", "- priority: valor inválido", "- title: es obligatorio"} {
-		line := wantStyled(t, view, needle)
-		if !strings.Contains(line, "│") {
-			t.Errorf("error line %q has no banner border, want the error banner style", line)
-		}
+	head := wantStyled(t, view, "La API rechazó los datos (422)")
+	if !strings.Contains(stripANSI(head), "✗") {
+		t.Errorf("error heading %q lacks the error marker", head)
 	}
-	if !strings.Contains(stripANSI(view), "╭") {
-		t.Errorf("stripped View() = %q, want the rounded error banner border", stripANSI(view))
+	if strings.Contains(stripANSI(view), "Historia creada") {
+		t.Errorf("stripped View() = %q, must not communicate success", stripANSI(view))
 	}
 }
 
@@ -221,11 +242,8 @@ func TestStyledBacklogSuccessResultUsesOkStyle(t *testing.T) {
 	wantPlainBody(t, view, "Historia nueva")
 	wantStyled(t, view, "Resultado")
 	ok := wantStyled(t, view, "Historia creada correctamente (201)")
-	if strings.Contains(ok, "│") {
-		t.Errorf("success line %q has a banner border, want only the ok style", ok)
-	}
-	if strings.Contains(stripANSI(view), "╭") {
-		t.Errorf("stripped View() = %q, want no error banner on success", stripANSI(view))
+	if strings.Contains(stripANSI(ok), "✗") {
+		t.Errorf("success line %q carries the error marker, want only the ok style", ok)
 	}
 }
 

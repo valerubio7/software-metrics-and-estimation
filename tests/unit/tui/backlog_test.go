@@ -753,9 +753,13 @@ func TestBacklogRendersValidationErrorsAsList(t *testing.T) {
 }
 
 func TestBacklogRendersNotFoundWithGenericMessageAndAPIDetail(t *testing.T) {
-	cases := []struct{ name, body, detail string }{
-		{"story", `{"error":"story_not_found","message":"story not found"}`, "Detalle de la API: story_not_found: story not found"},
-		{"project", `{"error":"project_not_found","message":"project not found"}`, "Detalle de la API: project_not_found: project not found"},
+	cases := []struct {
+		name string
+		body string
+		want []string
+	}{
+		{"story", `{"error":"story_not_found","message":"story not found"}`, []string{"no existe (404)", "story_not_found", "story not found"}},
+		{"project", `{"error":"project_not_found","message":"project not found"}`, []string{"no existe (404)", "project_not_found", "project not found"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -763,7 +767,7 @@ func TestBacklogRendersNotFoundWithGenericMessageAndAPIDetail(t *testing.T) {
 			m := openBacklogWithProject(t, server.URL, "p1")
 			m, _ = apply(m, tui.BacklogResultMsg{Op: tui.BacklogOpUpdate, Response: tui.APIResponse{StatusCode: 404, Body: []byte(tc.body)}})
 			view := m.View()
-			for _, want := range []string{"El recurso solicitado no existe (404)", tc.detail} {
+			for _, want := range tc.want {
 				if !strings.Contains(view, want) {
 					t.Errorf("View() = %q, want %q", view, want)
 				}

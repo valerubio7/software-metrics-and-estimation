@@ -32,6 +32,17 @@ La TUI DEBERÁ mostrar un menú con las opciones proyectos, backlog, sprints y s
 - **WHEN** el usuario presiona «Abajo» y luego «Enter»
 - **THEN** la TUI presenta el flujo de gestión del backlog (el selector de proyectos si no hay proyecto activo, o la lista del backlog si ya lo hay)
 
+### Requirement: Presentar el contenido en un panel con jerarquía visual
+La TUI DEBERÁ mostrar el contenido de cada pantalla dentro de un panel con borde que ocupa el ancho disponible, encabezado por una barra superior sólida con la marca y el estado de conexión a la API, seguida de la miga de pan (breadcrumb). La fila enfocada DEBERÁ resaltarse como una barra que ocupa todo el ancho del panel, no solo el texto. Cuando el ancho no alcanza para la marca, la barra superior DEBERÁ priorizar el indicador de conexión y mantener el contenido dentro del ancho disponible sin desbordar.
+
+#### Scenario: Selección como barra completa
+- **WHEN** una lista o formulario muestra una fila enfocada
+- **THEN** la fila enfocada se resalta con una barra que ocupa todo el ancho del panel
+
+#### Scenario: Ancho reducido
+- **WHEN** la terminal es más angosta que la marca más el indicador de conexión
+- **THEN** la barra superior conserva el indicador de conexión y el resto del contenido se mantiene dentro del ancho disponible
+
 ### Requirement: Mostrar la ayuda de teclado
 La TUI DEBERÁ ofrecer una ayuda de teclado accesible con `?` desde las pantallas que no son de entrada de texto, y cerrarla con `Esc`, `Enter` o `?`. Dentro de un campo de texto `?` se trata como un carácter más.
 

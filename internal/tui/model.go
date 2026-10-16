@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Model is the Bubble Tea model for the TUI.
@@ -406,27 +407,26 @@ func (m Model) applyProjectResult(result ProjectResultMsg) (Model, tea.Cmd) {
 
 // View implements tea.Model.
 func (m Model) View() string {
+	var content strings.Builder
+	if m.showHelp {
+		content.WriteString(m.viewHelp())
+	} else {
+		if m.APIErr != nil {
+			content.WriteString(m.errorBlock("API no disponible: " + m.APIErr.Error()))
+			content.WriteString("\n")
+			content.WriteString(errorHintStyle.Render("Revisá API_URL o levantá la API; la navegación sigue disponible."))
+			content.WriteString("\n\n")
+		}
+		content.WriteString(m.viewBody())
+	}
 	var b strings.Builder
 	b.WriteString(m.chrome())
 	b.WriteString("\n")
-	if m.showHelp {
-		b.WriteString(m.viewHelp())
-		b.WriteString("\n\n")
-		b.WriteString(m.footer())
-		return b.String()
-	}
-	if m.APIErr != nil {
-		b.WriteString(errorBannerStyle.Render("API no disponible: " + m.APIErr.Error()))
-		b.WriteString("\n")
-		b.WriteString(errorHintStyle.Render("Revisá API_URL o levantá la API; la navegación sigue disponible."))
-		b.WriteString("\n\n")
-	}
-	b.WriteString(m.viewBody())
-	b.WriteString("\n\n")
+	b.WriteString(m.card(content.String()))
+	b.WriteString("\n")
 	b.WriteString(m.footer())
 	return b.String()
 }
-
 func (m Model) viewBody() string {
 	switch m.Screen {
 	case "menu":
@@ -479,7 +479,7 @@ func (m Model) viewMenu() string {
 	b.WriteString(hintStyle.Render(context))
 	b.WriteString("\n\n")
 	for i, choice := range m.Choices {
-		b.WriteString(choiceRow(i == m.Cursor, choice) + "\n")
+		b.WriteString(m.row(i == m.Cursor, choice) + "\n")
 	}
 	return b.String()
 }
@@ -489,7 +489,7 @@ func (m Model) viewProjects() string {
 	b.WriteString(screenTitleStyle.Render("Proyectos"))
 	b.WriteString("\n\n")
 	for i, option := range projectMenuOptions() {
-		b.WriteString(choiceRow(i == m.projectCursorLegacy, option) + "\n")
+		b.WriteString(m.row(i == m.projectCursorLegacy, option) + "\n")
 	}
 	return b.String()
 }
@@ -504,7 +504,7 @@ func (m Model) viewProjectForm() string {
 	b.WriteString("\n\n")
 	fields := []struct{ label, value string }{{"Nombre", m.form.Name}, {"Fecha inicio (YYYY-MM-DD)", m.form.StartDate}, {"Fecha fin planificada (YYYY-MM-DD)", m.form.PlannedFinishDate}}
 	for i, field := range fields {
-		b.WriteString(formRow(i == m.formField, field.label, field.value) + "\n")
+		b.WriteString(m.formRow(i == m.formField, field.label, field.value) + "\n")
 	}
 	b.WriteString("\n")
 	b.WriteString(hintStyle.Render("Tab/↑/↓ para cambiar de campo; Enter en el último para enviar; Esc para volver."))
@@ -517,7 +517,7 @@ func (m Model) viewProjectID() string {
 	b.WriteString("\n\n")
 	b.WriteString(hintStyle.Render(m.message))
 	b.WriteString("\n\n")
-	b.WriteString(formRow(true, "ID", m.projectID))
+	b.WriteString(m.formRow(true, "ID", m.projectID))
 	b.WriteString("\n\n")
 	b.WriteString(hintStyle.Render("Enter para continuar, Esc para volver."))
 	return b.String()
@@ -527,31 +527,46 @@ func (m Model) viewProjectResult() string {
 	var b strings.Builder
 	b.WriteString(screenTitleStyle.Render("Resultado"))
 	b.WriteString("\n\n")
-	b.WriteString(resultBody(m.message, !strings.HasPrefix(m.message, "Error") && !strings.Contains(m.message, "no existe")))
+	b.WriteString(m.resultBlock(m.message, !strings.HasPrefix(m.message, "Error") && !strings.Contains(m.message, "no existe")))
 	return b.String()
 }
 
-// chrome renders the persistent top bar: brand, API status, breadcrumb and rule.
+// chrome renders the persistent top bar: a solid app bar with the brand and
+// the connection state, followed by the breadcrumb trail and a rule.
 func (m Model) chrome() string {
 	width := m.contentWidth()
-	left := brandStyle.Render("◆  Software Metrics & Estimation")
-	var right string
+	status, statusStyle := "● API conectada", appBarOkStyle
 	if m.APIErr != nil {
-		right = badge("api caída", toneDanger)
-	} else {
-		right = statusOkStyle.Render("● API conectada")
-	}
-	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 1 {
-		gap = 1
+		status, statusStyle = "● API caída", appBarDangerStyle
 	}
 	var b strings.Builder
-	b.WriteString(left + strings.Repeat(" ", gap) + right)
+	b.WriteString(m.appBar(statusStyle, status))
 	b.WriteString("\n")
-	b.WriteString(breadcrumb(m.crumbParts()...))
+	b.WriteString(ansi.Truncate(breadcrumb(m.crumbParts()...), width, "…"))
 	b.WriteString("\n")
 	b.WriteString(ruleStyle.Render(strings.Repeat("─", width)))
 	return b.String()
+}
+
+// appBar renders the solid top band. On narrow terminals it drops the brand
+// text (keeping the marker) so the connection badge always stays visible.
+func (m Model) appBar(statusStyle lipgloss.Style, status string) string {
+	width := m.contentWidth()
+	right := statusStyle.Render(" " + status + " ")
+	rw := lipgloss.Width(right)
+	if width <= rw {
+		return statusStyle.Render(ansi.Truncate(" "+status+" ", width, "…"))
+	}
+	brand := " ◆ Software Metrics & Estimation "
+	left := appBarBrandStyle.Render(brand)
+	if lipgloss.Width(left)+rw+1 > width {
+		left = appBarBrandStyle.Render(" ◆ ")
+	}
+	gap := width - lipgloss.Width(left) - rw
+	if gap < 0 {
+		gap = 0
+	}
+	return left + appBarFillStyle.Render(strings.Repeat(" ", gap)) + right
 }
 
 func (m Model) crumbParts() []string {
@@ -699,4 +714,40 @@ func (m Model) contentWidth() int {
 		return m.width
 	}
 	return 80
+}
+
+// innerWidth is the usable width inside the content panel (borders and
+// horizontal padding subtracted), used by rows and form fields so their
+// selection bar fills the panel.
+func (m Model) innerWidth() int {
+	if w := m.contentWidth() - 4; w > 10 {
+		return w
+	}
+	return 10
+}
+
+// card frames the body in a rounded panel sized to the content width. Plain
+// text wraps to the inner width; already-styled lines are truncated as a
+// safety net so a stray long row cannot widen the panel.
+func (m Model) card(body string) string {
+	inner := m.innerWidth()
+	var lines []string
+	for _, line := range strings.Split(body, "\n") {
+		if ansiPattern.MatchString(line) {
+			lines = append(lines, padToWidth(ansi.Truncate(line, inner, "…"), inner))
+			continue
+		}
+		for _, wrapped := range wrapPlain(line, inner) {
+			lines = append(lines, padToWidth(wrapped, inner))
+		}
+	}
+	return panelStyle.Width(m.contentWidth() - 2).Render(strings.Join(lines, "\n"))
+}
+
+// padToWidth right-pads s with spaces to width using its display width.
+func padToWidth(s string, width int) string {
+	if pad := width - lipgloss.Width(s); pad > 0 {
+		return s + strings.Repeat(" ", pad)
+	}
+	return s
 }
