@@ -112,6 +112,7 @@ func (m Model) selectProject(project ProjectSummary) (Model, tea.Cmd) {
 	switch purpose {
 	case "backlog":
 		m.Screen = "backlog"
+		m.backlogFilter, m.backlogFiltering = "", false
 		return m.startBacklogLoad()
 	case "sprint-create":
 		m.Screen, m.sprintAction, m.sprintGoal = "sprint-goal", "create", ""

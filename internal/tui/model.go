@@ -42,18 +42,20 @@ type Model struct {
 	message             string
 	client              *ProjectClient
 
-	backlogCursor  int
-	backlogStories []Story
-	backlogLoading bool
-	backlogForm    storyForm
-	backlogMessage string
-	backlogReturn  string
-	backlogClient  *BacklogClient
-	sprintClient   *SprintClient
-	sprintCursor   int
-	sprintGoal     string
-	sprintMessage  string
-	sprintAction   string
+	backlogCursor    int
+	backlogStories   []Story
+	backlogLoading   bool
+	backlogFilter    string
+	backlogFiltering bool
+	backlogForm      storyForm
+	backlogMessage   string
+	backlogReturn    string
+	backlogClient    *BacklogClient
+	sprintClient     *SprintClient
+	sprintCursor     int
+	sprintGoal       string
+	sprintMessage    string
+	sprintAction     string
 
 	selectedSprintID string
 	taskStoryID      string
@@ -118,14 +120,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if key.Type == tea.KeyRunes && string(key.Runes) == "?" && !entersText(m.Screen) {
+	if key.Type == tea.KeyRunes && string(key.Runes) == "?" && !entersText(m.Screen) && !m.filtering() {
 		m.showHelp = true
 		return m, nil
 	}
-	if key.Type == tea.KeyRunes && string(key.Runes) == "p" && quitsOnQ(m.Screen) {
+	if key.Type == tea.KeyRunes && string(key.Runes) == "p" && quitsOnQ(m.Screen) && !m.filtering() {
 		return m.openProjectPicker("project")
 	}
-	if isQuitRune(key) && quitsOnQ(m.Screen) {
+	if isQuitRune(key) && quitsOnQ(m.Screen) && !m.filtering() {
 		return m, tea.Quit
 	}
 	switch m.Screen {
@@ -207,6 +209,12 @@ func quitsOnQ(screen string) bool {
 
 func isQuitRune(key tea.KeyMsg) bool {
 	return key.Type == tea.KeyRunes && len(key.Runes) == 1 && (key.Runes[0] == 'q' || key.Runes[0] == 'Q')
+}
+
+// filtering reports whether the backlog search box owns the keyboard, so global
+// shortcuts (?, p, q) must be typed into it instead of triggering.
+func (m Model) filtering() bool {
+	return m.Screen == "backlog" && m.backlogFiltering
 }
 
 // editText applies a text-editing key to value: runes and the space bar are

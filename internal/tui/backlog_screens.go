@@ -126,11 +126,27 @@ func backlogActions(hasProject bool) []string {
 // one and offering the picker otherwise.
 func (m Model) openBacklog() (Model, tea.Cmd) {
 	m.backlogCursor = 0
+	m.backlogFilter, m.backlogFiltering = "", false
 	if m.activeProjectID == "" {
 		return m.openProjectPicker("backlog")
 	}
 	m.Screen = "backlog"
 	return m.startBacklogLoad()
+}
+
+// visibleStories is the backlog narrowed by the search box, preserving API order.
+func (m Model) visibleStories() []Story {
+	filter := strings.ToLower(strings.TrimSpace(m.backlogFilter))
+	if filter == "" {
+		return m.backlogStories
+	}
+	matches := make([]Story, 0, len(m.backlogStories))
+	for _, story := range m.backlogStories {
+		if strings.Contains(strings.ToLower(story.Title), filter) {
+			matches = append(matches, story)
+		}
+	}
+	return matches
 }
 
 func (m Model) startBacklogLoad() (Model, tea.Cmd) {
@@ -140,7 +156,25 @@ func (m Model) startBacklogLoad() (Model, tea.Cmd) {
 
 func (m Model) updateBacklog(key tea.KeyMsg) (Model, tea.Cmd) {
 	actions := backlogActions(m.activeProjectID != "")
-	last := len(actions) + len(m.backlogStories) - 1
+	stories := m.visibleStories()
+
+	if m.backlogFiltering {
+		switch key.Type {
+		case tea.KeyEsc:
+			m.backlogFiltering, m.backlogFilter, m.backlogCursor = false, "", 0
+			return m, nil
+		case tea.KeyEnter:
+			m.backlogFiltering = false
+			return m, nil
+		}
+		if value, ok := editText(m.backlogFilter, key); ok {
+			m.backlogFilter = value
+			m.backlogCursor = 0
+		}
+		return m, nil
+	}
+
+	last := len(actions) + len(stories) - 1
 	switch key.Type {
 	case tea.KeyUp:
 		if m.backlogCursor > 0 {
@@ -153,13 +187,19 @@ func (m Model) updateBacklog(key tea.KeyMsg) (Model, tea.Cmd) {
 	case tea.KeyEsc:
 		m.Screen, m.Cursor = "menu", 0
 	case tea.KeyRunes:
-		if string(key.Runes) == "r" {
+		switch string(key.Runes) {
+		case "r":
 			return m.startBacklogLoad()
+		case "/":
+			m.backlogFiltering = true
+			return m, nil
 		}
 	case tea.KeyEnter:
 		if m.backlogCursor >= len(actions) {
-			story := m.backlogCursor - len(actions)
-			m.Screen, m.backlogForm = "backlog-form", newUpdateForm(m.backlogStories[story])
+			index := m.backlogCursor - len(actions)
+			if index < len(stories) {
+				m.Screen, m.backlogForm = "backlog-form", newUpdateForm(stories[index])
+			}
 			return m, nil
 		}
 		switch actions[m.backlogCursor] {
@@ -424,6 +464,14 @@ func (m Model) viewBacklog() string {
 	}
 	b.WriteString("\n")
 
+	if m.backlogFiltering || m.backlogFilter != "" {
+		cursor := ""
+		if m.backlogFiltering {
+			cursor = "_"
+		}
+		b.WriteString(cursorStyle.Render("⌕ ") + hintStyle.Render("Buscar: ") + m.backlogFilter + cursor + "\n\n")
+	}
+
 	switch {
 	case m.backlogLoading:
 		b.WriteString(statusMutedStyle.Render("Cargando backlog…") + "\n")
@@ -433,8 +481,13 @@ func (m Model) viewBacklog() string {
 		return b.String()
 	}
 
-	b.WriteString(sectionLabel("Historias") + "  " + hintStyle.Render(fmt.Sprintf("(%d)", len(m.backlogStories))) + "\n")
-	for i, story := range m.backlogStories {
+	stories := m.visibleStories()
+	b.WriteString(sectionLabel("Historias") + "  " + hintStyle.Render(fmt.Sprintf("(%d)", len(stories))) + "\n")
+	if len(stories) == 0 {
+		b.WriteString(emptyState("⌕", "Sin coincidencias.", "Probá con otro título o borrá la búsqueda.") + "\n")
+		return b.String()
+	}
+	for i, story := range stories {
 		b.WriteString(choiceRow(len(actions)+i == m.backlogCursor, storyRow(story)) + "\n")
 	}
 	return b.String()

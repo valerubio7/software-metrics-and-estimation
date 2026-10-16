@@ -372,6 +372,52 @@ func TestBacklogEmptyListShowsMessageAndKeepsActions(t *testing.T) {
 	}
 }
 
+func TestBacklogSearchFiltersStories(t *testing.T) {
+	server, _ := fakeBacklogAPI(t, apiStubs{})
+	m := openBacklogWithProject(t, server.URL, "p1")
+
+	m, _ = apply(m, keyMsg("/"))
+	if !strings.Contains(m.View(), "Buscar: _") {
+		t.Fatalf("View() = %q, want the search prompt", m.View())
+	}
+	// q is a normal character while the search box owns the keyboard.
+	m, cmd := apply(m, keyMsg("q"))
+	if isQuit(cmd) {
+		t.Fatal("q must be typed into the search box, not quit")
+	}
+	m = press(m, tea.KeyBackspace)
+	m = typeText(m, "Alta")
+	view := m.View()
+	if !strings.Contains(view, "Alta de usuarios") || strings.Contains(view, "Login") {
+		t.Fatalf("View() = %q, want only the matching story", view)
+	}
+	m, _ = apply(m, keyMsg("zz"))
+	view = m.View()
+	if !strings.Contains(view, "Sin coincidencias.") || strings.Contains(view, "Alta de usuarios") {
+		t.Fatalf("View() = %q, want the no-match state", view)
+	}
+	for range 2 {
+		m = press(m, tea.KeyBackspace)
+	}
+	m = press(m, tea.KeyEnter)
+
+	// The filtered story is now the first selectable story, after the actions.
+	for i := 0; i < backlogActionCount; i++ {
+		m = press(m, tea.KeyDown)
+	}
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.Screen != "backlog-form" || fieldValue(t, m.View(), "Título") != "Alta de usuarios" {
+		t.Fatalf("Screen = %q view = %q, want the filtered story form", m.Screen, m.View())
+	}
+
+	m = press(m, tea.KeyEsc) // back to the filtered backlog
+	m, _ = apply(m, keyMsg("/"))
+	m = press(m, tea.KeyEsc) // clear the search
+	if strings.Contains(m.View(), "Buscar:") {
+		t.Errorf("View() = %q, want the search box removed after Esc", m.View())
+	}
+}
+
 func TestBacklogCreateStorySendsFourKeysAndShowsSuccess(t *testing.T) {
 	created := tui.Story{ID: "s9", Title: "Respuesta de la API", Priority: "alta", Status: "pendiente"}
 	server, rec := fakeBacklogAPI(t, apiStubs{create: stub{http.StatusCreated, storyBody(t, created)}})
