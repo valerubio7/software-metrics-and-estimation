@@ -117,27 +117,29 @@ func parseEstimatedHours(s string) (*float64, error) {
 
 func backlogActions(hasProject bool) []string {
 	if hasProject {
-		return []string{"Crear historia", "Cambiar proyecto", "Volver"}
+		return []string{"Crear historia", "Cambiar proyecto", "Refrescar", "Volver"}
 	}
 	return []string{"Elegir proyecto", "Volver"}
 }
 
-// openBacklog enters the backlog screen, loading the kept project when there is one.
+// openBacklog enters the backlog screen, loading the session project when there is
+// one and offering the picker otherwise.
 func (m Model) openBacklog() (Model, tea.Cmd) {
-	m.Screen, m.backlogCursor = "backlog", 0
-	if m.backlogProjectID == "" {
-		return m, nil
+	m.backlogCursor = 0
+	if m.activeProjectID == "" {
+		return m.openProjectPicker("backlog")
 	}
+	m.Screen = "backlog"
 	return m.startBacklogLoad()
 }
 
 func (m Model) startBacklogLoad() (Model, tea.Cmd) {
 	m.backlogStories, m.backlogLoading, m.backlogCursor = nil, true, 0
-	return m, m.listStoriesCmd(m.backlogProjectID)
+	return m, m.listStoriesCmd(m.activeProjectID)
 }
 
 func (m Model) updateBacklog(key tea.KeyMsg) (Model, tea.Cmd) {
-	actions := backlogActions(m.backlogProjectID != "")
+	actions := backlogActions(m.activeProjectID != "")
 	last := len(actions) + len(m.backlogStories) - 1
 	switch key.Type {
 	case tea.KeyUp:
@@ -150,6 +152,10 @@ func (m Model) updateBacklog(key tea.KeyMsg) (Model, tea.Cmd) {
 		}
 	case tea.KeyEsc:
 		m.Screen, m.Cursor = "menu", 0
+	case tea.KeyRunes:
+		if string(key.Runes) == "r" {
+			return m.startBacklogLoad()
+		}
 	case tea.KeyEnter:
 		if m.backlogCursor >= len(actions) {
 			story := m.backlogCursor - len(actions)
@@ -160,29 +166,12 @@ func (m Model) updateBacklog(key tea.KeyMsg) (Model, tea.Cmd) {
 		case "Crear historia":
 			m.Screen, m.backlogForm = "backlog-form", storyForm{}
 		case "Elegir proyecto", "Cambiar proyecto":
-			m.Screen, m.backlogInput = "backlog-project", m.backlogProjectID
+			return m.openProjectPicker("backlog")
+		case "Refrescar":
+			return m.startBacklogLoad()
 		default:
 			m.Screen, m.Cursor = "menu", 0
 		}
-	}
-	return m, nil
-}
-
-func (m Model) updateBacklogProject(key tea.KeyMsg) (Model, tea.Cmd) {
-	switch key.Type {
-	case tea.KeyEsc:
-		m.Screen, m.backlogCursor = "backlog", 0
-		return m, nil
-	case tea.KeyEnter:
-		id := strings.TrimSpace(m.backlogInput)
-		if id == "" {
-			return m, nil
-		}
-		m.Screen, m.backlogProjectID = "backlog", id
-		return m.startBacklogLoad()
-	}
-	if value, ok := editText(m.backlogInput, key); ok {
-		m.backlogInput = value
 	}
 	return m, nil
 }
@@ -218,14 +207,14 @@ func (m Model) updateBacklogForm(key tea.KeyMsg) (Model, tea.Cmd) {
 func (m Model) submitStoryForm(form storyForm) (Model, tea.Cmd) {
 	m.backlogForm = form
 	if form.storyID == "" {
-		return m, m.createStoryCmd(m.backlogProjectID, form.createInput())
+		return m, m.createStoryCmd(m.activeProjectID, form.createInput())
 	}
 	input, err := form.updateInput()
 	if err != nil {
 		m.backlogForm.err = err.Error()
 		return m, nil
 	}
-	return m, m.updateStoryCmd(m.backlogProjectID, form.storyID, input)
+	return m, m.updateStoryCmd(m.activeProjectID, form.storyID, input)
 }
 
 func (m Model) updateBacklogResult(key tea.KeyMsg) (Model, tea.Cmd) {
@@ -235,8 +224,8 @@ func (m Model) updateBacklogResult(key tea.KeyMsg) (Model, tea.Cmd) {
 	switch m.backlogReturn {
 	case "backlog-form":
 		m.Screen = "backlog-form"
-	case "backlog-project":
-		m.Screen, m.backlogInput = "backlog-project", m.backlogProjectID
+	case "project-picker":
+		return m.openProjectPicker("backlog")
 	default:
 		m.Screen = "backlog"
 		return m.startBacklogLoad()
@@ -282,14 +271,14 @@ func (m Model) applyBacklogResult(result BacklogResultMsg) (Model, tea.Cmd) {
 		}
 		m.backlogLoading = false
 		if message, failed := backlogFailure(result); failed {
-			m.Screen, m.backlogMessage, m.backlogReturn = "backlog-result", message, "backlog-project"
+			m.Screen, m.backlogMessage, m.backlogReturn = "backlog-result", message, "project-picker"
 			return m, nil
 		}
 		var listing struct {
 			Stories []Story `json:"stories"`
 		}
 		if err := json.Unmarshal(result.Response.Body, &listing); err != nil {
-			m.Screen, m.backlogReturn = "backlog-result", "backlog-project"
+			m.Screen, m.backlogReturn = "backlog-result", "project-picker"
 			m.backlogMessage = "No se pudo interpretar la respuesta de la API: " + err.Error()
 			return m, nil
 		}
@@ -374,7 +363,19 @@ func storyRow(story Story) string {
 	if story.StoryPoints != nil {
 		points = strconv.Itoa(*story.StoryPoints)
 	}
-	return fmt.Sprintf("%s · prioridad %s · estado %s · puntos %s", story.Title, story.Priority, story.Status, points)
+	hours := "—"
+	if story.EstimatedHours != nil {
+		hours = strconv.FormatFloat(*story.EstimatedHours, 'f', -1, 64)
+	}
+	title := story.Title
+	parts := []string{title}
+	if story.Priority != "" {
+		parts = append(parts, priorityBadge(story.Priority))
+	}
+	if story.Status != "" {
+		parts = append(parts, storyStatusBadge(story.Status))
+	}
+	return strings.Join(parts, "  ") + hintStyle.Render(fmt.Sprintf("   puntos %s · horas %s", points, hours))
 }
 
 // Backlog screens reuse the menu styles. The row styles drop the menu padding so
@@ -393,77 +394,70 @@ func choiceRow(selected bool, text string) string {
 	return "  " + backlogItemStyle.Render(text)
 }
 
-// styledHint renders a footer hint in the muted style, highlighting each key.
-func styledHint(text string, keys ...string) string {
-	var b strings.Builder
-	for text != "" {
-		at, found := -1, ""
-		for _, key := range keys {
-			if i := strings.Index(text, key); i >= 0 && (at < 0 || i < at) {
-				at, found = i, key
-			}
-		}
-		if at < 0 {
-			b.WriteString(hintStyle.Render(text))
-			break
-		}
-		if at > 0 {
-			b.WriteString(hintStyle.Render(text[:at]))
-		}
-		b.WriteString(hintKeyStyle.Render(found))
-		text = text[at+len(found):]
+// projectLabel is the human-readable name of the session project, falling back to
+// its identifier when the picker did not supply a name.
+func (m Model) projectLabel() string {
+	if m.activeProjectName != "" {
+		return m.activeProjectName
 	}
-	return b.String()
+	if m.activeProjectID != "" {
+		return shortID(m.activeProjectID)
+	}
+	return "—"
 }
 
 func (m Model) viewBacklog() string {
 	var b strings.Builder
-	hasProject := m.backlogProjectID != ""
+	hasProject := m.activeProjectID != ""
 	if hasProject {
-		b.WriteString(screenTitleStyle.Render("Backlog del proyecto "+m.backlogProjectID) + "\n\n")
+		b.WriteString(screenTitleStyle.Render("Backlog del proyecto " + m.projectLabel()))
 	} else {
-		b.WriteString(screenTitleStyle.Render("Backlog") + "\n\n")
-		b.WriteString(hintStyle.Render("Todavía no elegiste un proyecto.") + "\n\n")
+		b.WriteString(screenTitleStyle.Render("Backlog"))
+		b.WriteString("\n")
+		b.WriteString(hintStyle.Render("Todavía no elegiste un proyecto."))
 	}
+	b.WriteString("\n\n")
+
 	actions := backlogActions(hasProject)
 	for i, action := range actions {
 		b.WriteString(choiceRow(i == m.backlogCursor, action) + "\n")
 	}
 	b.WriteString("\n")
+
 	switch {
 	case m.backlogLoading:
-		b.WriteString(hintStyle.Render("Cargando backlog…") + "\n")
+		b.WriteString(statusMutedStyle.Render("Cargando backlog…") + "\n")
+		return b.String()
 	case hasProject && len(m.backlogStories) == 0:
-		b.WriteString(hintStyle.Render("El backlog no tiene historias.") + "\n")
+		b.WriteString(emptyState("◇", "El backlog no tiene historias.", "Elegí «Crear historia» para agregar la primera.") + "\n")
+		return b.String()
 	}
+
+	b.WriteString(sectionLabel("Historias") + "  " + hintStyle.Render(fmt.Sprintf("(%d)", len(m.backlogStories))) + "\n")
 	for i, story := range m.backlogStories {
 		b.WriteString(choiceRow(len(actions)+i == m.backlogCursor, storyRow(story)) + "\n")
 	}
-	b.WriteString("\n" + styledHint("↑/↓ para moverte, Enter para elegir, Esc para volver al menú.", "↑/↓", "Enter", "Esc") + "\n")
 	return b.String()
-}
-
-func (m Model) viewBacklogProject() string {
-	return screenTitleStyle.Render("Proyecto del backlog") + "\n\nID del proyecto: " + m.backlogInput + "_\n\n" +
-		styledHint("Enter para continuar, Esc para volver.", "Enter", "Esc") + "\n"
 }
 
 func (m Model) viewBacklogForm() string {
 	form := m.backlogForm
 	var b strings.Builder
 	if form.storyID == "" {
-		b.WriteString(screenTitleStyle.Render("Crear historia") + "\n\n")
+		b.WriteString(screenTitleStyle.Render("Crear historia"))
 	} else {
-		b.WriteString(screenTitleStyle.Render("Modificar historia "+form.storyID) + "\n\n")
+		b.WriteString(screenTitleStyle.Render("Modificar historia " + shortID(form.storyID)))
 	}
+	b.WriteString("\n")
+	b.WriteString(hintStyle.Render("Proyecto: " + m.projectLabel()))
+	b.WriteString("\n\n")
 	for i, field := range form.fields() {
-		b.WriteString(choiceRow(i == form.field, field.label+": "+*field.value) + "\n")
+		b.WriteString(formRow(i == form.field, field.label, *field.value) + "\n")
 	}
 	if form.err != "" {
 		b.WriteString("\n" + errorBannerStyle.Render(form.err) + "\n")
 	}
-	b.WriteString("\n" + styledHint("Tab/↑/↓ para cambiar campo; Enter en el último para enviar; Esc para volver.", "Tab/↑/↓", "Enter", "Esc") + "\n")
-	b.WriteString(hintStyle.Render("Separá los criterios de aceptación con punto y coma.") + "\n")
+	b.WriteString("\n" + hintStyle.Render("Separá los criterios de aceptación con punto y coma."))
 	return b.String()
 }
 
@@ -473,10 +467,8 @@ func (m Model) viewBacklogResult() string {
 	var body string
 	if m.backlogReturn != "backlog" {
 		body = errorBannerStyle.Render(m.backlogMessage)
-	} else if head, rest, found := strings.Cut(m.backlogMessage, "\n\n"); found {
-		body = statusOkStyle.Render(head) + "\n\n" + rest
 	} else {
-		body = statusOkStyle.Render(m.backlogMessage)
+		body = resultBody(m.backlogMessage, true)
 	}
-	return screenTitleStyle.Render("Resultado") + "\n\n" + body + "\n\n" + styledHint("Enter/Esc para volver.", "Enter/Esc") + "\n"
+	return screenTitleStyle.Render("Resultado") + "\n\n" + body
 }

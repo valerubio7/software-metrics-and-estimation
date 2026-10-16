@@ -116,73 +116,41 @@ type SprintResultMsg struct {
 	Err      error
 }
 
-func (m Model) updateSprints(key tea.KeyMsg) (Model, tea.Cmd) {
-	switch key.Type {
-	case tea.KeyUp:
-		if m.sprintCursor > 0 {
-			m.sprintCursor--
-		}
-	case tea.KeyDown:
-		if m.sprintCursor < 4 {
-			m.sprintCursor++
-		}
-	case tea.KeyEsc:
-		m.Screen, m.Cursor, m.sprintCursor = "menu", 0, 0
-	case tea.KeyEnter:
-		if m.sprintCursor == 0 {
-			m.Screen, m.sprintProjectID = "sprint-project", ""
-			m.sprintAction = "create"
-		} else if m.sprintCursor >= 1 && m.sprintCursor <= 3 {
-			m.Screen, m.sprintProjectID = "sprint-project", ""
-			m.sprintAction = "assign"
-			if m.sprintCursor == 2 {
-				m.sprintAction = "tasks"
-			}
-			if m.sprintCursor == 3 {
-				m.sprintAction = "complete"
-			}
-		} else {
-			m.Screen, m.Cursor = "menu", 0
-		}
+// openSprintAction opens the project picker for a Sprint operation that needs a
+// project, or goes straight to the action when the session already has one.
+func (m Model) openSprintAction(purpose string) (Model, tea.Cmd) {
+	if m.activeProjectID == "" {
+		return m.openProjectPicker(purpose)
 	}
-	return m, nil
+	m.sprintAction = strings.TrimPrefix(purpose, "sprint-")
+	m.Screen = "sprints"
+	if m.sprintAction == "create" {
+		m.sprintGoal, m.Screen = "", "sprint-goal"
+		return m, nil
+	}
+	if m.sprintAction == "history" {
+		return m, m.historySprintsCmd()
+	}
+	return m, m.listOpenSprintsCmd()
 }
 
 func (m Model) updateSprintForm(key tea.KeyMsg) (Model, tea.Cmd) {
 	if key.Type == tea.KeyEsc {
-		if m.Screen == "sprint-goal" {
-			m.Screen = "sprint-project"
-		} else {
-			m.Screen = "sprints"
-		}
+		m.Screen = "sprints"
 		return m, nil
 	}
-	if value, ok := editText(m.sprintProjectID, key); ok && m.Screen == "sprint-project" {
-		m.sprintProjectID = value
-		return m, nil
-	}
-	if value, ok := editText(m.sprintGoal, key); ok && m.Screen == "sprint-goal" {
+	if value, ok := editText(m.sprintGoal, key); ok {
 		m.sprintGoal = value
 		return m, nil
 	}
 	if key.Type == tea.KeyEnter {
-		if m.Screen == "sprint-project" && strings.TrimSpace(m.sprintProjectID) != "" {
-			m.sprintProjectID = strings.TrimSpace(m.sprintProjectID)
-			if m.sprintAction == "assign" || m.sprintAction == "tasks" || m.sprintAction == "complete" {
-				return m, m.listOpenSprintsCmd()
-			}
-			m.Screen = "sprint-goal"
-			return m, nil
-		}
-		if m.Screen == "sprint-goal" {
-			return m, m.createSprintCmd()
-		}
+		return m, m.createSprintCmd()
 	}
 	return m, nil
 }
 
 func (m Model) createSprintCmd() tea.Cmd {
-	client, projectID, goal := m.sprintClient, m.sprintProjectID, m.sprintGoal
+	client, projectID, goal := m.sprintClient, m.activeProjectID, m.sprintGoal
 	return func() tea.Msg {
 		response, err := client.Create(context.Background(), projectID, goal)
 		return SprintResultMsg{Op: "create", Response: response, Err: err}
@@ -190,15 +158,15 @@ func (m Model) createSprintCmd() tea.Cmd {
 }
 
 func (m Model) listOpenSprintsCmd() tea.Cmd {
-	client, projectID := m.sprintClient, m.sprintProjectID
+	client, projectID := m.sprintClient, m.activeProjectID
 	return func() tea.Msg {
 		response, err := client.ListOpen(context.Background(), projectID)
 		return SprintResultMsg{Op: "open", Response: response, Err: err}
 	}
 }
 
-func (m Model) listAssignedBacklogCmd(sprintID string) tea.Cmd {
-	client, projectID := m.backlogClient, m.sprintProjectID
+func (m Model) listAssignedBacklogCmd() tea.Cmd {
+	client, projectID := m.backlogClient, m.activeProjectID
 	return func() tea.Msg {
 		response, err := client.List(context.Background(), projectID)
 		return SprintResultMsg{Op: "backlog", Response: response, Err: err}
@@ -206,7 +174,7 @@ func (m Model) listAssignedBacklogCmd(sprintID string) tea.Cmd {
 }
 
 func (m Model) listAssignedSprintStoriesCmd(sprintID string) tea.Cmd {
-	client, projectID := m.sprintClient, m.sprintProjectID
+	client, projectID := m.sprintClient, m.activeProjectID
 	return func() tea.Msg {
 		response, err := client.ListAssigned(context.Background(), projectID, sprintID)
 		return SprintResultMsg{Op: "assigned", Response: response, Err: err}
@@ -214,7 +182,7 @@ func (m Model) listAssignedSprintStoriesCmd(sprintID string) tea.Cmd {
 }
 
 func (m Model) assignSprintStoriesCmd(sprintID string) tea.Cmd {
-	client, projectID := m.sprintClient, m.sprintProjectID
+	client, projectID := m.sprintClient, m.activeProjectID
 	ids := make([]string, 0, len(m.selectedStories))
 	for _, story := range m.sprintStories {
 		if m.selectedStories[story.ID] {
@@ -247,7 +215,7 @@ func (m Model) updateOpenSprints(key tea.KeyMsg) (Model, tea.Cmd) {
 		if m.sprintAction == "tasks" || m.sprintAction == "complete" {
 			return m, m.listAssignedSprintStoriesCmd(m.selectedSprintID)
 		}
-		return m, m.listAssignedBacklogCmd(m.selectedSprintID)
+		return m, m.listAssignedBacklogCmd()
 	}
 	return m, nil
 }
@@ -265,7 +233,7 @@ func (m Model) updateAssignedStories(key tea.KeyMsg) (Model, tea.Cmd) {
 	if key.Type == tea.KeyEnter && len(m.sprintStories) > 0 {
 		m.taskStoryID = m.sprintStories[m.sprintCursor].ID
 		if m.sprintAction == "complete" {
-			client, projectID, sprintID, storyID := m.sprintClient, m.sprintProjectID, m.selectedSprintID, m.taskStoryID
+			client, projectID, sprintID, storyID := m.sprintClient, m.activeProjectID, m.selectedSprintID, m.taskStoryID
 			return m, func() tea.Msg {
 				response, err := client.Complete(context.Background(), projectID, sprintID, storyID)
 				return SprintResultMsg{Op: "complete", Response: response, Err: err}
@@ -308,7 +276,7 @@ func (m Model) updateSprintTaskForm(key tea.KeyMsg) (Model, tea.Cmd) {
 			}
 			hours = parsed
 		}
-		client, projectID, sprintID, storyID, title := m.taskClient, m.sprintProjectID, m.selectedSprintID, m.taskStoryID, m.taskTitle
+		client, projectID, sprintID, storyID, title := m.taskClient, m.activeProjectID, m.selectedSprintID, m.taskStoryID, m.taskTitle
 		return m, func() tea.Msg {
 			response, err := client.Create(context.Background(), projectID, sprintID, storyID, []TaskInput{{Title: title, EstimatedHours: hours}})
 			return SprintResultMsg{Op: "tasks", Response: response, Err: err}
@@ -388,33 +356,148 @@ func (m Model) applySprintResult(result SprintResultMsg) (Model, tea.Cmd) {
 		m.sprintMessage = message
 		return m, nil
 	}
-	if result.Op == "assign" {
-		m.sprintMessage = "Stories assigned to Sprint"
-		return m, nil
-	}
-	if result.Op == "tasks" {
-		m.sprintMessage = fmt.Sprintf("Tasks created (%d)", result.Response.StatusCode)
-		return m, nil
-	}
-	if result.Op == "complete" {
-		m.sprintMessage = fmt.Sprintf("Story completion response (%d)", result.Response.StatusCode)
-		return m, nil
-	}
-	var sprint Sprint
-	if json.Unmarshal(result.Response.Body, &sprint) == nil && sprint.ID != "" {
-		m.sprintMessage = fmt.Sprintf("Sprint %s created", sprint.ID)
-	} else {
-		m.sprintMessage = strings.TrimSpace(string(result.Response.Body))
+	switch result.Op {
+	case "assign":
+		m.sprintMessage = "Historias asignadas al Sprint correctamente."
+	case "tasks":
+		m.sprintMessage = fmt.Sprintf("Tareas creadas correctamente (%d).", result.Response.StatusCode)
+	case "complete":
+		m.sprintMessage = fmt.Sprintf("Historia completada (%d).", result.Response.StatusCode)
+	default:
+		var sprint Sprint
+		if json.Unmarshal(result.Response.Body, &sprint) == nil && sprint.ID != "" {
+			m.sprintMessage = "Sprint creado: " + sprint.ID
+		} else {
+			m.sprintMessage = strings.TrimSpace(string(result.Response.Body))
+		}
 	}
 	return m, nil
 }
 
 func sprintFailure(result SprintResultMsg) (string, bool) {
 	if result.Err != nil {
-		return "Connection error: " + result.Err.Error(), true
+		return "Error de conexión: " + result.Err.Error(), true
 	}
 	if result.Response.StatusCode < 200 || result.Response.StatusCode >= 300 {
 		return describeBacklogFailure(result.Response), true
 	}
 	return "", false
+}
+
+func (m Model) viewSprintsMenu() string {
+	var b strings.Builder
+	b.WriteString(screenTitleStyle.Render("Operaciones de Sprint"))
+	b.WriteString("\n")
+	b.WriteString(hintStyle.Render("Proyecto: " + m.projectLabel()))
+	b.WriteString("\n\n")
+	for i, option := range sprintMenuOptions() {
+		b.WriteString(choiceRow(i == m.sprintCursor, option) + "\n")
+	}
+	return b.String()
+}
+
+func sprintMenuOptions() []string {
+	return []string{"Crear Sprint", "Asignar historias", "Crear tareas", "Completar historia", "Cerrar Sprint", "Ver historial", "Volver"}
+}
+
+func (m Model) viewSprintGoal() string {
+	var b strings.Builder
+	b.WriteString(screenTitleStyle.Render("Crear Sprint"))
+	b.WriteString("\n")
+	b.WriteString(hintStyle.Render("Proyecto: " + m.projectLabel()))
+	b.WriteString("\n\n")
+	b.WriteString(formRow(true, "Objetivo", m.sprintGoal))
+	return b.String()
+}
+
+func (m Model) viewOpenSprints() string {
+	var b strings.Builder
+	title := "Elegí un Sprint abierto"
+	if m.sprintAction == "close" {
+		title = "Cerrá un Sprint"
+	}
+	b.WriteString(screenTitleStyle.Render(title))
+	b.WriteString("\n\n")
+	if len(m.openSprints) == 0 {
+		b.WriteString(emptyState("◇", "No hay Sprints abiertos.", "Creá un Sprint desde el menú de Sprints."))
+		return b.String()
+	}
+	for i, sprint := range m.openSprints {
+		row := sprint.SprintGoal
+		if row == "" {
+			row = "(sin objetivo)"
+		}
+		b.WriteString(choiceRow(i == m.sprintCursor, row+hintStyle.Render("   "+shortID(sprint.ID))) + "\n")
+	}
+	return b.String()
+}
+
+func (m Model) viewSprintStorySelect() string {
+	var b strings.Builder
+	b.WriteString(screenTitleStyle.Render("Elegí historias para asignar"))
+	b.WriteString("\n")
+	b.WriteString(hintStyle.Render("Space marca o desmarca; Enter confirma la asignación."))
+	b.WriteString("\n\n")
+	if len(m.sprintStories) == 0 {
+		b.WriteString(emptyState("◇", "El backlog no tiene historias.", "Agregá historias al backlog primero."))
+		return b.String()
+	}
+	for i, story := range m.sprintStories {
+		mark := "[ ]"
+		if m.selectedStories[story.ID] {
+			mark = "[x]"
+		}
+		row := mark + " " + story.Title
+		if story.Priority != "" {
+			row += "  " + priorityBadge(story.Priority)
+		}
+		b.WriteString(choiceRow(i == m.sprintCursor, row) + "\n")
+	}
+	return b.String()
+}
+
+func (m Model) viewAssignedStories() string {
+	var b strings.Builder
+	b.WriteString(screenTitleStyle.Render("Historias del Sprint"))
+	b.WriteString("\n")
+	if m.sprintAction == "complete" {
+		b.WriteString(hintStyle.Render("Enter completa la historia seleccionada."))
+	} else {
+		b.WriteString(hintStyle.Render("Enter crea tareas para la historia seleccionada."))
+	}
+	b.WriteString("\n\n")
+	if len(m.sprintStories) == 0 {
+		b.WriteString(emptyState("◇", "El Sprint no tiene historias asignadas.", "Asigná historias desde el menú de Sprints."))
+		return b.String()
+	}
+	for i, story := range m.sprintStories {
+		row := story.Title
+		if story.Priority != "" {
+			row += "  " + priorityBadge(story.Priority)
+		}
+		if story.Status != "" {
+			row += "  " + storyStatusBadge(story.Status)
+		}
+		b.WriteString(choiceRow(i == m.sprintCursor, row) + "\n")
+	}
+	return b.String()
+}
+
+func (m Model) viewSprintTaskForm() string {
+	var b strings.Builder
+	b.WriteString(screenTitleStyle.Render("Crear tarea"))
+	b.WriteString("\n")
+	b.WriteString(hintStyle.Render("Historia: " + shortID(m.taskStoryID)))
+	b.WriteString("\n\n")
+	b.WriteString(formRow(m.taskField == 0, "Título", m.taskTitle) + "\n")
+	b.WriteString(formRow(m.taskField == 1, "Horas estimadas (opcional)", m.taskHours) + "\n")
+	if m.sprintMessage != "" {
+		b.WriteString("\n" + errorBannerStyle.Render(m.sprintMessage) + "\n")
+	}
+	return b.String()
+}
+
+func (m Model) viewSprintResult() string {
+	success := !strings.HasPrefix(m.sprintMessage, "Error") && !strings.Contains(m.sprintMessage, "API rechazó") && !strings.Contains(m.sprintMessage, "no existe")
+	return screenTitleStyle.Render("Resultado") + "\n\n" + resultBody(m.sprintMessage, success)
 }

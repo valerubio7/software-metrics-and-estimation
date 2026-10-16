@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Model is the Bubble Tea model for the TUI.
@@ -18,29 +19,42 @@ type Model struct {
 	Screen  string
 	APIErr  error
 
-	projectCursor int
-	projectID     string
-	projectAction string
-	formField     int
-	form          ProjectInput
-	message       string
-	client        *ProjectClient
+	width, height int
+	showHelp      bool
 
-	backlogProjectID string // project confirmed for the session
-	backlogInput     string // text being edited in backlog-project
-	backlogCursor    int
-	backlogStories   []Story
-	backlogLoading   bool
-	backlogForm      storyForm
-	backlogMessage   string // text of backlog-result
-	backlogReturn    string // screen reached when leaving backlog-result
-	backlogClient    *BacklogClient
-	sprintClient     *SprintClient
-	sprintCursor     int
-	sprintProjectID  string
-	sprintGoal       string
-	sprintMessage    string
-	sprintAction     string
+	// Session context shared by every screen.
+	activeProjectID   string
+	activeProjectName string
+
+	// Project picker.
+	projects        []ProjectSummary
+	projectsLoading bool
+	projectFilter   string
+	projectCursor   int
+	pickerReturn    string
+	pickerPurpose   string
+
+	projectCursorLegacy int
+	projectID           string
+	projectAction       string
+	formField           int
+	form                ProjectInput
+	message             string
+	client              *ProjectClient
+
+	backlogCursor  int
+	backlogStories []Story
+	backlogLoading bool
+	backlogForm    storyForm
+	backlogMessage string
+	backlogReturn  string
+	backlogClient  *BacklogClient
+	sprintClient   *SprintClient
+	sprintCursor   int
+	sprintGoal     string
+	sprintMessage  string
+	sprintAction   string
+
 	selectedSprintID string
 	taskStoryID      string
 	taskTitle        string
@@ -57,7 +71,7 @@ type Model struct {
 func NewModel(apiURL string) Model {
 	return Model{
 		APIURL:  apiURL,
-		Choices: []string{"Proyectos", "Backlog", "Sprints", "Salir"},
+		Choices: []string{"Proyectos", "Backlog", "Sprints", "Ayuda", "Salir"},
 		Screen:  "menu",
 		client:  NewProjectClient(apiURL),
 
@@ -72,8 +86,15 @@ func (m Model) Init() tea.Cmd { return nil }
 
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if size, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width, m.height = size.Width, size.Height
+		return m, nil
+	}
 	if result, ok := msg.(ProjectResultMsg); ok {
 		return m.applyProjectResult(result)
+	}
+	if result, ok := msg.(ProjectsResultMsg); ok {
+		return m.applyProjectsResult(result)
 	}
 	if result, ok := msg.(BacklogResultMsg); ok {
 		return m.applyBacklogResult(result)
@@ -88,7 +109,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !isKey {
 		return m, nil
 	}
-	if key.Type == tea.KeyCtrlC || (isQuitRune(key) && quitsOnQ(m.Screen)) {
+	if key.Type == tea.KeyCtrlC {
+		return m, tea.Quit
+	}
+	if m.showHelp {
+		if key.Type == tea.KeyEsc || key.Type == tea.KeyEnter || (key.Type == tea.KeyRunes && string(key.Runes) == "?") {
+			m.showHelp = false
+		}
+		return m, nil
+	}
+	if key.Type == tea.KeyRunes && string(key.Runes) == "?" && !entersText(m.Screen) {
+		m.showHelp = true
+		return m, nil
+	}
+	if key.Type == tea.KeyRunes && string(key.Runes) == "p" && quitsOnQ(m.Screen) {
+		return m.openProjectPicker("project")
+	}
+	if isQuitRune(key) && quitsOnQ(m.Screen) {
 		return m, tea.Quit
 	}
 	switch m.Screen {
@@ -96,6 +133,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateMenu(key)
 	case "projects":
 		return m.updateProjects(key)
+	case "project-picker":
+		return m.updateProjectPicker(key)
 	case "create-project", "edit-project":
 		return m.updateProjectForm(key)
 	case "project-id":
@@ -108,18 +147,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "backlog":
 		return m.updateBacklog(key)
-	case "backlog-project":
-		return m.updateBacklogProject(key)
 	case "backlog-form":
 		return m.updateBacklogForm(key)
 	case "backlog-result":
 		return m.updateBacklogResult(key)
 	case "sprints":
 		return m.updateClosureHistoryMenu(key)
-	case "sprint-project", "sprint-goal":
+	case "sprint-goal":
 		return m.updateSprintForm(key)
-	case "sprint-close-project", "sprint-history-project":
-		return m.updateClosureHistoryProject(key)
 	case "sprint-history":
 		if key.Type == tea.KeyEsc || key.Type == tea.KeyEnter {
 			m.Screen, m.sprintMessage = "sprints", ""
@@ -150,11 +185,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
+// entersText reports whether the screen owns a focused text field, where "?" is a
+// plain character rather than the help shortcut.
+func entersText(screen string) bool {
+	switch screen {
+	case "create-project", "edit-project", "project-id", "backlog-form", "sprint-goal", "sprint-task-form", "project-picker":
+		return true
+	}
+	return false
+}
+
 // quitsOnQ reports whether q/Q exits from screen. Text-entry screens are not
 // listed, so q is a plain character there; Ctrl+C always quits.
 func quitsOnQ(screen string) bool {
 	switch screen {
-	case "menu", "projects", "project-result", "backlog", "backlog-result", "sprints":
+	case "menu", "projects", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-open-list", "sprint-assigned-list", "sprint-story-select":
 		return true
 	}
 	return false
@@ -193,11 +238,13 @@ func (m Model) updateMenu(key tea.KeyMsg) (Model, tea.Cmd) {
 	case tea.KeyEnter:
 		switch m.Cursor {
 		case 0:
-			m.Screen, m.projectCursor = "projects", 0
+			m.Screen, m.projectCursorLegacy = "projects", 0
 		case 1:
 			return m.openBacklog()
 		case 2:
 			m.Screen = "sprints"
+		case 3:
+			m.showHelp = true
 		default:
 			return m, tea.Quit
 		}
@@ -206,26 +253,28 @@ func (m Model) updateMenu(key tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) updateProjects(key tea.KeyMsg) (Model, tea.Cmd) {
-	options := []string{"Crear proyecto", "Modificar proyecto", "Consultar estado", "Volver"}
+	options := projectMenuOptions()
 	switch key.Type {
 	case tea.KeyUp:
-		if m.projectCursor > 0 {
-			m.projectCursor--
+		if m.projectCursorLegacy > 0 {
+			m.projectCursorLegacy--
 		}
 	case tea.KeyDown:
-		if m.projectCursor < len(options)-1 {
-			m.projectCursor++
+		if m.projectCursorLegacy < len(options)-1 {
+			m.projectCursorLegacy++
 		}
 	case tea.KeyEsc:
 		m.Screen, m.Cursor = "menu", 0
 	case tea.KeyEnter:
-		switch m.projectCursor {
-		case 0:
+		switch options[m.projectCursorLegacy] {
+		case "Crear proyecto":
 			m.Screen, m.form, m.formField = "create-project", ProjectInput{}, 0
-		case 1:
+		case "Elegir proyecto":
+			return m.openProjectPicker("projects")
+		case "Modificar proyecto":
 			m.Screen, m.projectID, m.form, m.formField, m.projectAction = "project-id", "", ProjectInput{}, 0, "edit"
 			m.message = "Ingresá el ID del proyecto para editar."
-		case 2:
+		case "Consultar estado":
 			m.Screen, m.projectID, m.projectAction = "project-id", "", "status"
 			m.message = "Ingresá el ID del proyecto para consultar estado."
 		default:
@@ -233,6 +282,10 @@ func (m Model) updateProjects(key tea.KeyMsg) (Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func projectMenuOptions() []string {
+	return []string{"Crear proyecto", "Elegir proyecto", "Modificar proyecto", "Consultar estado", "Volver"}
 }
 
 func (m Model) updateProjectID(key tea.KeyMsg) (Model, tea.Cmd) {
@@ -348,133 +401,288 @@ func (m Model) applyProjectResult(result ProjectResultMsg) (Model, tea.Cmd) {
 // View implements tea.Model.
 func (m Model) View() string {
 	var b strings.Builder
-	b.WriteString(header())
-	b.WriteString("\n\n")
+	b.WriteString(m.chrome())
+	b.WriteString("\n")
+	if m.showHelp {
+		b.WriteString(m.viewHelp())
+		b.WriteString("\n\n")
+		b.WriteString(m.footer())
+		return b.String()
+	}
 	if m.APIErr != nil {
 		b.WriteString(errorBannerStyle.Render("API no disponible: " + m.APIErr.Error()))
 		b.WriteString("\n")
 		b.WriteString(errorHintStyle.Render("Revisá API_URL o levantá la API; la navegación sigue disponible."))
 		b.WriteString("\n\n")
+	}
+	b.WriteString(m.viewBody())
+	b.WriteString("\n\n")
+	b.WriteString(m.footer())
+	return b.String()
+}
+
+func (m Model) viewBody() string {
+	switch m.Screen {
+	case "menu":
+		return m.viewMenu()
+	case "projects":
+		return m.viewProjects()
+	case "project-picker":
+		return m.viewProjectPicker()
+	case "create-project", "edit-project":
+		return m.viewProjectForm()
+	case "project-id":
+		return m.viewProjectID()
+	case "project-result":
+		return m.viewProjectResult()
+	case "backlog":
+		return m.viewBacklog()
+	case "backlog-form":
+		return m.viewBacklogForm()
+	case "backlog-result":
+		return m.viewBacklogResult()
+	case "sprints":
+		return m.viewSprintsMenu()
+	case "sprint-goal":
+		return m.viewSprintGoal()
+	case "sprint-history":
+		return m.viewSprintHistory()
+	case "sprint-open-list":
+		return m.viewOpenSprints()
+	case "sprint-story-select":
+		return m.viewSprintStorySelect()
+	case "sprint-assigned-list":
+		return m.viewAssignedStories()
+	case "sprint-task-form":
+		return m.viewSprintTaskForm()
+	case "sprint-result":
+		return m.viewSprintResult()
+	default:
+		return screenTitleStyle.Render(m.Choices[m.Cursor])
+	}
+}
+
+func (m Model) viewMenu() string {
+	var b strings.Builder
+	b.WriteString(screenTitleStyle.Render("Panel de control"))
+	b.WriteString("\n")
+	context := "Sin proyecto activo · elegí uno en Backlog o Sprints"
+	if m.activeProjectID != "" {
+		context = "Proyecto activo: " + m.activeProjectName
+	}
+	b.WriteString(hintStyle.Render(context))
+	b.WriteString("\n\n")
+	for i, choice := range m.Choices {
+		b.WriteString(choiceRow(i == m.Cursor, choice) + "\n")
+	}
+	return b.String()
+}
+
+func (m Model) viewProjects() string {
+	var b strings.Builder
+	b.WriteString(screenTitleStyle.Render("Proyectos"))
+	b.WriteString("\n\n")
+	for i, option := range projectMenuOptions() {
+		b.WriteString(choiceRow(i == m.projectCursorLegacy, option) + "\n")
+	}
+	return b.String()
+}
+
+func (m Model) viewProjectForm() string {
+	title := "Crear proyecto"
+	if m.Screen == "edit-project" {
+		title = "Modificar proyecto " + m.projectID
+	}
+	var b strings.Builder
+	b.WriteString(screenTitleStyle.Render(title))
+	b.WriteString("\n\n")
+	fields := []struct{ label, value string }{{"Nombre", m.form.Name}, {"Fecha inicio (YYYY-MM-DD)", m.form.StartDate}, {"Fecha fin planificada (YYYY-MM-DD)", m.form.PlannedFinishDate}}
+	for i, field := range fields {
+		b.WriteString(formRow(i == m.formField, field.label, field.value) + "\n")
+	}
+	b.WriteString("\n")
+	b.WriteString(hintStyle.Render("Tab/↑/↓ para cambiar de campo; Enter en el último para enviar; Esc para volver."))
+	return b.String()
+}
+
+func (m Model) viewProjectID() string {
+	var b strings.Builder
+	b.WriteString(screenTitleStyle.Render("Identificador de proyecto"))
+	b.WriteString("\n\n")
+	b.WriteString(hintStyle.Render(m.message))
+	b.WriteString("\n\n")
+	b.WriteString(formRow(true, "ID", m.projectID))
+	b.WriteString("\n\n")
+	b.WriteString(hintStyle.Render("Enter para continuar, Esc para volver."))
+	return b.String()
+}
+
+func (m Model) viewProjectResult() string {
+	var b strings.Builder
+	b.WriteString(screenTitleStyle.Render("Resultado"))
+	b.WriteString("\n\n")
+	b.WriteString(resultBody(m.message, !strings.HasPrefix(m.message, "Error") && !strings.Contains(m.message, "no existe")))
+	return b.String()
+}
+
+// chrome renders the persistent top bar: brand, API status, breadcrumb and rule.
+func (m Model) chrome() string {
+	width := m.contentWidth()
+	left := brandStyle.Render("◆  Software Metrics & Estimation")
+	var right string
+	if m.APIErr != nil {
+		right = badge("api caída", toneDanger)
 	} else {
-		b.WriteString(statusOkStyle.Render("● API conectada · " + m.APIURL))
-		b.WriteString("\n\n")
+		right = statusOkStyle.Render("● API conectada")
+	}
+	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap < 1 {
+		gap = 1
+	}
+	var b strings.Builder
+	b.WriteString(left + strings.Repeat(" ", gap) + right)
+	b.WriteString("\n")
+	b.WriteString(breadcrumb(m.crumbParts()...))
+	b.WriteString("\n")
+	b.WriteString(ruleStyle.Render(strings.Repeat("─", width)))
+	return b.String()
+}
+
+func (m Model) crumbParts() []string {
+	var parts []string
+	switch m.Screen {
+	case "menu":
+		return []string{"Panel de control"}
+	case "projects", "project-picker", "create-project", "edit-project", "project-id", "project-result":
+		parts = append(parts, "Proyectos")
+		switch m.Screen {
+		case "project-picker":
+			parts = append(parts, "Elegir proyecto")
+		case "create-project":
+			parts = append(parts, "Crear")
+		case "edit-project":
+			parts = append(parts, "Modificar")
+		case "project-id":
+			parts = append(parts, "Identificador")
+		case "project-result":
+			parts = append(parts, "Resultado")
+		}
+	case "backlog", "backlog-form", "backlog-result":
+		parts = append(parts, "Backlog")
+		switch m.Screen {
+		case "backlog-form":
+			parts = append(parts, "Historia")
+		case "backlog-result":
+			parts = append(parts, "Resultado")
+		}
+	case "sprints", "sprint-goal", "sprint-open-list", "sprint-story-select", "sprint-assigned-list", "sprint-task-form", "sprint-history", "sprint-result":
+		parts = append(parts, "Sprints")
+		switch m.Screen {
+		case "sprint-goal":
+			parts = append(parts, "Nuevo Sprint")
+		case "sprint-open-list":
+			parts = append(parts, "Elegir Sprint")
+		case "sprint-story-select":
+			parts = append(parts, "Asignar historias")
+		case "sprint-assigned-list":
+			parts = append(parts, "Historias")
+		case "sprint-task-form":
+			parts = append(parts, "Nueva tarea")
+		case "sprint-history":
+			parts = append(parts, "Historial")
+		case "sprint-result":
+			parts = append(parts, "Resultado")
+		}
+	default:
+		parts = append(parts, "")
+	}
+	if m.activeProjectID != "" && !isProjectScreen(m.Screen) {
+		name := m.activeProjectName
+		if name == "" {
+			name = shortID(m.activeProjectID)
+		}
+		parts = append(parts, "Proyecto: "+name)
+	}
+	return parts
+}
+
+func isProjectScreen(screen string) bool {
+	switch screen {
+	case "projects", "project-picker", "create-project", "edit-project", "project-id", "project-result":
+		return true
+	}
+	return false
+}
+
+func (m Model) footer() string {
+	if m.showHelp {
+		return keyHints("Esc", "cerrar ayuda", "?", "cerrar", "Ctrl+C", "salir")
 	}
 	switch m.Screen {
 	case "menu":
-		for i, choice := range m.Choices {
-			if m.Cursor == i {
-				b.WriteString(cursorStyle.Render("▸") + " " + selectedStyle.Render(choice))
-			} else {
-				b.WriteString("  " + itemStyle.Render(choice))
-			}
-			b.WriteString("\n")
-		}
+		return keyHints("↑/↓", "mover", "Enter", "elegir", "?", "ayuda", "q", "salir")
 	case "projects":
-		b.WriteString("Gestión de proyectos\n\n")
-		for i, option := range []string{"Crear proyecto", "Modificar proyecto", "Consultar estado", "Volver"} {
-			prefix := "  "
-			if i == m.projectCursor {
-				prefix = "▸ "
-			}
-			b.WriteString(prefix + option + "\n")
-		}
-	case "create-project", "edit-project":
-		title := "Crear proyecto"
-		if m.Screen == "edit-project" {
-			title = "Modificar proyecto " + m.projectID
-		}
-		b.WriteString(title + "\n\n")
-		fields := []struct{ label, value string }{{"Nombre", m.form.Name}, {"Fecha inicio (YYYY-MM-DD)", m.form.StartDate}, {"Fecha fin planificada (YYYY-MM-DD)", m.form.PlannedFinishDate}}
-		for i, field := range fields {
-			prefix := "  "
-			if i == m.formField {
-				prefix = "▸ "
-			}
-			b.WriteString(prefix + field.label + ": " + field.value + "\n")
-		}
-		b.WriteString("\nTab/↑/↓ para cambiar campo; Enter en el último para enviar.\n")
-	case "project-id":
-		b.WriteString(m.message + "\n\nID: " + m.projectID + "_\nEnter para continuar, Esc para volver.\n")
+		return keyHints("↑/↓", "mover", "Enter", "elegir", "Esc", "volver", "q", "salir")
+	case "project-picker":
+		return keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "elegir", "Esc", "volver")
+	case "create-project", "edit-project", "project-id":
+		return keyHints("Tab/↑/↓", "campo", "Enter", "continuar", "Esc", "volver", "Ctrl+C", "salir")
 	case "project-result":
-		b.WriteString("Resultado\n\n" + m.message + "\n\nEnter/Esc para volver.\n")
+		return keyHints("Enter/Esc", "volver", "q", "salir")
 	case "backlog":
-		b.WriteString(m.viewBacklog())
-	case "backlog-project":
-		b.WriteString(m.viewBacklogProject())
+		return keyHints("↑/↓", "mover", "Enter", "elegir", "/", "buscar", "r", "refrescar", "Esc", "menú", "q", "salir")
 	case "backlog-form":
-		b.WriteString(m.viewBacklogForm())
-	case "backlog-result":
-		b.WriteString(m.viewBacklogResult())
+		return keyHints("Tab/↑/↓", "campo", "Enter", "siguiente/enviar", "Esc", "volver", "Ctrl+C", "salir")
+	case "backlog-result", "sprint-result":
+		return keyHints("Enter/Esc", "volver", "q", "salir")
 	case "sprints":
-		b.WriteString("Operaciones de Sprint\n\n")
-		for i, option := range []string{"Crear Sprint", "Asignar historias", "Crear tareas", "Completar historia", "Cerrar Sprint", "Ver historial", "Volver"} {
-			b.WriteString(choiceRow(i == m.sprintCursor, option) + "\n")
-		}
-	case "sprint-project":
-		b.WriteString("Proyecto del Sprint\n\nID del proyecto: " + m.sprintProjectID + "_\nEnter para continuar, Esc para volver.\n")
-	case "sprint-close-project", "sprint-history-project":
-		b.WriteString("Proyecto del Sprint\n\nID del proyecto: " + m.sprintProjectID + "_\nEnter para continuar, Esc para volver.\n")
-	case "sprint-history":
-		b.WriteString(m.viewSprintHistory())
+		return keyHints("↑/↓", "mover", "Enter", "elegir", "Esc", "menú", "q", "salir")
 	case "sprint-goal":
-		b.WriteString("Crear Sprint\n\nObjetivo: " + m.sprintGoal + "_\nEnter para enviar, Esc para volver.\n")
-	case "sprint-result":
-		b.WriteString("Resultado\n\n" + m.sprintMessage + "\n\nEnter/Esc para volver.\n")
-	case "sprint-open-list":
-		b.WriteString("Elegir Sprint abierto\n\n")
-		for i, sprint := range m.openSprints {
-			b.WriteString(choiceRow(i == m.sprintCursor, sprint.ID+" · "+sprint.SprintGoal) + "\n")
-		}
-		if len(m.openSprints) == 0 {
-			b.WriteString("No hay Sprints abiertos.\n")
-		}
-	case "sprint-story-select":
-		b.WriteString("Elegir historias para asignar\n\n")
-		for _, story := range m.sprintStories {
-			mark := "[ ]"
-			if m.selectedStories[story.ID] {
-				mark = "[x]"
-			}
-			b.WriteString(fmt.Sprintf("%s %s · %s\n", mark, story.ID, story.Title))
-		}
-		b.WriteString("\nSpace para alternar; Enter para asignar.\n")
-	case "sprint-assigned-list":
-		b.WriteString("Historias asignadas al Sprint\n\n")
-		for i, story := range m.sprintStories {
-			b.WriteString(choiceRow(i == m.sprintCursor, story.ID+" · "+story.Title) + "\n")
-		}
+		return keyHints("Enter", "enviar", "Esc", "volver", "Ctrl+C", "salir")
+	case "sprint-open-list", "sprint-assigned-list", "sprint-story-select":
+		return keyHints("↑/↓", "mover", "Enter", "elegir", "Space", "marcar", "Esc", "volver", "q", "salir")
 	case "sprint-task-form":
-		b.WriteString("Crear tarea para " + m.taskStoryID + "\n\n")
-		b.WriteString(choiceRow(m.taskField == 0, "Título: "+m.taskTitle) + "\n")
-		b.WriteString(choiceRow(m.taskField == 1, "Horas estimadas (opcional): "+m.taskHours) + "\n")
-		if m.sprintMessage != "" {
-			b.WriteString("\n" + errorBannerStyle.Render(m.sprintMessage) + "\n")
-		}
-		b.WriteString("\nTab para cambiar campo; Enter para continuar/enviar.\n")
+		return keyHints("Tab", "campo", "Enter", "continuar/enviar", "Esc", "volver", "Ctrl+C", "salir")
+	case "sprint-history":
+		return keyHints("Enter/Esc", "volver", "q", "salir")
 	default:
-		b.WriteString(screenTitleStyle.Render(m.Choices[m.Cursor]))
-		b.WriteString("  ")
-		b.WriteString(badgeStyle.Render("Disponible en " + placeholderRelease(m.Cursor)))
-		b.WriteString("\n\nPulsa esc para volver, q para salir.\n")
+		return keyHints("Esc", "volver", "?", "ayuda", "q", "salir")
 	}
-	return b.String()
 }
 
-func header() string {
+func (m Model) viewHelp() string {
+	rows := [][2]string{
+		{"↑ / ↓  o  j / k", "Mover la selección"},
+		{"Enter", "Elegir / confirmar"},
+		{"Space", "Marcar historia (multiselección)"},
+		{"/", "Buscar o filtrar en una lista"},
+		{"r", "Refrescar el listado actual"},
+		{"p", "Cambiar el proyecto activo"},
+		{"Esc", "Volver un nivel (nunca pierde el contexto)"},
+		{"Tab / ↑ / ↓", "Cambiar de campo en un formulario"},
+		{"?", "Mostrar u ocultar esta ayuda"},
+		{"q", "Salir (no dentro de un campo de texto)"},
+		{"Ctrl+C", "Salir desde cualquier pantalla"},
+	}
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Software Metrics & Estimation"))
-	b.WriteString("\n")
-	b.WriteString(subtitleStyle.Render("Sprint 2 · La Interfaz · TUI base"))
-	b.WriteString("\n")
-	b.WriteString(ruleStyle.Render("────────────────────────────────"))
+	b.WriteString(screenTitleStyle.Render("Atajos de teclado"))
+	b.WriteString("\n\n")
+	for _, row := range rows {
+		b.WriteString("  " + helpKeyStyle.Render(padRight(row[0], 18)) + hintStyle.Render(row[1]) + "\n")
+	}
 	return b.String()
 }
 
-func placeholderRelease(cursor int) string {
-	switch cursor {
-	case 0:
-		return "TUI-02"
-	default:
-		return "TUI-04/TUI-05"
+func padRight(s string, width int) string {
+	if len(s) >= width {
+		return s
 	}
+	return s + strings.Repeat(" ", width-len(s))
+}
+
+func (m Model) contentWidth() int {
+	if m.width > 0 {
+		return m.width
+	}
+	return 80
 }

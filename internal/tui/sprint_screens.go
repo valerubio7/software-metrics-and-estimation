@@ -9,6 +9,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// updateClosureHistoryMenu is the Sprint operations menu. Actions that need a
+// project open the shared picker; the rest go straight to their screen.
 func (m Model) updateClosureHistoryMenu(key tea.KeyMsg) (Model, tea.Cmd) {
 	switch key.Type {
 	case tea.KeyUp:
@@ -16,7 +18,7 @@ func (m Model) updateClosureHistoryMenu(key tea.KeyMsg) (Model, tea.Cmd) {
 			m.sprintCursor--
 		}
 	case tea.KeyDown:
-		if m.sprintCursor < 6 {
+		if m.sprintCursor < len(sprintMenuOptions())-1 {
 			m.sprintCursor++
 		}
 	case tea.KeyEsc:
@@ -24,35 +26,30 @@ func (m Model) updateClosureHistoryMenu(key tea.KeyMsg) (Model, tea.Cmd) {
 	case tea.KeyEnter:
 		switch m.sprintCursor {
 		case 4:
-			m.Screen, m.sprintProjectID, m.sprintAction, m.sprintMessage = "sprint-close-project", "", "close", ""
+			return m.openSprintAction("sprint-close")
 		case 5:
-			m.Screen, m.sprintProjectID, m.sprintAction, m.sprintMessage = "sprint-history-project", "", "history", ""
+			return m.openSprintAction("sprint-history")
 		case 6:
 			m.Screen, m.Cursor, m.sprintCursor = "menu", 0, 0
 		default:
-			return m.updateSprints(key)
+			return m.openSprintAction(sprintPurposeFor(m.sprintCursor))
 		}
 	}
 	return m, nil
 }
 
-func (m Model) updateClosureHistoryProject(key tea.KeyMsg) (Model, tea.Cmd) {
-	if key.Type == tea.KeyEsc {
-		m.Screen, m.sprintCursor = "sprints", 4
-		return m, nil
+// sprintPurposeFor maps the first four menu entries to their picker purpose.
+func sprintPurposeFor(cursor int) string {
+	switch cursor {
+	case 0:
+		return "sprint-create"
+	case 1:
+		return "sprint-assign"
+	case 2:
+		return "sprint-tasks"
+	default:
+		return "sprint-complete"
 	}
-	if value, ok := editText(m.sprintProjectID, key); ok {
-		m.sprintProjectID = value
-		return m, nil
-	}
-	if key.Type == tea.KeyEnter && strings.TrimSpace(m.sprintProjectID) != "" {
-		m.sprintProjectID = strings.TrimSpace(m.sprintProjectID)
-		if m.sprintAction == "close" {
-			return m, m.listOpenSprintsCmd()
-		}
-		return m, m.historySprintsCmd()
-	}
-	return m, nil
 }
 
 func (m Model) updateClosureOpenSprints(key tea.KeyMsg) (Model, tea.Cmd) {
@@ -78,7 +75,7 @@ func (m Model) updateClosureOpenSprints(key tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) historySprintsCmd() tea.Cmd {
-	client, projectID := m.sprintClient, m.sprintProjectID
+	client, projectID := m.sprintClient, m.activeProjectID
 	return func() tea.Msg {
 		response, err := client.History(context.Background(), projectID)
 		return SprintResultMsg{Op: "history", Response: response, Err: err}
@@ -86,7 +83,7 @@ func (m Model) historySprintsCmd() tea.Cmd {
 }
 
 func (m Model) closeSprintCmd() tea.Cmd {
-	client, projectID, sprintID := m.sprintClient, m.sprintProjectID, m.selectedSprintID
+	client, projectID, sprintID := m.sprintClient, m.activeProjectID, m.selectedSprintID
 	return func() tea.Msg {
 		response, err := client.Close(context.Background(), projectID, sprintID)
 		return SprintResultMsg{Op: "close", Response: response, Err: err}
@@ -127,33 +124,56 @@ func (m Model) applyClosureHistoryResult(result SprintResultMsg) (Model, tea.Cmd
 		m.sprintMessage = message
 		return m, nil
 	}
-	m.sprintMessage = fmt.Sprintf("Sprint %s closed. Planned and completed stories remain available in the history view.", m.selectedSprintID)
+	m.sprintMessage = fmt.Sprintf("Sprint %s cerrado. Las historias planificadas y completadas siguen disponibles en el historial.", shortID(m.selectedSprintID))
 	return m, nil
 }
 
 func (m Model) viewSprintHistory() string {
 	var b strings.Builder
-	b.WriteString("Closed Sprint history\n\n")
+	b.WriteString(screenTitleStyle.Render("Historial de Sprints cerrados"))
+	b.WriteString("\n")
+	b.WriteString(hintStyle.Render("Proyecto: " + m.projectLabel()))
+	b.WriteString("\n\n")
 	if len(m.sprintHistory.Sprints) == 0 {
-		b.WriteString("No closed Sprints in this project.\n")
+		b.WriteString(emptyState("◇", "No hay Sprints cerrados en este proyecto.", "Cerrá un Sprint para verlo acá."))
+		return b.String()
 	}
 	for _, sprint := range m.sprintHistory.Sprints {
-		b.WriteString(fmt.Sprintf("%s · Goal: %s\n", sprint.ID, sprint.SprintGoal))
+		completed, total := 0, len(sprint.Stories)
 		for _, story := range sprint.Stories {
-			status := "Not completed"
 			if story.Completed {
-				status = "Completed"
+				completed++
 			}
-			b.WriteString(fmt.Sprintf("  %s · %s [%s]", story.ID, story.Title, status))
-			if story.Priority != "" {
-				b.WriteString(" · Priority: " + story.Priority)
-			}
-			if story.StoryPoints != nil {
-				b.WriteString(fmt.Sprintf(" · Points: %d", *story.StoryPoints))
-			}
-			b.WriteByte('\n')
 		}
+		goal := sprint.SprintGoal
+		if goal == "" {
+			goal = "(sin objetivo)"
+		}
+		b.WriteString(cursorStyle.Render("▸") + " " + sprintHistoryTitle(goal, sprint.ID) + "\n")
+		b.WriteString("  " + hintStyle.Render(fmt.Sprintf("Progreso: %d/%d historias completadas", completed, total)) + "\n")
+		for _, story := range sprint.Stories {
+			b.WriteString("  " + sprintHistoryStoryRow(story) + "\n")
+		}
+		b.WriteString("\n")
 	}
-	b.WriteString("\nEnter/Esc to return.\n")
 	return b.String()
+}
+
+func sprintHistoryTitle(goal, id string) string {
+	return titleStyle.Render(goal) + hintStyle.Render("   "+shortID(id))
+}
+
+func sprintHistoryStoryRow(story SprintStory) string {
+	status := storyStatusBadge("pendiente")
+	if story.Completed {
+		status = storyStatusBadge("completada")
+	}
+	row := story.Title + "  " + status
+	if story.Priority != "" {
+		row += "  " + priorityBadge(story.Priority)
+	}
+	if story.StoryPoints != nil {
+		row += hintStyle.Render(fmt.Sprintf("   %d pts", *story.StoryPoints))
+	}
+	return row
 }

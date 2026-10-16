@@ -81,6 +81,7 @@ func toCreateProject(m tui.Model) tui.Model {
 func toEditProject(m tui.Model, id string) tui.Model {
 	m = press(m, tea.KeyEnter) // menu -> projects
 	m = press(m, tea.KeyDown)
+	m = press(m, tea.KeyDown)
 	m = press(m, tea.KeyEnter) // "Modificar proyecto" -> project-id
 	m = typeText(m, id)
 	return press(m, tea.KeyEnter) // -> edit-project
@@ -231,8 +232,8 @@ func TestProjectNavigationPreservesOtherSectionsAndQuit(t *testing.T) {
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	updated, _ = updated.(tui.Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(tui.Model)
-	if m.Screen != "backlog" {
-		t.Fatalf("screen = %q, want backlog", m.Screen)
+	if m.Screen != "project-picker" {
+		t.Fatalf("screen = %q, want project-picker", m.Screen)
 	}
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = updated.(tui.Model)

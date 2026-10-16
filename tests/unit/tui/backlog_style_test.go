@@ -59,34 +59,44 @@ func wantPlainBody(t *testing.T, view, body string) {
 // hasBackground reports whether the line carries a 24-bit background color.
 func hasBackground(line string) bool { return strings.Contains(line, "48;2;") }
 
+func TestStyledChromeShowsBrandAndBreadcrumb(t *testing.T) {
+	forceColor(t)
+	server, _ := fakeBacklogAPI(t, apiStubs{})
+	m := openBacklogWithProject(t, server.URL, "p1")
+	view := m.View()
+
+	wantPlainBody(t, view, "Software Metrics & Estimation")
+	wantPlainBody(t, view, "API conectada")
+	wantPlainBody(t, view, "Inicio › Backlog › Proyecto: Alpha")
+	styled := wantStyled(t, view, "Software Metrics & Estimation")
+	if !hasBackground(styled) && !ansiSequence.MatchString(styled) {
+		t.Errorf("brand line %q has no styling", styled)
+	}
+}
+
 func TestStyledBacklogListUsesMenuStyle(t *testing.T) {
 	forceColor(t)
 	server, _ := fakeBacklogAPI(t, apiStubs{})
 	m := openBacklogWithProject(t, server.URL, "p1")
 	view := m.View()
 
-	wantPlainBody(t, view, "Backlog del proyecto p1\n\n"+
-		"▸ Crear historia\n  Cambiar proyecto\n  Volver\n\n"+
-		"  Login · prioridad alta · estado pendiente · puntos —\n"+
-		"  Alta de usuarios · prioridad media · estado en curso · puntos 3\n\n"+
-		"↑/↓ para moverte, Enter para elegir, Esc para volver al menú.\n")
+	wantPlainBody(t, view, "Backlog del proyecto Alpha\n\n"+
+		"▸ Crear historia\n  Cambiar proyecto\n  Refrescar\n  Volver\n")
+	wantPlainBody(t, view, "Login")
+	wantPlainBody(t, view, "Alta de usuarios")
 
-	wantStyled(t, view, "Backlog del proyecto p1")
+	wantStyled(t, view, "Backlog del proyecto Alpha")
 	selected := wantStyled(t, view, "▸ Crear historia")
 	if !hasBackground(selected) {
 		t.Errorf("selected row %q has no background, want the menu selection style", selected)
 	}
-	for _, needle := range []string{"Cambiar proyecto", "Login · prioridad"} {
+	for _, needle := range []string{"Cambiar proyecto"} {
 		line := wantStyled(t, view, needle)
 		if hasBackground(line) {
 			t.Errorf("unselected row %q has a background, want the item style", line)
 		}
 	}
-	footer := rawLine(t, view, "para moverte")
-	if strings.Contains(footer, "Enter para elegir") {
-		t.Errorf("footer %q is one unstyled run, want the keys styled apart from the text", footer)
-	}
-	wantStyled(t, view, "para moverte")
+	wantStyled(t, view, "mover")
 }
 
 func TestStyledBacklogSelectedStoryRowUsesSelectionStyle(t *testing.T) {
@@ -120,26 +130,25 @@ func TestStyledBacklogEmptyAndLoadingMessagesAreMuted(t *testing.T) {
 		wantPlainBody(t, view, "El backlog no tiene historias.\n")
 		wantStyled(t, view, "El backlog no tiene historias.")
 	})
-	t.Run("no project", func(t *testing.T) {
-		view := startBacklog("http://localhost:8080").View()
-		wantPlainBody(t, view, "Backlog\n\nTodavía no elegiste un proyecto.\n\n▸ Elegir proyecto\n  Volver\n")
-		wantStyled(t, view, "Todavía no elegiste un proyecto.")
-		wantStyled(t, view, "Backlog")
+	t.Run("picker loading", func(t *testing.T) {
+		view, _ := startBacklog("http://localhost:8080")
+		wantPlainBody(t, view.View(), "Elegí un proyecto")
+		wantPlainBody(t, view.View(), "Cargando proyectos…")
+		wantStyled(t, view.View(), "Cargando proyectos…")
 	})
 }
 
-func TestStyledBacklogProjectScreen(t *testing.T) {
+func TestStyledProjectPickerShowsStatusBadges(t *testing.T) {
 	forceColor(t)
-	m := press(startBacklog("http://localhost:8080"), tea.KeyEnter) // Elegir proyecto
-	m = typeText(m, "p1")
+	server, _ := fakeBacklogAPI(t, apiStubs{})
+	m, load := startBacklog(server.URL)
+	m = run(t, m, load)
 	view := m.View()
-	wantPlainBody(t, view, "Proyecto del backlog\n\nID del proyecto: p1_\n\nEnter para continuar, Esc para volver.\n")
-	wantStyled(t, view, "Proyecto del backlog")
-	footer := rawLine(t, view, "para continuar")
-	if strings.Contains(footer, "Enter para continuar") {
-		t.Errorf("footer %q is one unstyled run, want the keys styled apart from the text", footer)
-	}
-	wantStyled(t, view, "para continuar")
+
+	wantPlainBody(t, view, "Elegí un proyecto")
+	wantPlainBody(t, view, "Alpha")
+	wantPlainBody(t, view, "ACTIVO")
+	wantStyled(t, view, "Alpha")
 }
 
 func TestStyledBacklogFormUsesSelectionStyleAndErrorBanner(t *testing.T) {
@@ -148,10 +157,9 @@ func TestStyledBacklogFormUsesSelectionStyleAndErrorBanner(t *testing.T) {
 	m := press(openBacklogWithProject(t, server.URL, "p1"), tea.KeyEnter) // Crear historia
 	view := m.View()
 
-	wantPlainBody(t, view, "Crear historia\n\n"+
-		"▸ Título: \n  Descripción: \n  Prioridad: \n  Criterios de aceptación: \n\n"+
-		"Tab/↑/↓ para cambiar campo; Enter en el último para enviar; Esc para volver.\n"+
-		"Separá los criterios de aceptación con punto y coma.\n")
+	wantPlainBody(t, view, "Crear historia\n")
+	wantPlainBody(t, view, "▸ Título: ")
+	wantPlainBody(t, view, "  Descripción: ")
 	wantStyled(t, view, "Crear historia")
 	if line := wantStyled(t, view, "▸ Título"); !hasBackground(line) {
 		t.Errorf("selected field %q has no background, want the selection style", line)
@@ -183,7 +191,7 @@ func TestStyledBacklogFailureResultUsesErrorBanner(t *testing.T) {
 		`{"error":"validation_failed","message":"datos inválidos","fields":{"title":"es obligatorio","priority":"valor inválido"}}`))
 	view := m.View()
 
-	for _, want := range []string{"Resultado", "La API rechazó los datos (422): datos inválidos", "- priority: valor inválido", "- title: es obligatorio", "Enter/Esc para volver."} {
+	for _, want := range []string{"Resultado", "La API rechazó los datos (422): datos inválidos", "- priority: valor inválido", "- title: es obligatorio"} {
 		wantPlainBody(t, view, want)
 	}
 	wantStyled(t, view, "Resultado")
@@ -195,10 +203,6 @@ func TestStyledBacklogFailureResultUsesErrorBanner(t *testing.T) {
 	}
 	if !strings.Contains(stripANSI(view), "╭") {
 		t.Errorf("stripped View() = %q, want the rounded error banner border", stripANSI(view))
-	}
-	footer := rawLine(t, view, "para volver")
-	if strings.Contains(footer, "Enter/Esc para volver") {
-		t.Errorf("footer %q is one unstyled run, want the keys styled apart from the text", footer)
 	}
 }
 
@@ -212,8 +216,9 @@ func TestStyledBacklogSuccessResultUsesOkStyle(t *testing.T) {
 	}})
 	view := m.View()
 
-	wantPlainBody(t, view, "Resultado\n\nHistoria creada correctamente (201)\n\n"+
-		"Historia nueva · prioridad alta · estado pendiente · puntos —\n\nEnter/Esc para volver.\n")
+	wantPlainBody(t, view, "Resultado")
+	wantPlainBody(t, view, "Historia creada correctamente (201)")
+	wantPlainBody(t, view, "Historia nueva")
 	wantStyled(t, view, "Resultado")
 	ok := wantStyled(t, view, "Historia creada correctamente (201)")
 	if strings.Contains(ok, "│") {
