@@ -39,7 +39,11 @@ type Model struct {
 	projectID           string
 	projectAction       string
 	formField           int
+	formSegment         int
 	form                ProjectInput
+	formStart           dateField
+	formFinish          dateField
+	formErr             string
 	message             string
 	client              *ProjectClient
 
@@ -275,11 +279,13 @@ func (m Model) updateProjects(key tea.KeyMsg) (Model, tea.Cmd) {
 	case tea.KeyEnter:
 		switch options[m.projectCursorLegacy] {
 		case "Crear proyecto":
-			m.Screen, m.form, m.formField = "create-project", ProjectInput{}, 0
+			m.Screen = "create-project"
+			m.resetProjectForm()
 		case "Elegir proyecto":
 			return m.openProjectPicker("projects")
 		case "Modificar proyecto":
-			m.Screen, m.projectID, m.form, m.formField, m.projectAction = "project-id", "", ProjectInput{}, 0, "edit"
+			m.Screen, m.projectID, m.projectAction = "project-id", "", "edit"
+			m.resetProjectForm()
 			m.message = "Ingresá el ID del proyecto para editar."
 		case "Consultar estado":
 			m.Screen, m.projectID, m.projectAction = "project-id", "", "status"
@@ -307,7 +313,7 @@ func (m Model) updateProjectID(key tea.KeyMsg) (Model, tea.Cmd) {
 	if key.Type == tea.KeyEnter && strings.TrimSpace(m.projectID) != "" {
 		id := strings.TrimSpace(m.projectID)
 		if m.projectAction == "edit" {
-			m.formField = 0
+			m.resetProjectForm()
 			m.Screen = "edit-project"
 			return m, nil
 		}
@@ -316,35 +322,122 @@ func (m Model) updateProjectID(key tea.KeyMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
+// projectFormFields is the number of rows in the create/edit project form:
+// name, start date and planned finish date.
+const projectFormFields = 3
+
+// resetProjectForm clears every field of the create/edit project form.
+func (m *Model) resetProjectForm() {
+	m.form = ProjectInput{}
+	m.formStart = dateField{}
+	m.formFinish = dateField{}
+	m.formField, m.formSegment, m.formErr = 0, 0, ""
+}
+
 func (m Model) updateProjectForm(key tea.KeyMsg) (Model, tea.Cmd) {
-	fields := []*string{&m.form.Name, &m.form.StartDate, &m.form.PlannedFinishDate}
 	if key.Type == tea.KeyEsc {
 		m.Screen = "projects"
+		m.formErr = ""
 		return m, nil
 	}
-	if value, ok := editText(*fields[m.formField], key); ok {
-		*fields[m.formField] = value
-		return m, nil
-	}
-	if key.Type == tea.KeyTab || key.Type == tea.KeyDown {
-		m.formField = (m.formField + 1) % len(fields)
-		return m, nil
-	}
-	if key.Type == tea.KeyShiftTab || key.Type == tea.KeyUp {
-		m.formField = (m.formField + len(fields) - 1) % len(fields)
-		return m, nil
-	}
-	if key.Type == tea.KeyEnter {
-		if m.formField < len(fields)-1 {
-			m.formField++
+	if m.formField == 0 {
+		if value, ok := editText(m.form.Name, key); ok {
+			m.form.Name, m.formErr = value, ""
 			return m, nil
 		}
-		if m.Screen == "create-project" {
-			return m, m.createCmd(m.form)
+		return m.navigateProjectForm(key)
+	}
+	return m.updateProjectDate(key)
+}
+
+// updateProjectDate drives the segmented date fields: digits fill the active
+// segment (advancing when full), backspace erases, and left/right move between
+// year, month and day.
+func (m Model) updateProjectDate(key tea.KeyMsg) (Model, tea.Cmd) {
+	date := m.formFinish
+	if m.formField == 1 {
+		date = m.formStart
+	}
+	switch key.Type {
+	case tea.KeyLeft:
+		if m.formSegment > 0 {
+			m.formSegment--
 		}
-		return m, m.updateCmd(m.projectID, m.form)
+	case tea.KeyRight:
+		if m.formSegment < numDateSegments-1 {
+			m.formSegment++
+		}
+	case tea.KeyBackspace:
+		date, m.formSegment = date.backspace(m.formSegment)
+		m.formErr = ""
+	case tea.KeyRunes:
+		for _, r := range key.Runes {
+			switch {
+			case r >= '0' && r <= '9':
+				date, m.formSegment = date.typeDigit(m.formSegment, string(r))
+			case r == '-' || r == '/':
+				// A separator only moves on from a segment that already has a
+				// value, so both "2026-10-01" and "2026-1-5" fill correctly.
+				if date.segment(m.formSegment) != "" && m.formSegment < numDateSegments-1 {
+					m.formSegment++
+				}
+			}
+		}
+		m.formErr = ""
+	default:
+		return m.navigateProjectForm(key)
+	}
+	if m.formField == 1 {
+		m.formStart = date
+	} else {
+		m.formFinish = date
 	}
 	return m, nil
+}
+
+func (m Model) navigateProjectForm(key tea.KeyMsg) (Model, tea.Cmd) {
+	switch key.Type {
+	case tea.KeyTab, tea.KeyDown:
+		m.formField = (m.formField + 1) % projectFormFields
+		m.formSegment = 0
+	case tea.KeyShiftTab, tea.KeyUp:
+		m.formField = (m.formField + projectFormFields - 1) % projectFormFields
+		m.formSegment = 0
+	case tea.KeyEnter:
+		if m.formField < projectFormFields-1 {
+			m.formField++
+			m.formSegment = 0
+			return m, nil
+		}
+		return m.submitProjectForm()
+	}
+	return m, nil
+}
+
+// submitProjectForm validates the segmented dates locally before sending, so an
+// incomplete or impossible date is corrected in place instead of round-tripping
+// to the API.
+func (m Model) submitProjectForm() (Model, tea.Cmd) {
+	start, startErr := m.formStart.validate()
+	if startErr != "" {
+		m.formErr = "La fecha de inicio " + startErr + "."
+		return m, nil
+	}
+	finish, finishErr := m.formFinish.validate()
+	if finishErr != "" {
+		m.formErr = "La fecha fin planificada " + finishErr + "."
+		return m, nil
+	}
+	if finish < start {
+		m.formErr = "La fecha fin planificada debe ser igual o posterior a la de inicio."
+		return m, nil
+	}
+	m.formErr = ""
+	input := ProjectInput{Name: m.form.Name, StartDate: start, PlannedFinishDate: finish}
+	if m.Screen == "create-project" {
+		return m, m.createCmd(input)
+	}
+	return m, m.updateCmd(m.projectID, input)
 }
 
 // ProjectResultMsg is the asynchronous result of a project API request.
@@ -502,12 +595,17 @@ func (m Model) viewProjectForm() string {
 	var b strings.Builder
 	b.WriteString(screenTitleStyle.Render(title))
 	b.WriteString("\n\n")
-	fields := []struct{ label, value string }{{"Nombre", m.form.Name}, {"Fecha inicio (YYYY-MM-DD)", m.form.StartDate}, {"Fecha fin planificada (YYYY-MM-DD)", m.form.PlannedFinishDate}}
-	for i, field := range fields {
-		b.WriteString(m.formRow(i == m.formField, field.label, field.value) + "\n")
+	b.WriteString(m.projectTextRow(0, "Nombre", m.form.Name) + "\n")
+	b.WriteString(m.projectDateRow(1, "Fecha inicio", m.formStart) + "\n")
+	b.WriteString(m.projectDateRow(2, "Fecha fin planificada", m.formFinish) + "\n")
+	if m.formErr != "" {
+		b.WriteString("\n")
+		b.WriteString(m.errorBlock(m.formErr))
 	}
 	b.WriteString("\n")
-	b.WriteString(hintStyle.Render("Tab/↑/↓ para cambiar de campo; Enter en el último para enviar; Esc para volver."))
+	b.WriteString(hintStyle.Render("Tab/↑/↓ cambia de campo · ←/→ mueve entre año, mes y día."))
+	b.WriteString("\n")
+	b.WriteString(hintStyle.Render("Enter en el último campo envía · Esc vuelve."))
 	return b.String()
 }
 

@@ -157,6 +157,30 @@ La TUI DEBERÁ permitir operar proyectos desde la opción correspondiente. La ge
 - **GIVEN** que no se puede establecer conexión con la API
 - **WHEN** falla una operación de proyectos
 - **THEN** la TUI informa el problema de conexión sin cerrarse abruptamente
+
+### Requirement: Ingresar las fechas del proyecto como año, mes y día
+
+En el formulario de proyectos, la fecha de inicio y la fecha fin planificada DEBERÁN ingresarse como tres segmentos separados (año, mes y día) en lugar de una cadena `YYYY-MM-DD` escrita a mano. Cada segmento DEBERÁ aceptar solo dígitos, avanzar solo al completar su longitud (4 para el año, 2 para el mes y el día) y poder recorrerse con las flechas izquierda y derecha. La TUI DEBERÁ rellenar con ceros los segmentos cortos y validar la fecha localmente antes de enviarla: una fecha incompleta, una fecha imposible o una fecha fin planificada anterior a la de inicio DEBERÁN informarse en el propio formulario sin emitir requests. Los valores se enviarán a la API ya normalizados como `YYYY-MM-DD`.
+
+#### Scenario: Completar una fecha por segmentos
+
+- **GIVEN** el formulario de creación de proyectos con el foco en «Fecha inicio»
+- **WHEN** el usuario escribe los dígitos del año, el mes y el día
+- **THEN** cada segmento se completa y el foco avanza solo al llenarse
+- **AND** `Enter` en el último campo envía la fecha normalizada como `YYYY-MM-DD`
+
+#### Scenario: Fecha incompleta sin request
+
+- **GIVEN** el formulario con algún segmento de fecha sin completar
+- **WHEN** el usuario intenta enviar
+- **THEN** la TUI muestra el error en el formulario y NO emite ningún request
+
+#### Scenario: Fecha fin anterior a la de inicio
+
+- **GIVEN** el formulario con una fecha fin planificada anterior a la fecha de inicio
+- **WHEN** el usuario intenta enviar
+- **THEN** la TUI muestra el error de orden en el formulario y NO emite ningún request
+
 ### Requirement: Operar el backlog mediante la TUI
 La TUI DEBERÁ permitir consultar, crear y modificar historias de usuario de un proyecto desde la opción «Backlog» del menú. La gestión consume la API existente (`GET /projects/{pid}/stories`, `POST /projects/{pid}/stories`, `PUT /projects/{pid}/stories/{sid}`) y NO incorpora reglas de negocio. La pantalla alcanzada desde el menú conserva el nombre `backlog`.
 

@@ -49,6 +49,21 @@ var (
 
 	rowStyle = lipgloss.NewStyle().
 			Foreground(ink)
+
+	// Segmented date field: idle segments read as small input boxes; the active
+	// segment inverts against the focused selection bar.
+	dateSegmentIdleStyle = lipgloss.NewStyle().
+				Background(line).
+				Foreground(ink)
+
+	dateSegmentEmptyStyle = lipgloss.NewStyle().
+				Background(line).
+				Foreground(inkFaint)
+
+	dateSegmentActiveStyle = lipgloss.NewStyle().
+				Background(onAccent).
+				Foreground(accent).
+				Bold(true)
 )
 
 var (
