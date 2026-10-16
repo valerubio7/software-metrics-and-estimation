@@ -561,11 +561,9 @@ func (m Model) crumbParts() []string {
 	switch m.Screen {
 	case "menu":
 		return []string{"Panel de control"}
-	case "projects", "project-picker", "create-project", "edit-project", "project-id", "project-result":
+	case "projects", "create-project", "edit-project", "project-id", "project-result":
 		parts = append(parts, "Proyectos")
 		switch m.Screen {
-		case "project-picker":
-			parts = append(parts, "Elegir proyecto")
 		case "create-project":
 			parts = append(parts, "Crear")
 		case "edit-project":
@@ -575,6 +573,16 @@ func (m Model) crumbParts() []string {
 		case "project-result":
 			parts = append(parts, "Resultado")
 		}
+	case "project-picker":
+		switch {
+		case m.pickerReturn == "backlog":
+			parts = append(parts, "Backlog")
+		case m.pickerReturn == "sprints" || strings.HasPrefix(m.pickerPurpose, "sprint-"):
+			parts = append(parts, "Sprints")
+		default:
+			parts = append(parts, "Proyectos")
+		}
+		parts = append(parts, "Elegir proyecto")
 	case "backlog", "backlog-form", "backlog-result":
 		parts = append(parts, "Backlog")
 		switch m.Screen {
@@ -682,10 +690,10 @@ func (m Model) viewHelp() string {
 }
 
 func padRight(s string, width int) string {
-	if len(s) >= width {
+	if w := lipgloss.Width(s); w >= width {
 		return s
 	}
-	return s + strings.Repeat(" ", width-len(s))
+	return s + strings.Repeat(" ", width-lipgloss.Width(s))
 }
 
 func (m Model) contentWidth() int {
