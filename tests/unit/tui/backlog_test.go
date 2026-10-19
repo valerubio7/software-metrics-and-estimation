@@ -14,11 +14,6 @@ import (
 	"github.com/valerubio7/software-metrics-and-estimation/internal/tui"
 )
 
-// backlogActionCount is the number of actions that precede the stories on the
-// backlog screen when a project is active: Crear historia, Cambiar proyecto,
-// Refrescar, Volver.
-const backlogActionCount = 4
-
 func intPtr(v int) *int { return &v }
 
 // sampleStories returns a backlog whose API order differs from alphabetical order.
@@ -197,9 +192,9 @@ func openBacklogWithProject(t *testing.T, url, pid string) tui.Model {
 	return m
 }
 
-// submitStory opens the create form from the backlog (cursor 0), fills it and presses Enter on the last field.
+// submitStory opens the create form from the backlog with n, fills it and presses Enter on the last field.
 func submitStory(m tui.Model, title, description, priority, criteria string) (tui.Model, tea.Cmd) {
-	m = press(m, tea.KeyEnter)
+	m = typeText(m, "n")
 	for i, value := range []string{title, description, priority, criteria} {
 		m = typeText(m, value)
 		if i < 3 {
@@ -211,7 +206,7 @@ func submitStory(m tui.Model, title, description, priority, criteria string) (tu
 
 // selectStory moves to the index-th story of the list and opens its update form.
 func selectStory(m tui.Model, index int) tui.Model {
-	for i := 0; i < backlogActionCount+index; i++ {
+	for i := 0; i < index; i++ {
 		m = press(m, tea.KeyDown)
 	}
 	return press(m, tea.KeyEnter)
@@ -338,8 +333,7 @@ func TestBacklogChangeProjectUsesPicker(t *testing.T) {
 	server, rec := fakeBacklogAPI(t, apiStubs{})
 	m := openBacklogWithProject(t, server.URL, "p1")
 
-	m = press(m, tea.KeyDown) // Cambiar proyecto
-	m, load := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, load := apply(m, keyMsg("c")) // Cambiar proyecto
 	if m.Screen != "project-picker" {
 		t.Fatalf("Screen = %q, want project-picker", m.Screen)
 	}
@@ -348,7 +342,7 @@ func TestBacklogChangeProjectUsesPicker(t *testing.T) {
 		t.Errorf("after Esc: Screen = %q view = %q, want backlog still on Alpha", m.Screen, m.View())
 	}
 
-	m, load = apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // Cambiar proyecto again
+	m, load = apply(m, keyMsg("c")) // Cambiar proyecto again
 	m, cmd := confirmProjectInPicker(t, m, load, "p2")
 	m = run(t, m, cmd)
 	if got := lastRequest(t, rec); got.Method != http.MethodGet || got.Path != "/projects/p2/stories" {
@@ -368,11 +362,11 @@ func TestBacklogChangeProjectUsesPicker(t *testing.T) {
 	}
 }
 
-func TestBacklogEmptyListShowsMessageAndKeepsActions(t *testing.T) {
+func TestBacklogEmptyListShowsMessageAndKeepsNavigatorKeys(t *testing.T) {
 	server, _ := fakeBacklogAPI(t, apiStubs{list: stub{http.StatusOK, storiesBody(t, nil)}})
 	m := openBacklogWithProject(t, server.URL, "p1")
 	view := m.View()
-	for _, want := range []string{"El backlog no tiene historias.", "Crear historia", "Cambiar proyecto"} {
+	for _, want := range []string{"El backlog no tiene historias.", "Presioná n para crear la primera historia.", "c cambia de proyecto"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("View() = %q, want %q", view, want)
 		}
@@ -408,10 +402,7 @@ func TestBacklogSearchFiltersStories(t *testing.T) {
 	}
 	m = press(m, tea.KeyEnter)
 
-	// The filtered story is now the first selectable story, after the actions.
-	for i := 0; i < backlogActionCount; i++ {
-		m = press(m, tea.KeyDown)
-	}
+	// The filtered story is now the first row, so Enter opens it directly.
 	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.Screen != "backlog-form" || fieldValue(t, m.View(), "Título") != "Alta de usuarios" {
 		t.Fatalf("Screen = %q view = %q, want the filtered story form", m.Screen, m.View())
@@ -430,7 +421,7 @@ func TestBacklogCreateStorySendsFourKeysAndShowsSuccess(t *testing.T) {
 	server, rec := fakeBacklogAPI(t, apiStubs{create: stub{http.StatusCreated, storyBody(t, created)}})
 	m := openBacklogWithProject(t, server.URL, "p1")
 
-	m = press(m, tea.KeyEnter) // Crear historia
+	m = typeText(m, "n") // Crear historia
 	if m.Screen != "backlog-form" {
 		t.Fatalf("Screen = %q, want backlog-form", m.Screen)
 	}
@@ -711,7 +702,7 @@ func TestBacklogSelectingStoryWithEmptyListOpensNoForm(t *testing.T) {
 func TestBacklogFormEscReturnsToBacklogWithoutRequest(t *testing.T) {
 	server, rec := fakeBacklogAPI(t, apiStubs{})
 	forms := map[string]func(tui.Model) tui.Model{
-		"create": func(m tui.Model) tui.Model { return press(m, tea.KeyEnter) },
+		"create": func(m tui.Model) tui.Model { return typeText(m, "n") },
 		"update": func(m tui.Model) tui.Model { return selectStory(m, 0) },
 	}
 	for name, open := range forms {
@@ -1007,7 +998,7 @@ func backlogScreens(t *testing.T, url string) []struct {
 		model  tui.Model
 	}{
 		{"project-picker", "", picker},
-		{"backlog-form", "Título", press(loaded, tea.KeyEnter)},
+		{"backlog-form", "Título", typeText(loaded, "n")},
 		{"backlog", "", loaded},
 		{"backlog-result", "", result},
 	}
@@ -1069,7 +1060,7 @@ func TestSpaceAndBackspaceByRuneInBacklogFields(t *testing.T) {
 			return m
 		}},
 		{"backlog-form", "Título", func(t *testing.T) tui.Model {
-			return press(openBacklogWithProject(t, server.URL, "p1"), tea.KeyEnter)
+			return typeText(openBacklogWithProject(t, server.URL, "p1"), "n")
 		}},
 	}
 	for _, field := range fields {
@@ -1099,7 +1090,7 @@ func TestSpaceAndBackspaceByRuneInBacklogFields(t *testing.T) {
 	}
 
 	t.Run("title-sent-as-valid-utf8", func(t *testing.T) {
-		m := press(openBacklogWithProject(t, server.URL, "p1"), tea.KeyEnter)
+		m := typeText(openBacklogWithProject(t, server.URL, "p1"), "n")
 		m = typeText(m, "Gestión añ")
 		m = press(m, tea.KeyBackspace)
 		m = typeText(m, "o")

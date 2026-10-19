@@ -115,13 +115,6 @@ func parseEstimatedHours(s string) (*float64, error) {
 	return &hours, nil
 }
 
-func backlogActions(hasProject bool) []string {
-	if hasProject {
-		return []string{"Crear historia", "Cambiar proyecto", "Refrescar", "Volver"}
-	}
-	return []string{"Elegir proyecto", "Volver"}
-}
-
 // openBacklog enters the backlog screen, loading the session project when there is
 // one and offering the picker otherwise.
 func (m Model) openBacklog() (Model, tea.Cmd) {
@@ -155,7 +148,6 @@ func (m Model) startBacklogLoad() (Model, tea.Cmd) {
 }
 
 func (m Model) updateBacklog(key tea.KeyMsg) (Model, tea.Cmd) {
-	actions := backlogActions(m.activeProjectID != "")
 	stories := m.visibleStories()
 
 	if m.backlogFiltering {
@@ -164,7 +156,19 @@ func (m Model) updateBacklog(key tea.KeyMsg) (Model, tea.Cmd) {
 			m.backlogFiltering, m.backlogFilter, m.backlogCursor = false, "", 0
 			return m, nil
 		case tea.KeyEnter:
+			// Stop searching but keep the filter, so the filtered list can then be
+			// acted on with Enter / n / c, as the project browser does.
 			m.backlogFiltering = false
+			return m, nil
+		case tea.KeyUp:
+			if m.backlogCursor > 0 {
+				m.backlogCursor--
+			}
+			return m, nil
+		case tea.KeyDown:
+			if m.backlogCursor < len(stories)-1 {
+				m.backlogCursor++
+			}
 			return m, nil
 		}
 		if value, ok := editText(m.backlogFilter, key); ok {
@@ -174,45 +178,54 @@ func (m Model) updateBacklog(key tea.KeyMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	last := len(actions) + len(stories) - 1
 	switch key.Type {
+	case tea.KeyEsc:
+		if m.backlogFilter != "" {
+			m.backlogFilter, m.backlogCursor = "", 0
+			return m, nil
+		}
+		m.Screen, m.Cursor = "menu", 0
 	case tea.KeyUp:
 		if m.backlogCursor > 0 {
 			m.backlogCursor--
 		}
 	case tea.KeyDown:
-		if m.backlogCursor < last {
+		if m.backlogCursor < len(stories)-1 {
 			m.backlogCursor++
 		}
-	case tea.KeyEsc:
-		m.Screen, m.Cursor = "menu", 0
+	case tea.KeyEnter:
+		return m.editSelectedStory(stories)
 	case tea.KeyRunes:
 		switch string(key.Runes) {
-		case "r":
-			return m.startBacklogLoad()
 		case "/":
 			m.backlogFiltering = true
-			return m, nil
-		}
-	case tea.KeyEnter:
-		if m.backlogCursor >= len(actions) {
-			index := m.backlogCursor - len(actions)
-			if index < len(stories) {
-				m.Screen, m.backlogForm = "backlog-form", newUpdateForm(stories[index])
-			}
-			return m, nil
-		}
-		switch actions[m.backlogCursor] {
-		case "Crear historia":
+		case "n":
 			m.Screen, m.backlogForm = "backlog-form", storyForm{}
-		case "Elegir proyecto", "Cambiar proyecto":
+		case "c":
 			return m.openProjectPicker("backlog")
-		case "Refrescar":
+		case "r":
 			return m.startBacklogLoad()
+		case "p":
+			// p is the global «change project» shortcut; the list already offers
+			// that with c, so keep p inert instead of seeding a search.
 		default:
-			m.Screen, m.Cursor = "menu", 0
+			m.backlogFiltering = true
+			if value, ok := editText(m.backlogFilter, key); ok {
+				m.backlogFilter = value
+				m.backlogCursor = 0
+			}
 		}
 	}
+	return m, nil
+}
+
+// editSelectedStory opens the update form for the story highlighted in the
+// backlog, mirroring Enter on the project browser.
+func (m Model) editSelectedStory(stories []Story) (Model, tea.Cmd) {
+	if m.backlogCursor < 0 || m.backlogCursor >= len(stories) {
+		return m, nil
+	}
+	m.Screen, m.backlogForm = "backlog-form", newUpdateForm(stories[m.backlogCursor])
 	return m, nil
 }
 
@@ -447,13 +460,9 @@ func (m Model) viewBacklog() string {
 		b.WriteString("\n")
 		b.WriteString(hintStyle.Render("Todavía no elegiste un proyecto."))
 	}
-	b.WriteString("\n\n")
-
-	actions := backlogActions(hasProject)
-	for i, action := range actions {
-		b.WriteString(m.row(i == m.backlogCursor, action) + "\n")
-	}
 	b.WriteString("\n")
+	b.WriteString(hintStyle.Render(backlogHint(hasProject)))
+	b.WriteString("\n\n")
 
 	if m.backlogFiltering || m.backlogFilter != "" {
 		cursor := ""
@@ -467,8 +476,11 @@ func (m Model) viewBacklog() string {
 	case m.backlogLoading:
 		b.WriteString(statusMutedStyle.Render("Cargando backlog…") + "\n")
 		return b.String()
-	case hasProject && len(m.backlogStories) == 0:
-		b.WriteString(emptyState("◇", "El backlog no tiene historias.", "Elegí «Crear historia» para agregar la primera.") + "\n")
+	case !hasProject:
+		b.WriteString(emptyState("◇", "Elegí un proyecto para ver su backlog.", "Presioná c para elegir un proyecto.") + "\n")
+		return b.String()
+	case len(m.backlogStories) == 0:
+		b.WriteString(emptyState("◇", "El backlog no tiene historias.", "Presioná n para crear la primera historia.") + "\n")
 		return b.String()
 	}
 
@@ -479,9 +491,18 @@ func (m Model) viewBacklog() string {
 		return b.String()
 	}
 	for i, story := range stories {
-		b.WriteString(m.row(len(actions)+i == m.backlogCursor, storyRow(story)) + "\n")
+		b.WriteString(m.row(i == m.backlogCursor, storyRow(story)) + "\n")
 	}
 	return b.String()
+}
+
+// backlogHint advertises the navigator keys of the backlog list so the actions
+// that used to live in rows stay discoverable.
+func backlogHint(hasProject bool) string {
+	if !hasProject {
+		return "c elige un proyecto."
+	}
+	return "Enter edita · n crea · c cambia de proyecto · r refresca · / busca."
 }
 
 func (m Model) viewBacklogForm() string {

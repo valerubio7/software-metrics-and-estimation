@@ -30,7 +30,7 @@ func TestHelpOverlayToggles(t *testing.T) {
 
 func TestQuestionMarkIsTypedInTextFields(t *testing.T) {
 	server, _ := fakeBacklogAPI(t, apiStubs{})
-	m := press(openBacklogWithProject(t, server.URL, "p1"), tea.KeyEnter) // create form
+	m := typeText(openBacklogWithProject(t, server.URL, "p1"), "n") // create form
 	m = typeText(m, "?")
 	if strings.Contains(m.View(), "Atajos de teclado") {
 		t.Fatalf("View() = %q, want no help overlay inside a text field", m.View())

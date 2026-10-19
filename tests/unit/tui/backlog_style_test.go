@@ -99,43 +99,32 @@ func TestStyledBacklogListUsesMenuStyle(t *testing.T) {
 	view := m.View()
 
 	wantPlainBody(t, view, "Backlog del proyecto Alpha")
-	for _, action := range []string{"Crear historia", "Cambiar proyecto", "Refrescar", "Volver"} {
-		wantPlainBody(t, view, action)
-	}
+	wantPlainBody(t, view, "HISTORIAS")
 	wantPlainBody(t, view, "Login")
 	wantPlainBody(t, view, "Alta de usuarios")
 
 	wantStyled(t, view, "Backlog del proyecto Alpha")
-	selected := wantStyled(t, view, "▸ Crear historia")
+	selected := wantStyled(t, view, "▸ Login")
 	if !hasBackground(selected) {
 		t.Errorf("selected row %q has no background, want the menu selection style", selected)
 	}
 	if w := lipgloss.Width(stripANSI(selected)); w != 80 {
 		t.Errorf("selected row width = %d, want it to fill the 80-column content width", w)
 	}
-	for _, needle := range []string{"Cambiar proyecto"} {
-		line := wantStyled(t, view, needle)
-		if hasBackground(line) {
-			t.Errorf("unselected row %q has a background, want the item style", line)
-		}
-	}
+	wantStyled(t, view, "Alta de usuarios")
 	wantStyled(t, view, "mover")
 }
 
 func TestStyledBacklogSelectedStoryRowUsesSelectionStyle(t *testing.T) {
 	forceColor(t)
 	server, _ := fakeBacklogAPI(t, apiStubs{})
-	m := openBacklogWithProject(t, server.URL, "p1")
-	for i := 0; i < backlogActionCount; i++ {
-		m = press(m, tea.KeyDown)
-	}
-	view := m.View()
+	view := openBacklogWithProject(t, server.URL, "p1").View()
 	selected := wantStyled(t, view, "▸ Login")
 	if !hasBackground(selected) {
 		t.Errorf("selected story row %q has no background, want the selection style", selected)
 	}
-	if line := rawLine(t, view, "Crear historia"); hasBackground(line) {
-		t.Errorf("action row %q has a background while a story is selected", line)
+	if w := lipgloss.Width(stripANSI(selected)); w != 80 {
+		t.Errorf("selected row width = %d, want it to fill the 80-column content width", w)
 	}
 }
 
@@ -177,7 +166,7 @@ func TestStyledProjectPickerShowsStatusBadges(t *testing.T) {
 func TestStyledBacklogFormUsesSelectionStyleAndErrorBanner(t *testing.T) {
 	forceColor(t)
 	server, _ := fakeBacklogAPI(t, apiStubs{})
-	m := press(openBacklogWithProject(t, server.URL, "p1"), tea.KeyEnter) // Crear historia
+	m := typeText(openBacklogWithProject(t, server.URL, "p1"), "n") // Crear historia
 	view := m.View()
 
 	wantPlainBody(t, view, "Crear historia")

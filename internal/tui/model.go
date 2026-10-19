@@ -727,7 +727,10 @@ func (m Model) footer() string {
 	case "project-result":
 		return keyHints("Enter/Esc", "volver", "q", "salir")
 	case "backlog":
-		return keyHints("↑/↓", "mover", "Enter", "elegir", "/", "buscar", "r", "refrescar", "Esc", "menú", "q", "salir")
+		if m.backlogFiltering {
+			return keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
+		}
+		return keyHints("↑/↓", "mover", "Enter", "editar", "n", "crear", "c", "proyecto", "r", "refrescar", "/", "buscar", "Esc", "menú", "q", "salir")
 	case "backlog-form":
 		return keyHints("Tab/↑/↓", "campo", "Enter", "siguiente/enviar", "Esc", "volver", "Ctrl+C", "salir")
 	case "backlog-result", "sprint-result":
@@ -749,13 +752,17 @@ func (m Model) footer() string {
 
 func (m Model) viewHelp() string {
 	rows := [][2]string{
-		{"↑ / ↓  o  j / k", "Mover la selección"},
-		{"Enter", "Elegir / confirmar"},
-		{"Space", "Marcar historia (multiselección)"},
+		{"↑ / ↓", "Mover la selección"},
+		{"Enter", "Elegir / confirmar la fila resaltada"},
+		{"n", "Crear un elemento nuevo"},
+		{"e", "Editar el elemento resaltado"},
+		{"Space", "Marcar historias (multiselección)"},
 		{"/", "Buscar o filtrar en una lista"},
 		{"r", "Refrescar el listado actual"},
+		{"x", "Cerrar el Sprint resaltado (pide confirmación)"},
+		{"h", "Ver los Sprints cerrados"},
 		{"p", "Cambiar el proyecto activo"},
-		{"Esc", "Volver un nivel (nunca pierde el contexto)"},
+		{"Esc", "Limpiar el filtro y volver un nivel (nunca pierde el contexto)"},
 		{"Tab / ↑ / ↓", "Cambiar de campo en un formulario"},
 		{"?", "Mostrar u ocultar esta ayuda"},
 		{"q", "Salir (no dentro de un campo de texto)"},
