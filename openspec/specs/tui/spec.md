@@ -182,7 +182,7 @@ En el formulario de proyectos, la fecha de inicio y la fecha fin planificada DEB
 - **THEN** la TUI muestra el error de orden en el formulario y NO emite ningún request
 
 ### Requirement: Operar el backlog mediante la TUI
-La TUI DEBERÁ permitir consultar, crear y modificar historias de usuario de un proyecto desde la opción «Backlog» del menú. La gestión consume la API existente (`GET /projects/{pid}/stories`, `POST /projects/{pid}/stories`, `PUT /projects/{pid}/stories/{sid}`) y NO incorpora reglas de negocio. La pantalla alcanzada desde el menú conserva el nombre `backlog`.
+La TUI DEBERÁ permitir consultar, crear y modificar historias de usuario de un proyecto desde la opción «Backlog» del menú. La gestión consume la API existente (`GET /projects/{pid}/stories`, `POST /projects/{pid}/stories`, `PUT /projects/{pid}/stories/{sid}`) y NO incorpora reglas de negocio. La pantalla alcanzada desde el menú conserva el nombre `backlog`. La lista del backlog se comporta según el patrón navegable (Requirement: Listas navegables con teclas uniformes) y NO muestra filas de acción: crear, modificar, cambiar de proyecto y refrescar se ofrecen con las teclas `n`, `Enter`, `c` y `r`.
 
 #### Scenario: La opción Backlog da acceso a la gestión
 - **GIVEN** que la TUI muestra el menú inicial
@@ -195,6 +195,17 @@ La TUI DEBERÁ permitir consultar, crear y modificar historias de usuario de un 
 - **WHEN** el usuario confirma la opción «Backlog»
 - **THEN** la TUI presenta el selector de proyectos con el catálogo de la API
 - **AND** no consulta el backlog hasta que el usuario confirme un proyecto
+
+#### Scenario: Crear y modificar historias desde el navegador
+- **GIVEN** que la lista del backlog está cargada
+- **WHEN** el usuario presiona `n`
+- **THEN** la TUI abre el formulario de creación vacío
+- **AND** si resalta una historia y presiona `Enter` abre el formulario de modificación precargado
+
+#### Scenario: Cambiar de proyecto desde el navegador
+- **GIVEN** que la lista del backlog está cargada
+- **WHEN** el usuario presiona `c`
+- **THEN** la TUI abre el selector de proyectos para reemplazar el proyecto activo
 
 ### Requirement: Listar y elegir proyectos con un buscador
 La TUI DEBERÁ obtener el catálogo de proyectos con `GET /projects` y presentarlo en un navegador buscable, de modo que el usuario NO necesite recordar ni escribir identificadores. El navegador se abre desde la opción «Proyectos» del menú y también sirve de selector a Backlog y Sprints. DEBERÁ permitir filtrar por nombre o identificador (la búsqueda se activa con `/` y cualquier otro carácter la inicia ya escrito), navegar con las teclas de flecha, fijar el proyecto activo con `Enter`, abrir la creación con `n`, abrir la modificación del proyecto resaltado con `e`, y volver con `Esc` sin cambiar el proyecto. Cada fila DEBERÁ mostrar el nombre, el estado derivado con una etiqueta en español (`planificado`, `en curso` o `atrasado`), una forma corta del identificador, y `✓ activo` en el proyecto de la sesión. La palabra «activo» queda reservada al proyecto de la sesión; el estado `active` de la API se muestra como «en curso». Si el catálogo está vacío o la búsqueda no arroja coincidencias, la TUI DEBERÁ informarlo sin cerrarse.
@@ -263,7 +274,7 @@ El formulario de modificación DEBERÁ abrirse precargado con el nombre, la fech
 - **THEN** la TUI vuelve al formulario con los valores escritos y muestra el motivo informado por la API
 
 ### Requirement: Proyecto activo único por sesión
-La TUI DEBERÁ fijar el proyecto elegido en el selector como proyecto activo de la sesión, conservarlo para todas las operaciones del backlog y los sprints, y ofrecer las acciones «Cambiar proyecto» y el atajo `p` para reemplazarlo. La TUI NO validará localmente el identificador; la validación queda en la API.
+La TUI DEBERÁ fijar el proyecto elegido en el selector como proyecto activo de la sesión, conservarlo para todas las operaciones del backlog y los sprints, y ofrecer la tecla `c` (desde las listas) y el atajo `p` (global) para reemplazarlo. La TUI NO validará localmente el identificador; la validación queda en la API.
 
 #### Scenario: El proyecto se elige una sola vez
 - **GIVEN** que el usuario ya eligió un proyecto en la sesión
@@ -273,7 +284,7 @@ La TUI DEBERÁ fijar el proyecto elegido en el selector como proyecto activo de 
 
 #### Scenario: Cambiar el proyecto activo
 - **GIVEN** que el usuario está en la lista del backlog con un proyecto activo
-- **WHEN** elige la acción «Cambiar proyecto» y confirma otro proyecto en el selector
+- **WHEN** presiona `c` y confirma otro proyecto en el selector
 - **THEN** la TUI reemplaza el proyecto activo por el nuevo
 - **AND** las operaciones siguientes usan el nuevo proyecto
 
@@ -494,4 +505,73 @@ Los campos de entrada de texto de todas las pantallas con formulario (proyectos 
 - **GIVEN** que el usuario escribe el título «Gestión añ», borra un carácter y escribe «o»
 - **WHEN** confirma la operación
 - **THEN** el título enviado a la API es «Gestión ao» y es UTF-8 válido
+
+### Requirement: Listas navegables con teclas uniformes
+
+Las pantallas que muestran colecciones (proyectos, historias y Sprints) DEBERÁN comportarse como un navegador con el mismo patrón de interacción: la búsqueda se activa con `/` y cualquier otro carácter la inicia ya escrito; `↑`/`↓` mueven la selección; `Enter` ejecuta la acción primaria de la fila resaltada; `n` inicia la creación; `e` modifica el elemento resaltado cuando la pantalla lo admite; `r` refresca el listado; `x` ejecuta una acción destructiva sobre la fila resaltada (pidiendo confirmación); `h` abre una vista relacionada de solo lectura; y `Esc` primero limpia el filtro y luego vuelve a la pantalla anterior. Cada fila DEBERÁ mostrar el contenido, sus etiquetas y una forma corta del identificador, con un marcador inicial cuando corresponda (por ejemplo `✓` en el proyecto activo de la sesión). Ninguna lista DEBERÁ pedir un identificador escrito a mano. Las pantallas de formulario y de resultado NO adoptan este patrón.
+
+#### Scenario: Buscar en cualquier colección
+- **GIVEN** que una colección está visible (proyectos, backlog, Sprints abiertos, historias de un Sprint o Sprints cerrados)
+- **WHEN** el usuario presiona `/` o empieza a escribir
+- **THEN** la lista se reduce a las coincidencias sin emitir requests
+
+#### Scenario: Acción primaria con Enter
+- **GIVEN** que una fila está resaltada en una colección
+- **WHEN** el usuario presiona `Enter`
+- **THEN** la TUI ejecuta la acción primaria de esa colección sobre la fila resaltada
+
+#### Scenario: Esc limpia el filtro antes de volver
+- **GIVEN** que una lista tiene un filtro aplicado
+- **WHEN** el usuario presiona `Esc`
+- **THEN** el filtro se borra y la lista vuelve a mostrarlo todo
+- **AND** un segundo `Esc` vuelve a la pantalla anterior
+
+#### Scenario: Ninguna lista pide identificadores a mano
+- **WHEN** el usuario opera cualquier colección
+- **THEN** la TUI nunca solicita que se escriba un identificador
+
+### Requirement: Operar los Sprints mediante la TUI
+
+La TUI DEBERÁ permitir operar los Sprints del proyecto activo desde la opción «Sprints», que abre directamente el navegador de Sprints abiertos en lugar de un menú de operaciones. Desde el navegador el usuario abre las historias de un Sprint (`Enter`), asigna historias del backlog al Sprint resaltado (`a`), cierra el Sprint resaltado (`x`, con confirmación), crea un Sprint (`n`) y consulta los Sprints cerrados con `h`. Las pantallas de asignación (multiselección con `Space`), de historias del Sprint, de creación de tareas y de resultado reutilizan el patrón navegable (Requirement: Listas navegables con teclas uniformes) y consumen la API existente sin incorporar reglas de negocio.
+
+#### Scenario: La opción Sprints abre el navegador
+- **GIVEN** que hay un proyecto activo
+- **WHEN** el usuario confirma la opción «Sprints»
+- **THEN** la TUI emite `GET /projects/{pid}/sprints/open` y presenta el navegador de Sprints abiertos
+- **AND** no pide ningún identificador a mano
+
+#### Scenario: Sin proyecto activo abre el selector
+- **GIVEN** que en la sesión aún no se eligió ningún proyecto
+- **WHEN** el usuario confirma la opción «Sprints»
+- **THEN** la TUI presenta el selector de proyectos con el catálogo de la API
+- **AND** no consulta los Sprints hasta que el usuario confirme un proyecto
+
+#### Scenario: Asignar historias al Sprint resaltado
+- **GIVEN** que el navegador de Sprints muestra un Sprint abierto resaltado
+- **WHEN** el usuario presiona `a`, marca historias con `Space` y confirma con `Enter`
+- **THEN** la TUI envía `POST /projects/{pid}/sprints/{sid}/stories` con los identificadores marcados
+- **AND** presenta el resultado de la API sin cerrarse
+
+#### Scenario: Cerrar un Sprint pide confirmación
+- **GIVEN** que el navegador de Sprints muestra un Sprint abierto resaltado
+- **WHEN** el usuario presiona `x`
+- **THEN** la TUI pide confirmación antes de emitir `POST /projects/{pid}/sprints/{sid}/closure`
+- **AND** si el usuario cancela no se emite ningún request
+
+#### Scenario: Crear tareas y completar historias desde el Sprint
+- **GIVEN** que el usuario abrió las historias de un Sprint abierto
+- **WHEN** resalta una historia y presiona `Enter` o `c`
+- **THEN** `Enter` abre el formulario de tareas de esa historia
+- **AND** `c` envía `POST /projects/{pid}/sprints/{sid}/stories/{story_id}/completion`
+
+#### Scenario: Consultar los Sprints cerrados
+- **GIVEN** que el navegador de Sprints está activo
+- **WHEN** el usuario presiona `h`
+- **THEN** la TUI emite `GET /projects/{pid}/sprints` y presenta los Sprints cerrados con su progreso
+- **AND** `Enter` despliega las historias del Sprint resaltado sin emitir requests
+
+#### Scenario: Backlog vacío en la asignación
+- **GIVEN** que el proyecto activo no tiene historias en el backlog
+- **WHEN** el usuario intenta asignar historias a un Sprint
+- **THEN** la TUI lo informa y no emite ningún request de asignación
 
