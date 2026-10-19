@@ -192,6 +192,25 @@ func TestProjectBrowserOffersUseEditCreateAndSearch(t *testing.T) {
 	}
 }
 
+func TestProjectBrowserMarksTheActiveProjectWithoutCallingItActivo(t *testing.T) {
+	project := tui.ProjectSummary{ID: "p1", Name: "Portal Alfa", StartDate: "2026-01-01", PlannedFinishDate: "2026-12-31", Status: "active"}
+	m := openBrowser(t, project)
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // use it as the session project
+	m = press(m, tea.KeyEnter)                      // reopen the browser
+	m = seedProjects(t, m, project)
+
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "✓ Portal Alfa") {
+		t.Errorf("View() = %q, want the active project marked with ✓", view)
+	}
+	if !strings.Contains(view, "EN CURSO") {
+		t.Errorf("View() = %q, want the API active status shown as EN CURSO", view)
+	}
+	if strings.Contains(view, "ACTIVO") {
+		t.Errorf("View() = %q, want ACTIVO reserved for the session project, not the status", view)
+	}
+}
+
 func TestProjectAPIErrorIsShownWithoutSuccess(t *testing.T) {
 	m := toCreateProject(tui.NewModel("http://localhost:8080"))
 	for i, value := range []string{"Alpha", "2026-10-01", "2026-12-01"} {

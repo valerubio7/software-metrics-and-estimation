@@ -189,7 +189,7 @@ func (m Model) viewProjectPicker() string {
 	title, hint := "Elegí un proyecto", "Enter usa el proyecto para Backlog y Sprints."
 	if m.pickerPurpose == "projects" {
 		title = "Proyectos"
-		hint = "Enter usa el proyecto · e edita · n crea · / busca por nombre o ID."
+		hint = "✓ = proyecto activo · Enter usa · e edita · n crea · / busca por nombre o ID."
 	}
 	var b strings.Builder
 	b.WriteString(screenTitleStyle.Render(title))
@@ -231,13 +231,15 @@ func (m Model) viewProjectPicker() string {
 }
 
 func projectPickerRow(project ProjectSummary, active bool) string {
+	// The session marker leads the row so a narrow terminal truncating the
+	// right side never hides which project is active.
+	marker := "  "
+	if active {
+		marker = statusOkStyle.Render("✓ ")
+	}
 	name := project.Name
 	if project.Status != "" {
 		name += "  " + projectStatusBadge(project.Status)
 	}
-	row := name + hintStyle.Render("   "+shortID(project.ID))
-	if active {
-		row += statusOkStyle.Render("   ✓ en uso")
-	}
-	return row
+	return marker + name + hintStyle.Render("   "+shortID(project.ID))
 }

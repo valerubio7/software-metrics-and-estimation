@@ -150,7 +150,7 @@ La TUI DEBERÁ permitir operar proyectos desde la opción «Proyectos», que abr
 
 - **GIVEN** que el catálogo informa el estado de cada proyecto (`planned`, `active` o `overdue`)
 - **WHEN** la TUI presenta el navegador
-- **THEN** cada fila muestra ese estado tal como lo informa la API, sin recalcularlo
+- **THEN** cada fila muestra ese estado con una etiqueta en español (`planificado`, `en curso` o `atrasado`) sin recalcularlo
 
 #### Scenario: Error de transporte
 
@@ -197,7 +197,7 @@ La TUI DEBERÁ permitir consultar, crear y modificar historias de usuario de un 
 - **AND** no consulta el backlog hasta que el usuario confirme un proyecto
 
 ### Requirement: Listar y elegir proyectos con un buscador
-La TUI DEBERÁ obtener el catálogo de proyectos con `GET /projects` y presentarlo en un navegador buscable, de modo que el usuario NO necesite recordar ni escribir identificadores. El navegador se abre desde la opción «Proyectos» del menú y también sirve de selector a Backlog y Sprints. DEBERÁ permitir filtrar por nombre o identificador (la búsqueda se activa con `/` y cualquier otro carácter la inicia ya escrito), navegar con las teclas de flecha, fijar el proyecto activo con `Enter`, abrir la creación con `n`, abrir la modificación del proyecto resaltado con `e`, y volver con `Esc` sin cambiar el proyecto. Cada fila DEBERÁ mostrar el nombre, el estado derivado, una forma corta del identificador, y una marca en el proyecto activo. Si el catálogo está vacío o la búsqueda no arroja coincidencias, la TUI DEBERÁ informarlo sin cerrarse.
+La TUI DEBERÁ obtener el catálogo de proyectos con `GET /projects` y presentarlo en un navegador buscable, de modo que el usuario NO necesite recordar ni escribir identificadores. El navegador se abre desde la opción «Proyectos» del menú y también sirve de selector a Backlog y Sprints. DEBERÁ permitir filtrar por nombre o identificador (la búsqueda se activa con `/` y cualquier otro carácter la inicia ya escrito), navegar con las teclas de flecha, fijar el proyecto activo con `Enter`, abrir la creación con `n`, abrir la modificación del proyecto resaltado con `e`, y volver con `Esc` sin cambiar el proyecto. Cada fila DEBERÁ mostrar el nombre, el estado derivado con una etiqueta en español (`planificado`, `en curso` o `atrasado`), una forma corta del identificador, y `✓ activo` en el proyecto de la sesión. La palabra «activo» queda reservada al proyecto de la sesión; el estado `active` de la API se muestra como «en curso». Si el catálogo está vacío o la búsqueda no arroja coincidencias, la TUI DEBERÁ informarlo sin cerrarse.
 
 #### Scenario: Abrir el navegador desde Proyectos
 - **GIVEN** que el menú está activo en la opción «Proyectos»

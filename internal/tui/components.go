@@ -79,7 +79,7 @@ func projectStatusBadge(status string) string {
 	case "planned":
 		return badge("planificado", toneInfo)
 	case "active":
-		return badge("activo", toneOk)
+		return badge("en curso", toneOk)
 	case "overdue":
 		return badge("atrasado", toneDanger)
 	default:

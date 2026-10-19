@@ -170,7 +170,7 @@ func TestStyledProjectPickerShowsStatusBadges(t *testing.T) {
 
 	wantPlainBody(t, view, "Elegí un proyecto")
 	wantPlainBody(t, view, "Alpha")
-	wantPlainBody(t, view, "ACTIVO")
+	wantPlainBody(t, view, "EN CURSO")
 	wantStyled(t, view, "Alpha")
 }
 
