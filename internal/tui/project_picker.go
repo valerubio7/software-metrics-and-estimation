@@ -104,6 +104,10 @@ func (m Model) updateProjectPicker(key tea.KeyMsg) (Model, tea.Cmd) {
 
 	switch key.Type {
 	case tea.KeyEsc:
+		if m.projectFilter != "" {
+			m.projectFilter, m.projectCursor = "", 0
+			return m, nil
+		}
 		m.message = ""
 		m.Screen = m.pickerReturn
 		if m.Screen == "" {
