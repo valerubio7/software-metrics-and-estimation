@@ -33,6 +33,16 @@ func (m Model) row(selected bool, text string) string {
 	return rowStyle.Render(line)
 }
 
+// searchLine renders the search box shared by every navigable list: the magnifier,
+// the label, the typed filter and a caret while the box owns the keyboard.
+func searchLine(filter string, filtering bool) string {
+	cursor := ""
+	if filtering {
+		cursor = "_"
+	}
+	return cursorStyle.Render("⌕ ") + hintStyle.Render("Buscar: ") + filter + cursor
+}
+
 // tone is a semantic color role for badges and inline cues.
 type tone int
 

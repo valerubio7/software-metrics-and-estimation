@@ -29,39 +29,45 @@ func TestSprintCloseAndHistoryFlows(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Close flow.
-	m := startSprints(server.URL)
-	if !strings.Contains(m.View(), "Cerrar Sprint") || !strings.Contains(m.View(), "historial") {
-		t.Fatalf("Sprint menu lacks separate close/history actions: %q", m.View())
+	// Close flow: x asks for confirmation, Esc cancels, s closes.
+	m := openSprintsWithProject(t, server.URL, "p1")
+	view := m.View()
+	for _, want := range []string{"Ship", "x cerrar", "h cerrados", "a asignar"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("Sprint browser missing %q: %q", want, view)
+		}
 	}
-	for range 4 {
-		m = press(m, tea.KeyDown)
+	m, cmd := apply(m, keyMsg("x"))
+	if cmd != nil || m.Screen != "sprint-confirm" {
+		t.Fatalf("x = screen %q, cmd %v; want the confirmation screen without a request", m.Screen, cmd != nil)
 	}
-	m, load := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
-	m, cmd := confirmProjectInPicker(t, m, load, "p1")
-	m = run(t, m, cmd)
-	if m.Screen != "sprint-open-list" {
-		t.Fatalf("screen = %q, want open Sprint selector", m.Screen)
+	if !strings.Contains(m.View(), "¿Cerrar este Sprint?") {
+		t.Fatalf("confirmation view = %q", m.View())
 	}
-	m, cmd = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = press(m, tea.KeyEsc)
+	if m.Screen != "sprints" {
+		t.Fatalf("cancelling left screen %q, want sprints", m.Screen)
+	}
+	m, cmd = apply(m, keyMsg("x"))
+	if cmd != nil {
+		t.Fatal("opening the confirmation issued a request")
+	}
+	m, cmd = apply(m, keyMsg("s"))
 	if cmd == nil {
-		t.Fatal("selecting an open Sprint must issue closure")
+		t.Fatal("confirming must issue the closure request")
 	}
 	m = run(t, m, cmd)
 	if !strings.Contains(m.View(), "cerrado") {
 		t.Fatalf("closure success lacks history guidance: %q", m.View())
 	}
-	if strings.Join(requests, "|") != "GET /projects|GET /projects/p1/sprints/open|POST /projects/p1/sprints/sp1/closure" {
+	if got := strings.Join(requests, "|"); got != "GET /projects|GET /projects/p1/sprints/open|POST /projects/p1/sprints/sp1/closure" {
 		t.Fatalf("closure requests = %v", requests)
 	}
 
 	// History flow with a fresh model against the same server.
-	history := startSprints(server.URL)
-	for range 5 {
-		history = press(history, tea.KeyDown)
-	}
-	history, load = apply(history, tea.KeyMsg{Type: tea.KeyEnter})
-	history, cmd = confirmProjectInPicker(t, history, load, "p1")
+	requests = nil
+	history := openSprintsWithProject(t, server.URL, "p1")
+	history, cmd = apply(history, keyMsg("h"))
 	if cmd == nil {
 		t.Fatal("history selection must issue GET")
 	}
@@ -69,10 +75,21 @@ func TestSprintCloseAndHistoryFlows(t *testing.T) {
 	if history.Screen != "sprint-history" {
 		t.Fatalf("screen = %q, want the history view", history.Screen)
 	}
-	view := history.View()
-	for _, want := range []string{"Ship", "Done work", "Remaining work", "completadas"} {
+	view = history.View()
+	if !strings.Contains(view, "Ship") || !strings.Contains(view, "1/2 historias completadas") {
+		t.Fatalf("history view = %q", view)
+	}
+	if strings.Contains(view, "Done work") {
+		t.Fatalf("history rows must stay collapsed until Enter: %q", view)
+	}
+	history, cmd = apply(history, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Fatal("expanding a closed Sprint must not issue a request")
+	}
+	view = history.View()
+	for _, want := range []string{"Done work", "Remaining work"} {
 		if !strings.Contains(view, want) {
-			t.Fatalf("history view missing %q: %q", want, view)
+			t.Fatalf("expanded history missing %q: %q", want, view)
 		}
 	}
 	if last := requests[len(requests)-1]; last != "GET /projects/p1/sprints" {

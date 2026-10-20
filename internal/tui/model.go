@@ -49,20 +49,28 @@ type Model struct {
 	message          string
 	client           *ProjectClient
 
-	backlogCursor    int
-	backlogStories   []Story
-	backlogLoading   bool
-	backlogFilter    string
-	backlogFiltering bool
-	backlogForm      storyForm
-	backlogMessage   string
-	backlogReturn    string
-	backlogClient    *BacklogClient
-	sprintClient     *SprintClient
-	sprintCursor     int
-	sprintGoal       string
-	sprintMessage    string
-	sprintAction     string
+	backlogCursor        int
+	backlogStories       []Story
+	backlogLoading       bool
+	backlogFilter        string
+	backlogFiltering     bool
+	backlogForm          storyForm
+	backlogMessage       string
+	backlogReturn        string
+	backlogClient        *BacklogClient
+	sprintClient         *SprintClient
+	sprintCursor         int
+	historyCursor        int
+	historyExpanded      string
+	sprintGoal           string
+	sprintMessage        string
+	sprintOK             bool
+	sprintReturn         string
+	sprintFilter         string
+	sprintFiltering      bool
+	sprintLoading        bool
+	sprintHistoryLoading bool
+	sprintStoriesLoading bool
 
 	selectedSprintID string
 	taskStoryID      string
@@ -109,9 +117,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.applyBacklogResult(result)
 	}
 	if result, ok := msg.(SprintResultMsg); ok {
-		if result.Op == "close" || result.Op == "history" {
-			return m.applyClosureHistoryResult(result)
-		}
 		return m.applySprintResult(result)
 	}
 	key, isKey := msg.(tea.KeyMsg)
@@ -156,19 +161,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "backlog-result":
 		return m.updateBacklogResult(key)
 	case "sprints":
-		return m.updateClosureHistoryMenu(key)
+		return m.updateSprints(key)
 	case "sprint-goal":
 		return m.updateSprintForm(key)
 	case "sprint-history":
-		if key.Type == tea.KeyEsc || key.Type == tea.KeyEnter {
-			m.Screen, m.sprintMessage = "sprints", ""
-		}
-		return m, nil
-	case "sprint-open-list":
-		if m.sprintAction == "close" {
-			return m.updateClosureOpenSprints(key)
-		}
-		return m.updateOpenSprints(key)
+		return m.updateSprintHistory(key)
+	case "sprint-confirm":
+		return m.updateSprintConfirm(key)
 	case "sprint-story-select":
 		return m.updateSprintStorySelection(key)
 	case "sprint-assigned-list":
@@ -177,7 +176,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateSprintTaskForm(key)
 	case "sprint-result":
 		if key.Type == tea.KeyEsc || key.Type == tea.KeyEnter {
-			m.Screen, m.sprintMessage = "sprints", ""
+			m.sprintMessage = ""
+			if m.sprintReturn == "sprint-assigned-list" && m.selectedSprintID != "" {
+				return m.openAssignedStories(m.selectedSprintID)
+			}
+			return m.enterSprints()
 		}
 		return m, nil
 	default:
@@ -203,7 +206,7 @@ func entersText(screen string) bool {
 // listed, so q is a plain character there; Ctrl+C always quits.
 func quitsOnQ(screen string) bool {
 	switch screen {
-	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-open-list", "sprint-assigned-list", "sprint-story-select":
+	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select":
 		return true
 	}
 	return false
@@ -217,7 +220,8 @@ func isQuitRune(key tea.KeyMsg) bool {
 // shortcuts (?, p, q) must be typed into it instead of triggering.
 func (m Model) filtering() bool {
 	return (m.Screen == "backlog" && m.backlogFiltering) ||
-		(m.Screen == "project-picker" && m.projectFiltering)
+		(m.Screen == "project-picker" && m.projectFiltering) ||
+		(isSprintScreen(m.Screen) && m.sprintFiltering)
 }
 
 // editText applies a text-editing key to value: runes and the space bar are
@@ -253,7 +257,7 @@ func (m Model) updateMenu(key tea.KeyMsg) (Model, tea.Cmd) {
 		case 1:
 			return m.openBacklog()
 		case 2:
-			m.Screen = "sprints"
+			return m.enterSprints()
 		default:
 			return m, tea.Quit
 		}
@@ -526,13 +530,13 @@ func (m Model) viewBody() string {
 	case "backlog-result":
 		return m.viewBacklogResult()
 	case "sprints":
-		return m.viewSprintsMenu()
+		return m.viewSprints()
 	case "sprint-goal":
 		return m.viewSprintGoal()
 	case "sprint-history":
 		return m.viewSprintHistory()
-	case "sprint-open-list":
-		return m.viewOpenSprints()
+	case "sprint-confirm":
+		return m.viewSprintConfirm()
 	case "sprint-story-select":
 		return m.viewSprintStorySelect()
 	case "sprint-assigned-list":
@@ -655,7 +659,7 @@ func (m Model) crumbParts() []string {
 		switch {
 		case m.pickerReturn == "backlog":
 			parts = append(parts, "Backlog")
-		case m.pickerReturn == "sprints" || strings.HasPrefix(m.pickerPurpose, "sprint-"):
+		case m.pickerReturn == "sprints" || isSprintScreen(m.pickerReturn) || m.pickerPurpose == "sprints":
 			parts = append(parts, "Sprints")
 		default:
 			parts = append(parts, "Proyectos")
@@ -671,13 +675,11 @@ func (m Model) crumbParts() []string {
 		case "backlog-result":
 			parts = append(parts, "Resultado")
 		}
-	case "sprints", "sprint-goal", "sprint-open-list", "sprint-story-select", "sprint-assigned-list", "sprint-task-form", "sprint-history", "sprint-result":
+	case "sprints", "sprint-goal", "sprint-story-select", "sprint-assigned-list", "sprint-task-form", "sprint-history", "sprint-confirm", "sprint-result":
 		parts = append(parts, "Sprints")
 		switch m.Screen {
 		case "sprint-goal":
 			parts = append(parts, "Nuevo Sprint")
-		case "sprint-open-list":
-			parts = append(parts, "Elegir Sprint")
 		case "sprint-story-select":
 			parts = append(parts, "Asignar historias")
 		case "sprint-assigned-list":
@@ -686,6 +688,8 @@ func (m Model) crumbParts() []string {
 			parts = append(parts, "Nueva tarea")
 		case "sprint-history":
 			parts = append(parts, "Historial")
+		case "sprint-confirm":
+			parts = append(parts, "Cerrar")
 		case "sprint-result":
 			parts = append(parts, "Resultado")
 		}
@@ -736,15 +740,31 @@ func (m Model) footer() string {
 	case "backlog-result", "sprint-result":
 		return keyHints("Enter/Esc", "volver", "q", "salir")
 	case "sprints":
-		return keyHints("↑/↓", "mover", "Enter", "elegir", "Esc", "menú", "q", "salir")
+		if m.sprintFiltering {
+			return keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
+		}
+		return keyHints("↑/↓", "mover", "Enter", "historias", "a", "asignar", "x", "cerrar", "h", "cerrados", "n", "nuevo", "/", "buscar", "Esc", "menú", "q", "salir")
 	case "sprint-goal":
 		return keyHints("Enter", "enviar", "Esc", "volver", "Ctrl+C", "salir")
-	case "sprint-open-list", "sprint-assigned-list", "sprint-story-select":
-		return keyHints("↑/↓", "mover", "Enter", "elegir", "Space", "marcar", "Esc", "volver", "q", "salir")
+	case "sprint-confirm":
+		return keyHints("s", "confirmar", "n/Esc", "cancelar", "q", "salir")
+	case "sprint-assigned-list":
+		if m.sprintFiltering {
+			return keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
+		}
+		return keyHints("↑/↓", "mover", "Enter", "tareas", "c", "completar", "/", "buscar", "Esc", "volver", "q", "salir")
+	case "sprint-story-select":
+		if m.sprintFiltering {
+			return keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
+		}
+		return keyHints("↑/↓", "mover", "Space", "marcar", "Enter", "asignar", "/", "buscar", "Esc", "volver", "q", "salir")
 	case "sprint-task-form":
 		return keyHints("Tab", "campo", "Enter", "continuar/enviar", "Esc", "volver", "Ctrl+C", "salir")
 	case "sprint-history":
-		return keyHints("Enter/Esc", "volver", "q", "salir")
+		if m.sprintFiltering {
+			return keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
+		}
+		return keyHints("↑/↓", "mover", "Enter", "desplegar", "/", "buscar", "Esc", "volver", "q", "salir")
 	default:
 		return keyHints("Esc", "volver", "?", "ayuda", "q", "salir")
 	}

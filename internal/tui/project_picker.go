@@ -151,28 +151,21 @@ func (m Model) updateProjectPicker(key tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 // selectProject stores the session context and resumes the flow that opened the
-// picker.
+// picker. Sprint flows always land on the Sprints browser, which is the single
+// entry point for every Sprint operation.
 func (m Model) selectProject(project ProjectSummary) (Model, tea.Cmd) {
 	m.activeProjectID = project.ID
 	m.activeProjectName = project.Name
 	returnTo, purpose := m.pickerReturn, m.pickerPurpose
 	m.message = ""
 
-	switch purpose {
-	case "backlog":
+	switch {
+	case purpose == "backlog":
 		m.Screen = "backlog"
 		m.backlogFilter, m.backlogFiltering = "", false
 		return m.startBacklogLoad()
-	case "sprint-create":
-		m.Screen, m.sprintAction, m.sprintGoal = "sprint-goal", "create", ""
-		return m, nil
-	case "sprint-assign", "sprint-tasks", "sprint-complete", "sprint-close", "sprint-history":
-		m.sprintAction = strings.TrimPrefix(purpose, "sprint-")
-		m.Screen = "sprints"
-		if m.sprintAction == "history" {
-			return m, m.historySprintsCmd()
-		}
-		return m, m.listOpenSprintsCmd()
+	case purpose == "sprints" || isSprintScreen(returnTo):
+		return m.enterSprints()
 	default:
 		m.Screen = returnTo
 		if m.Screen == "" {
@@ -183,6 +176,15 @@ func (m Model) selectProject(project ProjectSummary) (Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+}
+
+// isSprintScreen reports whether screen belongs to the Sprints flow.
+func isSprintScreen(screen string) bool {
+	switch screen {
+	case "sprints", "sprint-goal", "sprint-history", "sprint-confirm", "sprint-story-select", "sprint-assigned-list", "sprint-task-form", "sprint-result":
+		return true
+	}
+	return false
 }
 
 func (m Model) viewProjectPicker() string {
