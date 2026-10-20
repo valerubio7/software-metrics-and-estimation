@@ -8,6 +8,8 @@ import (
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Model is the Bubble Tea model for the TUI.
@@ -18,29 +20,58 @@ type Model struct {
 	Screen  string
 	APIErr  error
 
-	projectCursor int
-	projectID     string
-	projectAction string
-	formField     int
-	form          ProjectInput
-	message       string
-	client        *ProjectClient
+	width, height int
+	showHelp      bool
 
-	backlogProjectID string // project confirmed for the session
-	backlogInput     string // text being edited in backlog-project
-	backlogCursor    int
-	backlogStories   []Story
-	backlogLoading   bool
-	backlogForm      storyForm
-	backlogMessage   string // text of backlog-result
-	backlogReturn    string // screen reached when leaving backlog-result
-	backlogClient    *BacklogClient
-	sprintClient     *SprintClient
-	sprintCursor     int
-	sprintProjectID  string
-	sprintGoal       string
-	sprintMessage    string
-	sprintAction     string
+	// Session context shared by every screen.
+	activeProjectID   string
+	activeProjectName string
+
+	// Project browser (the searchable project list).
+	projects         []ProjectSummary
+	projectsLoading  bool
+	projectFilter    string
+	projectFiltering bool
+	projectCursor    int
+	pickerReturn     string
+	pickerPurpose    string
+
+	projectID        string
+	formField        int
+	formSegment      int
+	form             ProjectInput
+	formStart        dateField
+	formFinish       dateField
+	formErr          string
+	formReturn       string
+	projectResultOK  bool
+	resultFormScreen string
+	message          string
+	client           *ProjectClient
+
+	backlogCursor        int
+	backlogStories       []Story
+	backlogLoading       bool
+	backlogFilter        string
+	backlogFiltering     bool
+	backlogForm          storyForm
+	backlogMessage       string
+	backlogReturn        string
+	backlogClient        *BacklogClient
+	sprintClient         *SprintClient
+	sprintCursor         int
+	historyCursor        int
+	historyExpanded      string
+	sprintGoal           string
+	sprintMessage        string
+	sprintOK             bool
+	sprintReturn         string
+	sprintFilter         string
+	sprintFiltering      bool
+	sprintLoading        bool
+	sprintHistoryLoading bool
+	sprintStoriesLoading bool
+
 	selectedSprintID string
 	taskStoryID      string
 	taskTitle        string
@@ -72,64 +103,71 @@ func (m Model) Init() tea.Cmd { return nil }
 
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if size, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width, m.height = size.Width, size.Height
+		return m, nil
+	}
 	if result, ok := msg.(ProjectResultMsg); ok {
 		return m.applyProjectResult(result)
+	}
+	if result, ok := msg.(ProjectsResultMsg); ok {
+		return m.applyProjectsResult(result)
 	}
 	if result, ok := msg.(BacklogResultMsg); ok {
 		return m.applyBacklogResult(result)
 	}
 	if result, ok := msg.(SprintResultMsg); ok {
-		if result.Op == "close" || result.Op == "history" {
-			return m.applyClosureHistoryResult(result)
-		}
 		return m.applySprintResult(result)
 	}
 	key, isKey := msg.(tea.KeyMsg)
 	if !isKey {
 		return m, nil
 	}
-	if key.Type == tea.KeyCtrlC || (isQuitRune(key) && quitsOnQ(m.Screen)) {
+	if key.Type == tea.KeyCtrlC {
+		return m, tea.Quit
+	}
+	if m.showHelp {
+		if key.Type == tea.KeyEsc || key.Type == tea.KeyEnter || (key.Type == tea.KeyRunes && string(key.Runes) == "?") {
+			m.showHelp = false
+		}
+		return m, nil
+	}
+	if key.Type == tea.KeyRunes && string(key.Runes) == "?" && !entersText(m.Screen) && !m.filtering() {
+		m.showHelp = true
+		return m, nil
+	}
+	if key.Type == tea.KeyRunes && string(key.Runes) == "p" && quitsOnQ(m.Screen) && m.Screen != "project-picker" && m.Screen != "sprint-confirm" && !m.filtering() {
+		return m.openProjectPicker("project")
+	}
+	if isQuitRune(key) && quitsOnQ(m.Screen) && !m.filtering() {
 		return m, tea.Quit
 	}
 	switch m.Screen {
 	case "menu":
 		return m.updateMenu(key)
-	case "projects":
-		return m.updateProjects(key)
+	case "project-picker":
+		return m.updateProjectPicker(key)
 	case "create-project", "edit-project":
 		return m.updateProjectForm(key)
-	case "project-id":
-		return m.updateProjectID(key)
 	case "project-result":
 		if key.Type == tea.KeyEsc || key.Type == tea.KeyEnter {
-			m.Screen = "projects"
-			m.message = ""
+			return m.leaveProjectResult()
 		}
 		return m, nil
 	case "backlog":
 		return m.updateBacklog(key)
-	case "backlog-project":
-		return m.updateBacklogProject(key)
 	case "backlog-form":
 		return m.updateBacklogForm(key)
 	case "backlog-result":
 		return m.updateBacklogResult(key)
 	case "sprints":
-		return m.updateClosureHistoryMenu(key)
-	case "sprint-project", "sprint-goal":
+		return m.updateSprints(key)
+	case "sprint-goal":
 		return m.updateSprintForm(key)
-	case "sprint-close-project", "sprint-history-project":
-		return m.updateClosureHistoryProject(key)
 	case "sprint-history":
-		if key.Type == tea.KeyEsc || key.Type == tea.KeyEnter {
-			m.Screen, m.sprintMessage = "sprints", ""
-		}
-		return m, nil
-	case "sprint-open-list":
-		if m.sprintAction == "close" {
-			return m.updateClosureOpenSprints(key)
-		}
-		return m.updateOpenSprints(key)
+		return m.updateSprintHistory(key)
+	case "sprint-confirm":
+		return m.updateSprintConfirm(key)
 	case "sprint-story-select":
 		return m.updateSprintStorySelection(key)
 	case "sprint-assigned-list":
@@ -138,7 +176,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateSprintTaskForm(key)
 	case "sprint-result":
 		if key.Type == tea.KeyEsc || key.Type == tea.KeyEnter {
-			m.Screen, m.sprintMessage = "sprints", ""
+			m.sprintMessage = ""
+			if m.sprintReturn == "sprint-assigned-list" && m.selectedSprintID != "" {
+				return m.openAssignedStories(m.selectedSprintID)
+			}
+			return m.enterSprints()
 		}
 		return m, nil
 	default:
@@ -150,11 +192,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
+// entersText reports whether the screen owns a focused text field, where "?" is a
+// plain character rather than the help shortcut.
+func entersText(screen string) bool {
+	switch screen {
+	case "create-project", "edit-project", "backlog-form", "sprint-goal", "sprint-task-form":
+		return true
+	}
+	return false
+}
+
 // quitsOnQ reports whether q/Q exits from screen. Text-entry screens are not
 // listed, so q is a plain character there; Ctrl+C always quits.
 func quitsOnQ(screen string) bool {
 	switch screen {
-	case "menu", "projects", "project-result", "backlog", "backlog-result", "sprints":
+	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select":
 		return true
 	}
 	return false
@@ -162,6 +214,14 @@ func quitsOnQ(screen string) bool {
 
 func isQuitRune(key tea.KeyMsg) bool {
 	return key.Type == tea.KeyRunes && len(key.Runes) == 1 && (key.Runes[0] == 'q' || key.Runes[0] == 'Q')
+}
+
+// filtering reports whether a search box owns the keyboard, so global
+// shortcuts (?, p, q) must be typed into it instead of triggering.
+func (m Model) filtering() bool {
+	return (m.Screen == "backlog" && m.backlogFiltering) ||
+		(m.Screen == "project-picker" && m.projectFiltering) ||
+		(isSprintScreen(m.Screen) && m.sprintFiltering)
 }
 
 // editText applies a text-editing key to value: runes and the space bar are
@@ -193,11 +253,11 @@ func (m Model) updateMenu(key tea.KeyMsg) (Model, tea.Cmd) {
 	case tea.KeyEnter:
 		switch m.Cursor {
 		case 0:
-			m.Screen, m.projectCursor = "projects", 0
+			return m.openProjectPicker("projects")
 		case 1:
 			return m.openBacklog()
 		case 2:
-			m.Screen = "sprints"
+			return m.enterSprints()
 		default:
 			return m, tea.Quit
 		}
@@ -205,86 +265,177 @@ func (m Model) updateMenu(key tea.KeyMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateProjects(key tea.KeyMsg) (Model, tea.Cmd) {
-	options := []string{"Crear proyecto", "Modificar proyecto", "Consultar estado", "Volver"}
-	switch key.Type {
-	case tea.KeyUp:
-		if m.projectCursor > 0 {
-			m.projectCursor--
-		}
-	case tea.KeyDown:
-		if m.projectCursor < len(options)-1 {
-			m.projectCursor++
-		}
-	case tea.KeyEsc:
-		m.Screen, m.Cursor = "menu", 0
-	case tea.KeyEnter:
-		switch m.projectCursor {
-		case 0:
-			m.Screen, m.form, m.formField = "create-project", ProjectInput{}, 0
-		case 1:
-			m.Screen, m.projectID, m.form, m.formField, m.projectAction = "project-id", "", ProjectInput{}, 0, "edit"
-			m.message = "Ingresá el ID del proyecto para editar."
-		case 2:
-			m.Screen, m.projectID, m.projectAction = "project-id", "", "status"
-			m.message = "Ingresá el ID del proyecto para consultar estado."
-		default:
-			m.Screen, m.Cursor = "menu", 0
-		}
+// projectFormFields is the number of rows in the create/edit project form:
+// name, start date and planned finish date.
+const projectFormFields = 3
+
+// resetProjectForm clears every field of the create/edit project form.
+func (m *Model) resetProjectForm() {
+	m.form = ProjectInput{}
+	m.formStart = dateField{}
+	m.formFinish = dateField{}
+	m.formField, m.formSegment, m.formErr = 0, 0, ""
+}
+
+// openProjectForm enters the project form. "edit" prefills it from the summary
+// chosen in the browser; "create" starts empty. Esc and a finished request
+// return to the browser.
+func (m Model) openProjectForm(mode string, summary ProjectSummary) (Model, tea.Cmd) {
+	m.resetProjectForm()
+	m.formReturn = "project-picker"
+	m.projectID = summary.ID
+	if mode == "edit" {
+		m.form.Name = summary.Name
+		m.formStart = dateFieldFromISO(summary.StartDate)
+		m.formFinish = dateFieldFromISO(summary.PlannedFinishDate)
+		m.Screen = "edit-project"
+	} else {
+		m.Screen = "create-project"
 	}
 	return m, nil
 }
 
-func (m Model) updateProjectID(key tea.KeyMsg) (Model, tea.Cmd) {
-	if key.Type == tea.KeyEsc {
-		m.Screen, m.message = "projects", ""
+// editSelectedProject opens the form for the project highlighted in the browser.
+func (m Model) editSelectedProject() (Model, tea.Cmd) {
+	list := m.filteredProjects()
+	if m.projectCursor < 0 || m.projectCursor >= len(list) {
 		return m, nil
 	}
-	if value, ok := editText(m.projectID, key); ok {
-		m.projectID = value
-		return m, nil
+	return m.openProjectForm("edit", list[m.projectCursor])
+}
+
+// leaveProjectResult returns to the form on a failed request so it can be
+// corrected, or to the freshly reloaded browser on success.
+func (m Model) leaveProjectResult() (Model, tea.Cmd) {
+	if m.projectResultOK {
+		m.message = ""
+		return m.reopenProjectPicker()
 	}
-	if key.Type == tea.KeyEnter && strings.TrimSpace(m.projectID) != "" {
-		id := strings.TrimSpace(m.projectID)
-		if m.projectAction == "edit" {
-			m.formField = 0
-			m.Screen = "edit-project"
-			return m, nil
-		}
-		return m, m.statusCmd(id)
+	m.formErr = strings.TrimSpace(m.message)
+	m.message = ""
+	m.Screen = m.resultFormScreen
+	if m.Screen == "" {
+		m.Screen = "project-picker"
 	}
 	return m, nil
+}
+
+// reopenProjectPicker reloads the project list, used after a create or edit so
+// the browser shows the change.
+func (m Model) reopenProjectPicker() (Model, tea.Cmd) {
+	m.Screen = "project-picker"
+	m.projectFilter, m.projectFiltering, m.projectCursor = "", false, 0
+	m.projectsLoading = true
+	return m, m.listProjectsCmd()
 }
 
 func (m Model) updateProjectForm(key tea.KeyMsg) (Model, tea.Cmd) {
-	fields := []*string{&m.form.Name, &m.form.StartDate, &m.form.PlannedFinishDate}
 	if key.Type == tea.KeyEsc {
-		m.Screen = "projects"
+		m.formErr = ""
+		m.Screen = m.formReturn
+		if m.Screen == "" {
+			m.Screen = "menu"
+		}
 		return m, nil
 	}
-	if value, ok := editText(*fields[m.formField], key); ok {
-		*fields[m.formField] = value
-		return m, nil
-	}
-	if key.Type == tea.KeyTab || key.Type == tea.KeyDown {
-		m.formField = (m.formField + 1) % len(fields)
-		return m, nil
-	}
-	if key.Type == tea.KeyShiftTab || key.Type == tea.KeyUp {
-		m.formField = (m.formField + len(fields) - 1) % len(fields)
-		return m, nil
-	}
-	if key.Type == tea.KeyEnter {
-		if m.formField < len(fields)-1 {
-			m.formField++
+	if m.formField == 0 {
+		if value, ok := editText(m.form.Name, key); ok {
+			m.form.Name, m.formErr = value, ""
 			return m, nil
 		}
-		if m.Screen == "create-project" {
-			return m, m.createCmd(m.form)
+		return m.navigateProjectForm(key)
+	}
+	return m.updateProjectDate(key)
+}
+
+// updateProjectDate drives the segmented date fields: digits fill the active
+// segment (advancing when full), backspace erases, and left/right move between
+// year, month and day.
+func (m Model) updateProjectDate(key tea.KeyMsg) (Model, tea.Cmd) {
+	date := m.formFinish
+	if m.formField == 1 {
+		date = m.formStart
+	}
+	switch key.Type {
+	case tea.KeyLeft:
+		if m.formSegment > 0 {
+			m.formSegment--
 		}
-		return m, m.updateCmd(m.projectID, m.form)
+	case tea.KeyRight:
+		if m.formSegment < numDateSegments-1 {
+			m.formSegment++
+		}
+	case tea.KeyBackspace:
+		date, m.formSegment = date.backspace(m.formSegment)
+		m.formErr = ""
+	case tea.KeyRunes:
+		for _, r := range key.Runes {
+			switch {
+			case r >= '0' && r <= '9':
+				date, m.formSegment = date.typeDigit(m.formSegment, string(r))
+			case r == '-' || r == '/':
+				// A separator only moves on from a segment that already has a
+				// value, so both "2026-10-01" and "2026-1-5" fill correctly.
+				if date.segment(m.formSegment) != "" && m.formSegment < numDateSegments-1 {
+					m.formSegment++
+				}
+			}
+		}
+		m.formErr = ""
+	default:
+		return m.navigateProjectForm(key)
+	}
+	if m.formField == 1 {
+		m.formStart = date
+	} else {
+		m.formFinish = date
 	}
 	return m, nil
+}
+
+func (m Model) navigateProjectForm(key tea.KeyMsg) (Model, tea.Cmd) {
+	switch key.Type {
+	case tea.KeyTab, tea.KeyDown:
+		m.formField = (m.formField + 1) % projectFormFields
+		m.formSegment = 0
+	case tea.KeyShiftTab, tea.KeyUp:
+		m.formField = (m.formField + projectFormFields - 1) % projectFormFields
+		m.formSegment = 0
+	case tea.KeyEnter:
+		if m.formField < projectFormFields-1 {
+			m.formField++
+			m.formSegment = 0
+			return m, nil
+		}
+		return m.submitProjectForm()
+	}
+	return m, nil
+}
+
+// submitProjectForm validates the segmented dates locally before sending, so an
+// incomplete or impossible date is corrected in place instead of round-tripping
+// to the API.
+func (m Model) submitProjectForm() (Model, tea.Cmd) {
+	start, startErr := m.formStart.validate()
+	if startErr != "" {
+		m.formErr = "La fecha de inicio " + startErr + "."
+		return m, nil
+	}
+	finish, finishErr := m.formFinish.validate()
+	if finishErr != "" {
+		m.formErr = "La fecha fin planificada " + finishErr + "."
+		return m, nil
+	}
+	if finish < start {
+		m.formErr = "La fecha fin planificada debe ser igual o posterior a la de inicio."
+		return m, nil
+	}
+	m.formErr = ""
+	input := ProjectInput{Name: m.form.Name, StartDate: start, PlannedFinishDate: finish}
+	if m.Screen == "create-project" {
+		return m, m.createCmd(input)
+	}
+	return m, m.updateCmd(m.projectID, input)
 }
 
 // ProjectResultMsg is the asynchronous result of a project API request.
@@ -309,16 +460,10 @@ func (m Model) updateCmd(id string, input ProjectInput) tea.Cmd {
 	}
 }
 
-func (m Model) statusCmd(id string) tea.Cmd {
-	client := m.client
-	return func() tea.Msg {
-		response, err := client.Status(context.Background(), id)
-		return ProjectResultMsg{Response: response, Err: err}
-	}
-}
-
 func (m Model) applyProjectResult(result ProjectResultMsg) (Model, tea.Cmd) {
+	m.resultFormScreen = m.Screen
 	m.Screen = "project-result"
+	m.projectResultOK = false
 	if result.Err != nil {
 		m.message = "Error de conexión: " + result.Err.Error()
 		return m, nil
@@ -332,13 +477,14 @@ func (m Model) applyProjectResult(result ProjectResultMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	m.projectResultOK = true
 	var status struct {
 		ID     string `json:"id"`
 		Name   string `json:"name"`
 		Status string `json:"status"`
 	}
-	if json.Unmarshal(result.Response.Body, &status) == nil && status.Status != "" {
-		m.message = fmt.Sprintf("Proyecto %s: %s (%s)", status.ID, status.Name, status.Status)
+	if json.Unmarshal(result.Response.Body, &status) == nil && status.Name != "" {
+		m.message = fmt.Sprintf("Proyecto %s: %s", status.Name, status.ID)
 	} else {
 		m.message = strings.TrimSpace(string(result.Response.Body))
 	}
@@ -347,134 +493,360 @@ func (m Model) applyProjectResult(result ProjectResultMsg) (Model, tea.Cmd) {
 
 // View implements tea.Model.
 func (m Model) View() string {
-	var b strings.Builder
-	b.WriteString(header())
-	b.WriteString("\n\n")
-	if m.APIErr != nil {
-		b.WriteString(errorBannerStyle.Render("API no disponible: " + m.APIErr.Error()))
-		b.WriteString("\n")
-		b.WriteString(errorHintStyle.Render("Revisá API_URL o levantá la API; la navegación sigue disponible."))
-		b.WriteString("\n\n")
+	var content strings.Builder
+	if m.showHelp {
+		content.WriteString(m.viewHelp())
 	} else {
-		b.WriteString(statusOkStyle.Render("● API conectada · " + m.APIURL))
-		b.WriteString("\n\n")
+		if m.APIErr != nil {
+			content.WriteString(m.errorBlock("API no disponible: " + m.APIErr.Error()))
+			content.WriteString("\n")
+			content.WriteString(errorHintStyle.Render("Revisá API_URL o levantá la API; la navegación sigue disponible."))
+			content.WriteString("\n\n")
+		}
+		content.WriteString(m.viewBody())
+	}
+	var b strings.Builder
+	b.WriteString(m.chrome())
+	b.WriteString("\n")
+	b.WriteString(m.card(content.String()))
+	b.WriteString("\n")
+	b.WriteString(m.footer())
+	return b.String()
+}
+func (m Model) viewBody() string {
+	switch m.Screen {
+	case "menu":
+		return m.viewMenu()
+	case "project-picker":
+		return m.viewProjectPicker()
+	case "create-project", "edit-project":
+		return m.viewProjectForm()
+	case "project-result":
+		return m.viewProjectResult()
+	case "backlog":
+		return m.viewBacklog()
+	case "backlog-form":
+		return m.viewBacklogForm()
+	case "backlog-result":
+		return m.viewBacklogResult()
+	case "sprints":
+		return m.viewSprints()
+	case "sprint-goal":
+		return m.viewSprintGoal()
+	case "sprint-history":
+		return m.viewSprintHistory()
+	case "sprint-confirm":
+		return m.viewSprintConfirm()
+	case "sprint-story-select":
+		return m.viewSprintStorySelect()
+	case "sprint-assigned-list":
+		return m.viewAssignedStories()
+	case "sprint-task-form":
+		return m.viewSprintTaskForm()
+	case "sprint-result":
+		return m.viewSprintResult()
+	default:
+		return screenTitleStyle.Render(m.Choices[m.Cursor])
+	}
+}
+
+func (m Model) viewMenu() string {
+	var b strings.Builder
+	b.WriteString(screenTitleStyle.Render("Panel de control"))
+	b.WriteString("\n")
+	context := "Sin proyecto activo · elegí uno en Proyectos"
+	if m.activeProjectID != "" {
+		context = "Proyecto activo: " + m.activeProjectName
+	}
+	b.WriteString(hintStyle.Render(context))
+	b.WriteString("\n\n")
+	for i, choice := range m.Choices {
+		b.WriteString(m.row(i == m.Cursor, choice) + "\n")
+	}
+	return b.String()
+}
+
+func (m Model) viewProjectForm() string {
+	title := "Crear proyecto"
+	if m.Screen == "edit-project" {
+		title = "Modificar proyecto"
+	}
+	var b strings.Builder
+	b.WriteString(screenTitleStyle.Render(title))
+	b.WriteString("\n")
+	if m.Screen == "edit-project" {
+		b.WriteString(hintStyle.Render("ID: " + shortID(m.projectID)))
+	} else {
+		b.WriteString(hintStyle.Render("Completá los datos del nuevo proyecto."))
+	}
+	b.WriteString("\n\n")
+	b.WriteString(m.projectTextRow(0, "Nombre", m.form.Name) + "\n")
+	startLabel, finishLabel := "Fecha inicio", "Fecha fin planificada"
+	if m.projectFieldWidth() < projectLabelWidth {
+		startLabel, finishLabel = "Inicio", "Fin"
+	}
+	b.WriteString(m.projectDateRow(1, startLabel, m.formStart) + "\n")
+	b.WriteString(m.projectDateRow(2, finishLabel, m.formFinish) + "\n")
+	if m.formErr != "" {
+		b.WriteString("\n")
+		b.WriteString(m.errorBlock(m.formErr))
+	}
+	b.WriteString("\n")
+	b.WriteString(hintStyle.Render("Tab/↑/↓ cambia de campo · ←/→ mueve entre año, mes y día."))
+	b.WriteString("\n")
+	b.WriteString(hintStyle.Render("Enter en el último campo envía · Esc vuelve."))
+	return b.String()
+}
+
+func (m Model) viewProjectResult() string {
+	var b strings.Builder
+	b.WriteString(screenTitleStyle.Render("Resultado"))
+	b.WriteString("\n\n")
+	b.WriteString(m.resultBlock(m.message, m.projectResultOK))
+	return b.String()
+}
+
+// chrome renders the persistent top bar: a solid app bar with the brand and
+// the connection state, followed by the breadcrumb trail and a rule.
+func (m Model) chrome() string {
+	width := m.contentWidth()
+	status, statusStyle := "● API conectada", appBarOkStyle
+	if m.APIErr != nil {
+		status, statusStyle = "● API caída", appBarDangerStyle
+	}
+	var b strings.Builder
+	b.WriteString(m.appBar(statusStyle, status))
+	b.WriteString("\n")
+	b.WriteString(ansi.Truncate(breadcrumb(m.crumbParts()...), width, "…"))
+	b.WriteString("\n")
+	b.WriteString(ruleStyle.Render(strings.Repeat("─", width)))
+	return b.String()
+}
+
+// appBar renders the solid top band. On narrow terminals it drops the brand
+// text (keeping the marker) so the connection badge always stays visible.
+func (m Model) appBar(statusStyle lipgloss.Style, status string) string {
+	width := m.contentWidth()
+	right := statusStyle.Render(" " + status + " ")
+	rw := lipgloss.Width(right)
+	if width <= rw {
+		return statusStyle.Render(ansi.Truncate(" "+status+" ", width, "…"))
+	}
+	brand := " ◆ Software Metrics & Estimation "
+	left := appBarBrandStyle.Render(brand)
+	if lipgloss.Width(left)+rw+1 > width {
+		left = appBarBrandStyle.Render(" ◆ ")
+	}
+	gap := width - lipgloss.Width(left) - rw
+	if gap < 0 {
+		gap = 0
+	}
+	return left + appBarFillStyle.Render(strings.Repeat(" ", gap)) + right
+}
+
+func (m Model) crumbParts() []string {
+	var parts []string
+	switch m.Screen {
+	case "menu":
+		return []string{"Panel de control"}
+	case "create-project", "edit-project", "project-result":
+		parts = append(parts, "Proyectos")
+		switch m.Screen {
+		case "create-project":
+			parts = append(parts, "Crear")
+		case "edit-project":
+			parts = append(parts, "Modificar")
+		case "project-result":
+			parts = append(parts, "Resultado")
+		}
+	case "project-picker":
+		switch {
+		case m.pickerReturn == "backlog":
+			parts = append(parts, "Backlog")
+		case m.pickerReturn == "sprints" || isSprintScreen(m.pickerReturn) || m.pickerPurpose == "sprints":
+			parts = append(parts, "Sprints")
+		default:
+			parts = append(parts, "Proyectos")
+		}
+		if m.pickerPurpose != "projects" {
+			parts = append(parts, "Elegir proyecto")
+		}
+	case "backlog", "backlog-form", "backlog-result":
+		parts = append(parts, "Backlog")
+		switch m.Screen {
+		case "backlog-form":
+			parts = append(parts, "Historia")
+		case "backlog-result":
+			parts = append(parts, "Resultado")
+		}
+	case "sprints", "sprint-goal", "sprint-story-select", "sprint-assigned-list", "sprint-task-form", "sprint-history", "sprint-confirm", "sprint-result":
+		parts = append(parts, "Sprints")
+		switch m.Screen {
+		case "sprint-goal":
+			parts = append(parts, "Nuevo Sprint")
+		case "sprint-story-select":
+			parts = append(parts, "Asignar historias")
+		case "sprint-assigned-list":
+			parts = append(parts, "Historias")
+		case "sprint-task-form":
+			parts = append(parts, "Nueva tarea")
+		case "sprint-history":
+			parts = append(parts, "Historial")
+		case "sprint-confirm":
+			parts = append(parts, "Cerrar")
+		case "sprint-result":
+			parts = append(parts, "Resultado")
+		}
+	default:
+		parts = append(parts, "")
+	}
+	if m.activeProjectID != "" && !isProjectScreen(m.Screen) {
+		name := m.activeProjectName
+		if name == "" {
+			name = shortID(m.activeProjectID)
+		}
+		parts = append(parts, "Proyecto: "+name)
+	}
+	return parts
+}
+
+func isProjectScreen(screen string) bool {
+	switch screen {
+	case "project-picker", "create-project", "edit-project", "project-result":
+		return true
+	}
+	return false
+}
+
+func (m Model) footer() string {
+	if m.showHelp {
+		return m.keyHints("Esc", "cerrar ayuda", "?", "cerrar", "Ctrl+C", "salir")
 	}
 	switch m.Screen {
 	case "menu":
-		for i, choice := range m.Choices {
-			if m.Cursor == i {
-				b.WriteString(cursorStyle.Render("▸") + " " + selectedStyle.Render(choice))
-			} else {
-				b.WriteString("  " + itemStyle.Render(choice))
-			}
-			b.WriteString("\n")
+		return m.keyHints("↑/↓", "mover", "Enter", "elegir", "?", "ayuda", "q", "salir")
+	case "project-picker":
+		if m.projectFiltering {
+			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "elegir", "Esc", "limpiar")
 		}
-	case "projects":
-		b.WriteString("Gestión de proyectos\n\n")
-		for i, option := range []string{"Crear proyecto", "Modificar proyecto", "Consultar estado", "Volver"} {
-			prefix := "  "
-			if i == m.projectCursor {
-				prefix = "▸ "
-			}
-			b.WriteString(prefix + option + "\n")
-		}
+		return m.keyHints("↑/↓", "mover", "Enter", "usar", "e", "editar", "n", "crear", "r", "refrescar", "/", "buscar", "Esc", "volver")
 	case "create-project", "edit-project":
-		title := "Crear proyecto"
-		if m.Screen == "edit-project" {
-			title = "Modificar proyecto " + m.projectID
-		}
-		b.WriteString(title + "\n\n")
-		fields := []struct{ label, value string }{{"Nombre", m.form.Name}, {"Fecha inicio (YYYY-MM-DD)", m.form.StartDate}, {"Fecha fin planificada (YYYY-MM-DD)", m.form.PlannedFinishDate}}
-		for i, field := range fields {
-			prefix := "  "
-			if i == m.formField {
-				prefix = "▸ "
-			}
-			b.WriteString(prefix + field.label + ": " + field.value + "\n")
-		}
-		b.WriteString("\nTab/↑/↓ para cambiar campo; Enter en el último para enviar.\n")
-	case "project-id":
-		b.WriteString(m.message + "\n\nID: " + m.projectID + "_\nEnter para continuar, Esc para volver.\n")
+		return m.keyHints("Tab/↑/↓", "campo", "Enter", "continuar", "Esc", "volver", "Ctrl+C", "salir")
 	case "project-result":
-		b.WriteString("Resultado\n\n" + m.message + "\n\nEnter/Esc para volver.\n")
+		return m.keyHints("Enter/Esc", "volver", "q", "salir")
 	case "backlog":
-		b.WriteString(m.viewBacklog())
-	case "backlog-project":
-		b.WriteString(m.viewBacklogProject())
+		if m.backlogFiltering {
+			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
+		}
+		return m.keyHints("↑/↓", "mover", "Enter", "editar", "n", "crear", "c", "proyecto", "r", "refrescar", "/", "buscar", "Esc", "menú", "q", "salir")
 	case "backlog-form":
-		b.WriteString(m.viewBacklogForm())
-	case "backlog-result":
-		b.WriteString(m.viewBacklogResult())
+		return m.keyHints("Tab/↑/↓", "campo", "Enter", "siguiente/enviar", "Esc", "volver", "Ctrl+C", "salir")
+	case "backlog-result", "sprint-result":
+		return m.keyHints("Enter/Esc", "volver", "q", "salir")
 	case "sprints":
-		b.WriteString("Operaciones de Sprint\n\n")
-		for i, option := range []string{"Crear Sprint", "Asignar historias", "Crear tareas", "Completar historia", "Cerrar Sprint", "Ver historial", "Volver"} {
-			b.WriteString(choiceRow(i == m.sprintCursor, option) + "\n")
+		if m.sprintFiltering {
+			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
 		}
-	case "sprint-project":
-		b.WriteString("Proyecto del Sprint\n\nID del proyecto: " + m.sprintProjectID + "_\nEnter para continuar, Esc para volver.\n")
-	case "sprint-close-project", "sprint-history-project":
-		b.WriteString("Proyecto del Sprint\n\nID del proyecto: " + m.sprintProjectID + "_\nEnter para continuar, Esc para volver.\n")
-	case "sprint-history":
-		b.WriteString(m.viewSprintHistory())
+		return m.keyHints("↑/↓", "mover", "Enter", "historias", "a", "asignar", "x", "cerrar", "h", "cerrados", "n", "nuevo", "r", "refrescar", "/", "buscar", "Esc", "menú", "q", "salir")
 	case "sprint-goal":
-		b.WriteString("Crear Sprint\n\nObjetivo: " + m.sprintGoal + "_\nEnter para enviar, Esc para volver.\n")
-	case "sprint-result":
-		b.WriteString("Resultado\n\n" + m.sprintMessage + "\n\nEnter/Esc para volver.\n")
-	case "sprint-open-list":
-		b.WriteString("Elegir Sprint abierto\n\n")
-		for i, sprint := range m.openSprints {
-			b.WriteString(choiceRow(i == m.sprintCursor, sprint.ID+" · "+sprint.SprintGoal) + "\n")
-		}
-		if len(m.openSprints) == 0 {
-			b.WriteString("No hay Sprints abiertos.\n")
-		}
-	case "sprint-story-select":
-		b.WriteString("Elegir historias para asignar\n\n")
-		for _, story := range m.sprintStories {
-			mark := "[ ]"
-			if m.selectedStories[story.ID] {
-				mark = "[x]"
-			}
-			b.WriteString(fmt.Sprintf("%s %s · %s\n", mark, story.ID, story.Title))
-		}
-		b.WriteString("\nSpace para alternar; Enter para asignar.\n")
+		return m.keyHints("Enter", "enviar", "Esc", "volver", "Ctrl+C", "salir")
+	case "sprint-confirm":
+		return m.keyHints("s", "confirmar", "n/Esc", "cancelar", "q", "salir")
 	case "sprint-assigned-list":
-		b.WriteString("Historias asignadas al Sprint\n\n")
-		for i, story := range m.sprintStories {
-			b.WriteString(choiceRow(i == m.sprintCursor, story.ID+" · "+story.Title) + "\n")
+		if m.sprintFiltering {
+			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
 		}
+		return m.keyHints("↑/↓", "mover", "Enter", "tareas", "c", "completar", "r", "refrescar", "/", "buscar", "Esc", "volver", "q", "salir")
+	case "sprint-story-select":
+		if m.sprintFiltering {
+			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
+		}
+		return m.keyHints("↑/↓", "mover", "Space", "marcar", "Enter", "asignar", "/", "buscar", "Esc", "volver", "q", "salir")
 	case "sprint-task-form":
-		b.WriteString("Crear tarea para " + m.taskStoryID + "\n\n")
-		b.WriteString(choiceRow(m.taskField == 0, "Título: "+m.taskTitle) + "\n")
-		b.WriteString(choiceRow(m.taskField == 1, "Horas estimadas (opcional): "+m.taskHours) + "\n")
-		if m.sprintMessage != "" {
-			b.WriteString("\n" + errorBannerStyle.Render(m.sprintMessage) + "\n")
+		return m.keyHints("Tab", "campo", "Enter", "continuar/enviar", "Esc", "volver", "Ctrl+C", "salir")
+	case "sprint-history":
+		if m.sprintFiltering {
+			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
 		}
-		b.WriteString("\nTab para cambiar campo; Enter para continuar/enviar.\n")
+		return m.keyHints("↑/↓", "mover", "Enter", "desplegar", "r", "refrescar", "/", "buscar", "Esc", "volver", "q", "salir")
 	default:
-		b.WriteString(screenTitleStyle.Render(m.Choices[m.Cursor]))
-		b.WriteString("  ")
-		b.WriteString(badgeStyle.Render("Disponible en " + placeholderRelease(m.Cursor)))
-		b.WriteString("\n\nPulsa esc para volver, q para salir.\n")
+		return m.keyHints("Esc", "volver", "?", "ayuda", "q", "salir")
 	}
-	return b.String()
 }
 
-func header() string {
+func (m Model) viewHelp() string {
+	rows := [][2]string{
+		{"↑ / ↓", "Mover la selección"},
+		{"Enter", "Elegir / confirmar la fila resaltada"},
+		{"n", "Crear un elemento nuevo"},
+		{"e", "Editar el elemento resaltado"},
+		{"Space", "Marcar historias (multiselección)"},
+		{"/", "Buscar o filtrar en una lista"},
+		{"r", "Refrescar el listado actual"},
+		{"x", "Cerrar el Sprint resaltado (pide confirmación)"},
+		{"h", "Ver los Sprints cerrados"},
+		{"p", "Cambiar el proyecto activo"},
+		{"Esc", "Limpiar el filtro y volver un nivel (nunca pierde el contexto)"},
+		{"Tab / ↑ / ↓", "Cambiar de campo en un formulario"},
+		{"?", "Mostrar u ocultar esta ayuda"},
+		{"q", "Salir (no dentro de un campo de texto)"},
+		{"Ctrl+C", "Salir desde cualquier pantalla"},
+	}
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Software Metrics & Estimation"))
-	b.WriteString("\n")
-	b.WriteString(subtitleStyle.Render("Sprint 2 · La Interfaz · TUI base"))
-	b.WriteString("\n")
-	b.WriteString(ruleStyle.Render("────────────────────────────────"))
+	b.WriteString(screenTitleStyle.Render("Atajos de teclado"))
+	b.WriteString("\n\n")
+	for _, row := range rows {
+		b.WriteString("  " + helpKeyStyle.Render(padRight(row[0], 18)) + hintStyle.Render(row[1]) + "\n")
+	}
 	return b.String()
 }
 
-func placeholderRelease(cursor int) string {
-	switch cursor {
-	case 0:
-		return "TUI-02"
-	default:
-		return "TUI-04/TUI-05"
+func padRight(s string, width int) string {
+	if w := lipgloss.Width(s); w >= width {
+		return s
 	}
+	return s + strings.Repeat(" ", width-lipgloss.Width(s))
+}
+
+func (m Model) contentWidth() int {
+	if m.width > 0 {
+		return m.width
+	}
+	return 80
+}
+
+// innerWidth is the usable width inside the content panel (borders and
+// horizontal padding subtracted), used by rows and form fields so their
+// selection bar fills the panel.
+func (m Model) innerWidth() int {
+	if w := m.contentWidth() - 4; w > 10 {
+		return w
+	}
+	return 10
+}
+
+// card frames the body in a rounded panel sized to the content width. Plain
+// text wraps to the inner width; already-styled lines are truncated as a
+// safety net so a stray long row cannot widen the panel.
+func (m Model) card(body string) string {
+	inner := m.innerWidth()
+	var lines []string
+	for _, line := range strings.Split(body, "\n") {
+		if ansiPattern.MatchString(line) {
+			lines = append(lines, padToWidth(ansi.Truncate(line, inner, "…"), inner))
+			continue
+		}
+		for _, wrapped := range wrapPlain(line, inner) {
+			lines = append(lines, padToWidth(wrapped, inner))
+		}
+	}
+	return panelStyle.Width(m.contentWidth() - 2).Render(strings.Join(lines, "\n"))
+}
+
+// padToWidth right-pads s with spaces to width using its display width.
+func padToWidth(s string, width int) string {
+	if pad := width - lipgloss.Width(s); pad > 0 {
+		return s + strings.Repeat(" ", pad)
+	}
+	return s
 }

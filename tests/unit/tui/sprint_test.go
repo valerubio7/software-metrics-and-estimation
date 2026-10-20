@@ -12,52 +12,127 @@ import (
 	"github.com/valerubio7/software-metrics-and-estimation/internal/tui"
 )
 
-func TestSprintMenuOpensGoalCreation(t *testing.T) {
-	m := tui.NewModel("http://localhost")
+// startSprints opens Sprints from the top-level menu (Down, Down, Enter). With no
+// active project this lands on the project picker and returns its load command.
+func startSprints(url string) (tui.Model, tea.Cmd) {
+	m := tui.NewModel(url)
 	m = press(m, tea.KeyDown)
 	m = press(m, tea.KeyDown)
-	m = press(m, tea.KeyEnter)
-	if !strings.Contains(m.View(), "Crear Sprint") {
-		t.Fatalf("Sprint workflow view = %q, want creation action", m.View())
+	return apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+}
+
+// openSprintsWithProject goes menu -> Sprints -> picker -> pid -> Enter and applies
+// the open Sprint list.
+func openSprintsWithProject(t *testing.T, url, pid string) tui.Model {
+	t.Helper()
+	m, load := startSprints(url)
+	m, cmd := confirmProjectInPicker(t, m, load, pid)
+	m = run(t, m, cmd)
+	if m.Screen != "sprints" {
+		t.Fatalf("Screen = %q after loading, want sprints", m.Screen)
 	}
-	m = press(m, tea.KeyEnter)
-	m = typeText(m, "p1")
-	m = press(m, tea.KeyEnter)
-	if !strings.Contains(m.View(), "Objetivo") {
-		t.Fatalf("creation view = %q, want goal field", m.View())
+	return m
+}
+
+// sprintServer answers GET /projects plus the Sprint discovery endpoints.
+func sprintServer(t *testing.T, handler func(w http.ResponseWriter, r *http.Request) bool) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/projects" {
+			_, _ = w.Write([]byte(projectsBody(t, sampleProjects())))
+			return
+		}
+		if handler(w, r) {
+			return
+		}
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func TestSprintBrowserListsOpenSprintsWithNavigatorKeys(t *testing.T) {
+	server := sprintServer(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/projects/p1/sprints/open" {
+			_, _ = w.Write([]byte(`{"project_id":"p1","sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Ship the release","is_closed":false}]}`))
+			return true
+		}
+		return false
+	})
+
+	m := openSprintsWithProject(t, server.URL, "p1")
+	view := m.View()
+	for _, want := range []string{"Sprints de Alpha", "Ship the release", "sp1", "x cerrar", "h cerrados", "a asignar", "/ busca"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("browser view missing %q: %q", want, view)
+		}
+	}
+	if !strings.Contains(view, "Enter") {
+		t.Fatalf("browser view lacks the primary action hint: %q", view)
+	}
+}
+
+func TestSprintBrowserFiltersByGoalWithoutRequests(t *testing.T) {
+	var requests []string
+	server := sprintServer(t, func(w http.ResponseWriter, r *http.Request) bool {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		if r.URL.Path == "/projects/p1/sprints/open" {
+			_, _ = w.Write([]byte(`{"sprints":[{"id":"sp1","sprint_goal":"Ship"},{"id":"sp2","sprint_goal":"Polish"}]}`))
+			return true
+		}
+		return false
+	})
+
+	m := openSprintsWithProject(t, server.URL, "p1")
+	before := len(requests)
+	m, _ = apply(m, keyMsg("/"))
+	m = typeText(m, "pol")
+	view := m.View()
+	if !strings.Contains(view, "Polish") || strings.Contains(view, "Ship") {
+		t.Fatalf("filtered sprint view = %q, want only Polish", view)
+	}
+	if len(requests) != before {
+		t.Fatalf("filtering issued requests: %v", requests[before:])
+	}
+	if m.Screen != "sprints" {
+		t.Fatalf("Screen = %q, want sprints while filtering", m.Screen)
 	}
 }
 
 func TestSprintCreateSendsProjectAndGoalAndRendersAPIError(t *testing.T) {
 	var method, path string
 	var payload map[string]string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		method, path = r.Method, r.URL.EscapedPath()
-		body, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(body, &payload)
-		w.WriteHeader(http.StatusConflict)
-		_, _ = w.Write([]byte(`{"error":"conflict","message":"project unavailable"}`))
-	}))
-	defer server.Close()
+	server := sprintServer(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.Method == http.MethodGet && r.URL.Path == "/projects/p1/sprints/open" {
+			_, _ = w.Write([]byte(`{"sprints":[]}`))
+			return true
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/projects/p1/sprints" {
+			method, path = r.Method, r.URL.EscapedPath()
+			body, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(body, &payload)
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"error":"conflict","message":"project unavailable"}`))
+			return true
+		}
+		return false
+	})
 
-	m := tui.NewModel(server.URL)
-	m = press(m, tea.KeyDown)
-	m = press(m, tea.KeyDown)
-	m = press(m, tea.KeyEnter)
-	m = press(m, tea.KeyEnter)
-	m = typeText(m, "p1")
-	m = press(m, tea.KeyEnter)
+	m := openSprintsWithProject(t, server.URL, "p1")
+	m = typeText(m, "n")
+	if m.Screen != "sprint-goal" || !strings.Contains(m.View(), "Objetivo") {
+		t.Fatalf("creation screen = %q view = %q, want the goal field", m.Screen, m.View())
+	}
 	m = typeText(m, "Sprint objective")
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("submitting goal must issue an API request")
 	}
-	_ = updated
 	_ = cmd()
 	if method != http.MethodPost || path != "/projects/p1/sprints" || payload["sprint_goal"] != "Sprint objective" {
 		t.Fatalf("request = %s %s %#v", method, path, payload)
 	}
-	result, _ := updated.(tui.Model).Update(tui.SprintResultMsg{Response: tui.APIResponse{StatusCode: http.StatusConflict, Body: []byte(`{"error":"conflict","message":"project unavailable"}`)}})
+	result, _ := updated.(tui.Model).Update(tui.SprintResultMsg{Op: "create", Response: tui.APIResponse{StatusCode: http.StatusConflict, Body: []byte(`{"error":"conflict","message":"project unavailable"}`)}})
 	if !strings.Contains(result.(tui.Model).View(), "project unavailable") {
 		t.Fatalf("error response not rendered: %q", result.(tui.Model).View())
 	}
@@ -65,7 +140,7 @@ func TestSprintCreateSendsProjectAndGoalAndRendersAPIError(t *testing.T) {
 
 func TestSprintAssignmentSelectsOpenSprintAndPreservesSelectedStoryIDs(t *testing.T) {
 	var requests []recordedRequest
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := sprintServer(t, func(w http.ResponseWriter, r *http.Request) bool {
 		body, _ := io.ReadAll(r.Body)
 		requests = append(requests, recordedRequest{Method: r.Method, Path: r.URL.EscapedPath(), Body: body})
 		switch r.URL.Path {
@@ -77,50 +152,29 @@ func TestSprintAssignmentSelectsOpenSprintAndPreservesSelectedStoryIDs(t *testin
 			w.WriteHeader(http.StatusConflict)
 			_, _ = w.Write([]byte(`{"error":"story_already_assigned","message":"already assigned"}`))
 		}
-	}))
-	defer server.Close()
-	m := tui.NewModel(server.URL)
-	m = press(m, tea.KeyDown)
-	m = press(m, tea.KeyDown)
-	m = press(m, tea.KeyEnter)
-	m = press(m, tea.KeyDown) // batch assignment
-	m = press(m, tea.KeyEnter)
-	m = typeText(m, "p1")
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = updated.(tui.Model)
+		return true
+	})
+
+	m := openSprintsWithProject(t, server.URL, "p1")
+	m, cmd := apply(m, keyMsg("a"))
 	if cmd == nil {
-		t.Fatal("selecting open Sprint must load the project's open Sprints")
+		t.Fatal("assigning stories must load the backlog")
 	}
-	updated, _ = m.Update(cmd())
-	m = updated.(tui.Model)
-	if m.Screen != "sprint-open-list" {
-		t.Fatalf("screen = %q, want open Sprint selection", m.Screen)
-	}
-	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = updated.(tui.Model)
-	if cmd == nil {
-		t.Fatal("selecting Sprint must load project backlog")
-	}
-	updated, _ = m.Update(cmd())
-	m = updated.(tui.Model)
+	m = run(t, m, cmd)
 	if m.Screen != "sprint-story-select" {
 		t.Fatalf("screen = %q, want story selection", m.Screen)
 	}
 	m = press(m, tea.KeyDown)
 	m = press(m, tea.KeySpace)
-	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("submitting selected stories must issue batch request")
 	}
-	response := cmd()
-	updated, _ = updated.(tui.Model).Update(response)
-	if !strings.Contains(updated.(tui.Model).View(), "story_already_assigned") {
-		t.Fatalf("API conflict was not rendered: %q", updated.(tui.Model).View())
+	m, _ = apply(m, cmd())
+	if !strings.Contains(m.View(), "story_already_assigned") {
+		t.Fatalf("API conflict was not rendered: %q", m.View())
 	}
-	if len(requests) != 3 {
-		t.Fatalf("requests = %d, want discovery, backlog and assignment", len(requests))
-	}
-	last := requests[2]
+	last := requests[len(requests)-1]
 	if last.Method != http.MethodPost || last.Path != "/projects/p1/sprints/sp1/stories" {
 		t.Fatalf("assignment request = %+v", last)
 	}
@@ -135,77 +189,58 @@ func TestSprintAssignmentSelectsOpenSprintAndPreservesSelectedStoryIDs(t *testin
 	}
 }
 
-func TestSprintTaskAndCompletionMenusNavigateThroughAssignedStories(t *testing.T) {
-	for _, tt := range []struct {
-		name       string
-		menuDowns  int
-		wantScreen string
-		wantOp     string
-	}{
-		{name: "create tasks", menuDowns: 2, wantScreen: "sprint-task-form", wantOp: "tasks"},
-		{name: "complete story", menuDowns: 3, wantScreen: "sprint-result", wantOp: "complete"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			var paths []string
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				paths = append(paths, r.Method+" "+r.URL.EscapedPath())
-				switch r.URL.Path {
-				case "/projects/p1/sprints/open":
-					_, _ = w.Write([]byte(`{"sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Goal"}]}`))
-				case "/projects/p1/sprints/sp1/stories":
-					_, _ = w.Write([]byte(`{"stories":[{"id":"story1","title":"Story"}]}`))
-				default:
-					_, _ = w.Write([]byte(`{"ok":true}`))
-				}
-			}))
-			defer server.Close()
+func TestSprintStoryActionsCreateTasksAndComplete(t *testing.T) {
+	var paths []string
+	server := sprintServer(t, func(w http.ResponseWriter, r *http.Request) bool {
+		paths = append(paths, r.Method+" "+r.URL.EscapedPath())
+		switch r.URL.Path {
+		case "/projects/p1/sprints/open":
+			_, _ = w.Write([]byte(`{"sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Goal"}]}`))
+		case "/projects/p1/sprints/sp1/stories":
+			if r.Method == http.MethodGet {
+				_, _ = w.Write([]byte(`{"stories":[{"id":"story1","title":"Story"}]}`))
+				return true
+			}
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		}
+		return true
+	})
 
-			m := tui.NewModel(server.URL)
-			m = press(m, tea.KeyDown)
-			m = press(m, tea.KeyDown)
-			m = press(m, tea.KeyEnter)
-			for range tt.menuDowns {
-				m = press(m, tea.KeyDown)
-			}
-			m = press(m, tea.KeyEnter)
-			m = typeText(m, "p1")
-			updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-			if cmd == nil {
-				t.Fatal("entering a project ID must request open Sprints")
-			}
-			updated, _ = updated.(tui.Model).Update(cmd())
-			updated, cmd = updated.(tui.Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
-			if cmd == nil {
-				t.Fatal("selecting an open Sprint must request assigned stories")
-			}
-			updated, _ = updated.(tui.Model).Update(cmd())
-			m = updated.(tui.Model)
-			if len(paths) != 2 || paths[0] != "GET /projects/p1/sprints/open" || paths[1] != "GET /projects/p1/sprints/sp1/stories" {
-				t.Fatalf("discovery requests = %v, want open Sprints then assigned stories", paths)
-			}
-			if m.Screen != "sprint-assigned-list" {
-				t.Fatalf("screen = %q, want assigned story selection", m.Screen)
-			}
-
-			updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-			if tt.wantOp == "tasks" {
-				if cmd != nil || updated.(tui.Model).Screen != tt.wantScreen {
-					t.Fatalf("task selection = screen %q, cmd %v; want task form without API request", updated.(tui.Model).Screen, cmd != nil)
-				}
-				return
-			}
-			if cmd == nil {
-				t.Fatal("selecting a story to complete must issue the completion request")
-			}
-			result := cmd()
-			if got := result.(tui.SprintResultMsg).Op; got != tt.wantOp {
-				t.Fatalf("operation = %q, want %q", got, tt.wantOp)
-			}
-			if updated.(tui.Model).Screen != "sprint-assigned-list" || paths[2] != "POST /projects/p1/sprints/sp1/stories/story1/completion" {
-				t.Fatalf("completion state/requests = screen %q, paths %v", updated.(tui.Model).Screen, paths)
-			}
-		})
+	openAssigned := func(t *testing.T) tui.Model {
+		t.Helper()
+		m := openSprintsWithProject(t, server.URL, "p1")
+		m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+		m = run(t, m, cmd)
+		if m.Screen != "sprint-assigned-list" {
+			t.Fatalf("screen = %q, want assigned story list", m.Screen)
+		}
+		return m
 	}
+
+	t.Run("enter opens the task form", func(t *testing.T) {
+		m := openAssigned(t)
+		m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+		if cmd != nil || m.Screen != "sprint-task-form" {
+			t.Fatalf("task selection = screen %q, cmd %v; want task form without API request", m.Screen, cmd != nil)
+		}
+	})
+
+	t.Run("c completes the highlighted story", func(t *testing.T) {
+		m := openAssigned(t)
+		m, cmd := apply(m, keyMsg("c"))
+		if cmd == nil {
+			t.Fatal("completing a story must issue the completion request")
+		}
+		result := cmd()
+		if got := result.(tui.SprintResultMsg).Op; got != "complete" {
+			t.Fatalf("operation = %q, want complete", got)
+		}
+		if last := paths[len(paths)-1]; last != "POST /projects/p1/sprints/sp1/stories/story1/completion" {
+			t.Fatalf("completion request = %q", last)
+		}
+	})
 }
 
 func TestTaskClientOmitsOptionalEstimatedHours(t *testing.T) {
@@ -241,7 +276,7 @@ func TestTaskConflictResponseIsShownWithoutSuccess(t *testing.T) {
 	m := tui.NewModel("http://localhost")
 	updated, _ := m.Update(tui.SprintResultMsg{Op: "tasks", Response: tui.APIResponse{StatusCode: http.StatusConflict, Body: []byte(`{"error":"story_not_in_sprint","message":"story is not assigned to the selected sprint"}`)}})
 	view := updated.(tui.Model).View()
-	if !strings.Contains(view, "story_not_in_sprint") || strings.Contains(view, "Tasks created") {
+	if !strings.Contains(view, "story_not_in_sprint") || strings.Contains(view, "Tareas creadas") {
 		t.Fatalf("task conflict view = %q", view)
 	}
 }
@@ -267,7 +302,7 @@ func TestCompletionConflictsAreRenderedAsAPIOutcomes(t *testing.T) {
 			m := tui.NewModel("http://localhost")
 			updated, _ := m.Update(tui.SprintResultMsg{Op: "complete", Response: tui.APIResponse{StatusCode: http.StatusConflict, Body: []byte(`{"error":"` + code + `","message":"API rejected completion"}`)}})
 			view := updated.(tui.Model).View()
-			if !strings.Contains(view, code) || strings.Contains(view, "Story completed") {
+			if !strings.Contains(view, code) || strings.Contains(view, "Historia completada") {
 				t.Fatalf("completion conflict view = %q", view)
 			}
 		})

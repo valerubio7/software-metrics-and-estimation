@@ -34,3 +34,24 @@ func (c *ProjectClient) Update(ctx context.Context, id string, input ProjectInpu
 func (c *ProjectClient) Status(ctx context.Context, id string) (APIResponse, error) {
 	return c.api.do(ctx, http.MethodGet, "/projects/"+url.PathEscape(id), nil)
 }
+
+// ProjectSummary is a project as listed by GET /projects.
+type ProjectSummary struct {
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	StartDate         string `json:"start_date"`
+	PlannedFinishDate string `json:"planned_finish_date"`
+	Status            string `json:"status"`
+}
+
+// List fetches every project so the TUI can offer a picker instead of prompting
+// for a memorized identifier.
+func (c *ProjectClient) List(ctx context.Context) (APIResponse, error) {
+	return c.api.do(ctx, http.MethodGet, "/projects", nil)
+}
+
+// ProjectsResultMsg is the asynchronous result of a project listing request.
+type ProjectsResultMsg struct {
+	Response APIResponse
+	Err      error
+}

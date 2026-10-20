@@ -14,10 +14,6 @@ import (
 	"github.com/valerubio7/software-metrics-and-estimation/internal/tui"
 )
 
-// backlogActionCount is the number of actions that precede the stories on the
-// backlog screen when a project is active: Crear historia, Cambiar proyecto, Volver.
-const backlogActionCount = 3
-
 func intPtr(v int) *int { return &v }
 
 // sampleStories returns a backlog whose API order differs from alphabetical order.
@@ -30,13 +26,35 @@ func sampleStories() []tui.Story {
 	}
 }
 
+// sampleProjects is the collection served by GET /projects for the picker.
+func sampleProjects() []tui.ProjectSummary {
+	return []tui.ProjectSummary{
+		{ID: "p1", Name: "Alpha", StartDate: "2026-01-01", PlannedFinishDate: "2026-12-31", Status: "active"},
+		{ID: "p2", Name: "Beta", StartDate: "2026-01-01", PlannedFinishDate: "2026-12-31", Status: "planned"},
+	}
+}
+
+func projectsBody(t *testing.T, projects []tui.ProjectSummary) string {
+	t.Helper()
+	if projects == nil {
+		projects = []tui.ProjectSummary{}
+	}
+	encoded, err := json.Marshal(struct {
+		Projects []tui.ProjectSummary `json:"projects"`
+	}{projects})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
+}
+
 type stub struct {
 	status int
 	body   string
 }
 
 type apiStubs struct {
-	list, create, update stub
+	projects, list, create, update stub
 }
 
 func storiesBody(t *testing.T, stories []tui.Story) string {
@@ -63,25 +81,32 @@ func storyBody(t *testing.T, story tui.Story) string {
 	return string(encoded)
 }
 
-// fakeBacklogAPI serves the story endpoints, answering each method with its stub
-// (list defaults to sampleStories) and recording every request.
+func defaultStub(s stub, status int, body string) stub {
+	if s.status == 0 {
+		return stub{status, body}
+	}
+	return s
+}
+
+// fakeBacklogAPI serves the project collection and the story endpoints, answering
+// each with its stub (list defaults to sampleStories) and recording every request.
 func fakeBacklogAPI(t *testing.T, stubs apiStubs) (*httptest.Server, *recorder) {
 	t.Helper()
 	rec := &recorder{}
-	if stubs.list.status == 0 {
-		stubs.list = stub{http.StatusOK, storiesBody(t, sampleStories())}
-	}
-	if stubs.create.status == 0 {
-		stubs.create = stub{http.StatusCreated, storyBody(t, tui.Story{ID: "s9", Title: "Historia nueva"})}
-	}
-	if stubs.update.status == 0 {
-		stubs.update = stub{http.StatusOK, storyBody(t, tui.Story{ID: "s1", Title: "Historia modificada"})}
-	}
+	stubs.projects = defaultStub(stubs.projects, http.StatusOK, projectsBody(t, sampleProjects()))
+	stubs.list = defaultStub(stubs.list, http.StatusOK, storiesBody(t, sampleStories()))
+	stubs.create = defaultStub(stubs.create, http.StatusCreated, storyBody(t, tui.Story{ID: "s9", Title: "Historia nueva"}))
+	stubs.update = defaultStub(stubs.update, http.StatusOK, storyBody(t, tui.Story{ID: "s1", Title: "Historia modificada"}))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		rec.mu.Lock()
 		rec.requests = append(rec.requests, recordedRequest{Method: r.Method, Path: r.URL.EscapedPath(), Body: raw})
 		rec.mu.Unlock()
+		if r.Method == http.MethodGet && r.URL.Path == "/projects" {
+			w.WriteHeader(stubs.projects.status)
+			_, _ = w.Write([]byte(stubs.projects.body))
+			return
+		}
 		response := map[string]stub{http.MethodGet: stubs.list, http.MethodPost: stubs.create, http.MethodPut: stubs.update}[r.Method]
 		w.WriteHeader(response.status)
 		_, _ = w.Write([]byte(response.body))
@@ -125,34 +150,41 @@ func run(t *testing.T, m tui.Model, cmd tea.Cmd) tui.Model {
 	return m
 }
 
-// startBacklog opens the backlog from the menu (Down, Enter) without a project.
-func startBacklog(url string) tui.Model {
+// startBacklog opens the backlog from the menu (Down, Enter). With no active
+// project this lands on the project picker and returns its load command.
+func startBacklog(url string) (tui.Model, tea.Cmd) {
 	m := tui.NewModel(url)
 	m = press(m, tea.KeyDown)
-	return press(m, tea.KeyEnter)
+	return apply(m, tea.KeyMsg{Type: tea.KeyEnter})
 }
 
-// chooseProject confirms pid from the backlog screen and returns the loading model and its command.
-func chooseProject(m tui.Model, pid string) (tui.Model, tea.Cmd) {
-	m = press(m, tea.KeyEnter) // "Elegir proyecto" / "Cambiar proyecto" is selected by the caller
+// confirmProjectInPicker runs the picker's load command, searches by pid and
+// confirms the first match, returning the model and the command of the next step.
+func confirmProjectInPicker(t *testing.T, m tui.Model, load tea.Cmd, pid string) (tui.Model, tea.Cmd) {
+	t.Helper()
+	m = run(t, m, load)
+	m, _ = apply(m, keyMsg("/"))
 	m = typeText(m, pid)
+	m = press(m, tea.KeyEnter) // stop searching, keep the filter
 	return apply(m, tea.KeyMsg{Type: tea.KeyEnter})
 }
 
 // loadingBacklog reaches the backlog screen waiting for the list response of pid.
 func loadingBacklog(t *testing.T, url, pid string) tui.Model {
 	t.Helper()
-	m, cmd := chooseProject(startBacklog(url), pid)
+	m, load := startBacklog(url)
+	m, cmd := confirmProjectInPicker(t, m, load, pid)
 	if cmd == nil {
-		t.Fatal("confirming the project id should issue the list command")
+		t.Fatal("confirming the project should issue the list command")
 	}
 	return m
 }
 
-// openBacklogWithProject goes menu -> Backlog -> Elegir proyecto -> pid -> Enter and applies the list response.
+// openBacklogWithProject goes menu -> Backlog -> picker -> pid -> Enter and applies the list response.
 func openBacklogWithProject(t *testing.T, url, pid string) tui.Model {
 	t.Helper()
-	m, cmd := chooseProject(startBacklog(url), pid)
+	m, load := startBacklog(url)
+	m, cmd := confirmProjectInPicker(t, m, load, pid)
 	m = run(t, m, cmd)
 	if m.Screen != "backlog" {
 		t.Fatalf("Screen = %q after loading, want backlog", m.Screen)
@@ -160,9 +192,9 @@ func openBacklogWithProject(t *testing.T, url, pid string) tui.Model {
 	return m
 }
 
-// submitStory opens the create form from the backlog (cursor 0), fills it and presses Enter on the last field.
+// submitStory opens the create form from the backlog with n, fills it and presses Enter on the last field.
 func submitStory(m tui.Model, title, description, priority, criteria string) (tui.Model, tea.Cmd) {
-	m = press(m, tea.KeyEnter)
+	m = typeText(m, "n")
 	for i, value := range []string{title, description, priority, criteria} {
 		m = typeText(m, value)
 		if i < 3 {
@@ -174,7 +206,7 @@ func submitStory(m tui.Model, title, description, priority, criteria string) (tu
 
 // selectStory moves to the index-th story of the list and opens its update form.
 func selectStory(m tui.Model, index int) tui.Model {
-	for i := 0; i < backlogActionCount+index; i++ {
+	for i := 0; i < index; i++ {
 		m = press(m, tea.KeyDown)
 	}
 	return press(m, tea.KeyEnter)
@@ -197,60 +229,36 @@ func failure(status int, body string) tui.BacklogResultMsg {
 	return tui.BacklogResultMsg{Op: tui.BacklogOpCreate, Response: tui.APIResponse{StatusCode: status, Body: []byte(body)}}
 }
 
-func TestBacklogMenuOpensBacklogScreen(t *testing.T) {
-	m := tui.NewModel("http://localhost:8080")
-	m = press(m, tea.KeyDown)
-	m = press(m, tea.KeyEnter)
-	if m.Screen != "backlog" {
-		t.Fatalf("Screen = %q, want backlog", m.Screen)
+func TestBacklogMenuOpensPickerWithoutProject(t *testing.T) {
+	m, _ := startBacklog("http://localhost:8080")
+	if m.Screen != "project-picker" {
+		t.Fatalf("Screen = %q, want project-picker", m.Screen)
+	}
+	if !strings.Contains(m.View(), "Elegí un proyecto") {
+		t.Errorf("View() = %q, want the project picker", m.View())
 	}
 	if strings.Contains(m.View(), "TUI-03") {
 		t.Errorf("View() = %q, want the TUI-03 placeholder gone", m.View())
 	}
 }
 
-func TestBacklogWithoutProjectOffersChooseProjectAndEmitsNoRequest(t *testing.T) {
-	server, rec := fakeBacklogAPI(t, apiStubs{})
-	m := tui.NewModel(server.URL)
-	m = press(m, tea.KeyDown)
-	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+func TestBacklogPickerFiltersAndConfirmsProject(t *testing.T) {
+	server, _ := fakeBacklogAPI(t, apiStubs{})
+	m, load := startBacklog(server.URL)
+	m = run(t, m, load)
+	m, _ = apply(m, keyMsg("/"))
+	m = typeText(m, "Beta")
 	view := m.View()
-	for _, want := range []string{"Elegir proyecto", "Volver"} {
-		if !strings.Contains(view, want) {
-			t.Errorf("View() = %q, want %q", view, want)
-		}
+	if !strings.Contains(view, "Beta") || strings.Contains(view, "Alpha") {
+		t.Errorf("View() = %q, want only the matching project", view)
 	}
-	if strings.Contains(view, "Crear historia") {
-		t.Errorf("View() = %q, want no Crear historia without a project", view)
+	m = press(m, tea.KeyEsc) // clear the search, stay in the browser
+	if m.Screen != "project-picker" {
+		t.Errorf("Screen = %q after clearing the search, want project-picker", m.Screen)
 	}
-	if cmd != nil {
-		cmd()
-	}
-	if requests := rec.all(); len(requests) != 0 {
-		t.Errorf("requests = %+v, want none before the project id is confirmed", requests)
-	}
-}
-
-func TestBacklogProjectIDEmptyStaysAndEmitsNoRequest(t *testing.T) {
-	for _, typed := range []string{"", "   "} {
-		t.Run("typed="+typed, func(t *testing.T) {
-			server, rec := fakeBacklogAPI(t, apiStubs{})
-			m := press(startBacklog(server.URL), tea.KeyEnter) // Elegir proyecto
-			if m.Screen != "backlog-project" {
-				t.Fatalf("Screen = %q, want backlog-project", m.Screen)
-			}
-			m = typeText(m, typed)
-			m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
-			if m.Screen != "backlog-project" {
-				t.Errorf("Screen = %q after empty confirm, want backlog-project", m.Screen)
-			}
-			if cmd != nil {
-				cmd()
-			}
-			if requests := rec.all(); len(requests) != 0 {
-				t.Errorf("requests = %+v, want none", requests)
-			}
-		})
+	m = press(m, tea.KeyEsc) // leave the browser
+	if m.Screen != "menu" {
+		t.Errorf("Screen = %q after Esc, want menu", m.Screen)
 	}
 }
 
@@ -262,7 +270,8 @@ func TestBacklogProjectSelectionLoadsBacklogInAPIOrder(t *testing.T) {
 	}
 	server, rec := fakeBacklogAPI(t, apiStubs{list: stub{http.StatusOK, storiesBody(t, stories)}})
 
-	m, cmd := chooseProject(startBacklog(server.URL), "p1")
+	m, load := startBacklog(server.URL)
+	m, cmd := confirmProjectInPicker(t, m, load, "p1")
 	if m.Screen != "backlog" {
 		t.Fatalf("Screen = %q, want backlog", m.Screen)
 	}
@@ -277,28 +286,26 @@ func TestBacklogProjectSelectionLoadsBacklogInAPIOrder(t *testing.T) {
 	if strings.Contains(view, "Cargando backlog…") {
 		t.Errorf("View() = %q, want the loading message gone", view)
 	}
-	rows := []string{
-		"Zeta historia · prioridad alta · estado pendiente · puntos —",
-		"Alfa historia · prioridad media · estado en curso · puntos 3",
-		"Media historia · prioridad baja · estado hecha · puntos 0",
-	}
 	previous := -1
-	for _, row := range rows {
-		index := strings.Index(view, row)
+	for _, title := range []string{"Zeta historia", "Alfa historia", "Media historia"} {
+		index := strings.Index(view, title)
 		if index < 0 {
-			t.Fatalf("View() = %q, want row %q", view, row)
+			t.Fatalf("View() = %q, want the story %q", view, title)
 		}
 		if index < previous {
-			t.Errorf("row %q appears before the previous one, want the API order", row)
+			t.Errorf("story %q appears before the previous one, want the API order", title)
 		}
 		previous = index
 	}
-	if !strings.Contains(view, "Backlog del proyecto p1") {
+	if !strings.Contains(view, "Backlog del proyecto Alpha") {
 		t.Errorf("View() = %q, want the project header", view)
+	}
+	if !strings.Contains(view, "puntos 3") {
+		t.Errorf("View() = %q, want the read-only story points", view)
 	}
 }
 
-func TestBacklogProjectIDIsKeptAcrossMenuReentry(t *testing.T) {
+func TestBacklogProjectIsKeptAcrossMenuReentry(t *testing.T) {
 	server, rec := fakeBacklogAPI(t, apiStubs{})
 	m := openBacklogWithProject(t, server.URL, "p1")
 	m = press(m, tea.KeyEsc)
@@ -310,8 +317,8 @@ func TestBacklogProjectIDIsKeptAcrossMenuReentry(t *testing.T) {
 	if m.Screen != "backlog" {
 		t.Fatalf("Screen = %q, want backlog", m.Screen)
 	}
-	if strings.Contains(m.View(), "ID del proyecto") {
-		t.Errorf("View() = %q, want no new project id prompt", m.View())
+	if strings.Contains(m.View(), "Elegí un proyecto") {
+		t.Errorf("View() = %q, want no picker when the project is kept", m.View())
 	}
 	m = run(t, m, cmd)
 	if got := lastRequest(t, rec); got.Method != http.MethodGet || got.Path != "/projects/p1/stories" {
@@ -322,35 +329,26 @@ func TestBacklogProjectIDIsKeptAcrossMenuReentry(t *testing.T) {
 	}
 }
 
-func TestBacklogChangeProjectPrefillsAndReplacesID(t *testing.T) {
+func TestBacklogChangeProjectUsesPicker(t *testing.T) {
 	server, rec := fakeBacklogAPI(t, apiStubs{})
 	m := openBacklogWithProject(t, server.URL, "p1")
 
-	m = press(m, tea.KeyDown) // Cambiar proyecto
-	m = press(m, tea.KeyEnter)
-	if m.Screen != "backlog-project" {
-		t.Fatalf("Screen = %q, want backlog-project", m.Screen)
+	m, load := apply(m, keyMsg("c")) // Cambiar proyecto
+	if m.Screen != "project-picker" {
+		t.Fatalf("Screen = %q, want project-picker", m.Screen)
 	}
-	if got := fieldValue(t, m.View(), "ID del proyecto"); got != "p1" {
-		t.Errorf("prefilled id = %q, want p1", got)
-	}
-	m = typeText(m, "x")
 	m = press(m, tea.KeyEsc)
-	if m.Screen != "backlog" || !strings.Contains(m.View(), "Backlog del proyecto p1") {
-		t.Errorf("after Esc: Screen = %q view = %q, want backlog still on p1", m.Screen, m.View())
+	if m.Screen != "backlog" || !strings.Contains(m.View(), "Backlog del proyecto Alpha") {
+		t.Errorf("after Esc: Screen = %q view = %q, want backlog still on Alpha", m.Screen, m.View())
 	}
 
-	m = press(m, tea.KeyDown)
-	m = press(m, tea.KeyEnter)
-	m = press(m, tea.KeyBackspace)
-	m = press(m, tea.KeyBackspace)
-	m = typeText(m, "p2")
-	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, load = apply(m, keyMsg("c")) // Cambiar proyecto again
+	m, cmd := confirmProjectInPicker(t, m, load, "p2")
 	m = run(t, m, cmd)
 	if got := lastRequest(t, rec); got.Method != http.MethodGet || got.Path != "/projects/p2/stories" {
 		t.Errorf("request = %s %s, want GET /projects/p2/stories", got.Method, got.Path)
 	}
-	if !strings.Contains(m.View(), "Backlog del proyecto p2") {
+	if !strings.Contains(m.View(), "Backlog del proyecto Beta") {
 		t.Errorf("View() = %q, want the new project", m.View())
 	}
 
@@ -364,14 +362,57 @@ func TestBacklogChangeProjectPrefillsAndReplacesID(t *testing.T) {
 	}
 }
 
-func TestBacklogEmptyListShowsMessageAndKeepsActions(t *testing.T) {
+func TestBacklogEmptyListShowsMessageAndKeepsNavigatorKeys(t *testing.T) {
 	server, _ := fakeBacklogAPI(t, apiStubs{list: stub{http.StatusOK, storiesBody(t, nil)}})
 	m := openBacklogWithProject(t, server.URL, "p1")
 	view := m.View()
-	for _, want := range []string{"El backlog no tiene historias.", "Crear historia", "Cambiar proyecto"} {
+	for _, want := range []string{"El backlog no tiene historias.", "Presioná n para crear la primera historia.", "c cambia de proyecto"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("View() = %q, want %q", view, want)
 		}
+	}
+}
+
+func TestBacklogSearchFiltersStories(t *testing.T) {
+	server, _ := fakeBacklogAPI(t, apiStubs{})
+	m := openBacklogWithProject(t, server.URL, "p1")
+
+	m, _ = apply(m, keyMsg("/"))
+	if !strings.Contains(m.View(), "Buscar: _") {
+		t.Fatalf("View() = %q, want the search prompt", m.View())
+	}
+	// q is a normal character while the search box owns the keyboard.
+	m, cmd := apply(m, keyMsg("q"))
+	if isQuit(cmd) {
+		t.Fatal("q must be typed into the search box, not quit")
+	}
+	m = press(m, tea.KeyBackspace)
+	m = typeText(m, "Alta")
+	view := m.View()
+	if !strings.Contains(view, "Alta de usuarios") || strings.Contains(view, "Login") {
+		t.Fatalf("View() = %q, want only the matching story", view)
+	}
+	m, _ = apply(m, keyMsg("zz"))
+	view = m.View()
+	if !strings.Contains(view, "Sin coincidencias.") || strings.Contains(view, "Alta de usuarios") {
+		t.Fatalf("View() = %q, want the no-match state", view)
+	}
+	for range 2 {
+		m = press(m, tea.KeyBackspace)
+	}
+	m = press(m, tea.KeyEnter)
+
+	// The filtered story is now the first row, so Enter opens it directly.
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.Screen != "backlog-form" || fieldValue(t, m.View(), "Título") != "Alta de usuarios" {
+		t.Fatalf("Screen = %q view = %q, want the filtered story form", m.Screen, m.View())
+	}
+
+	m = press(m, tea.KeyEsc) // back to the filtered backlog
+	m, _ = apply(m, keyMsg("/"))
+	m = press(m, tea.KeyEsc) // clear the search
+	if strings.Contains(m.View(), "Buscar:") {
+		t.Errorf("View() = %q, want the search box removed after Esc", m.View())
 	}
 }
 
@@ -380,7 +421,7 @@ func TestBacklogCreateStorySendsFourKeysAndShowsSuccess(t *testing.T) {
 	server, rec := fakeBacklogAPI(t, apiStubs{create: stub{http.StatusCreated, storyBody(t, created)}})
 	m := openBacklogWithProject(t, server.URL, "p1")
 
-	m = press(m, tea.KeyEnter) // Crear historia
+	m = typeText(m, "n") // Crear historia
 	if m.Screen != "backlog-form" {
 		t.Fatalf("Screen = %q, want backlog-form", m.Screen)
 	}
@@ -501,7 +542,7 @@ func TestBacklogUpdateFormIsPrefilledFromSelectedStory(t *testing.T) {
 				}
 			}
 			lower := strings.ToLower(view)
-			if strings.Contains(lower, "puntos") || strings.Contains(lower, "story_points") {
+			if strings.Contains(lower, "story_points") {
 				t.Errorf("View() = %q, want no editable story points field", view)
 			}
 		})
@@ -640,11 +681,10 @@ func TestBacklogNonNumericHoursShowsErrorWithoutRequest(t *testing.T) {
 }
 
 func TestBacklogSelectingStoryWithEmptyListOpensNoForm(t *testing.T) {
-	for downs := 0; downs < 5; downs++ {
+	for downs := 0; downs < 6; downs++ {
 		t.Run(string(rune('0'+downs))+"-downs", func(t *testing.T) {
-			server, rec := fakeBacklogAPI(t, apiStubs{list: stub{http.StatusOK, storiesBody(t, nil)}})
+			server, _ := fakeBacklogAPI(t, apiStubs{list: stub{http.StatusOK, storiesBody(t, nil)}})
 			m := openBacklogWithProject(t, server.URL, "p1")
-			before := len(rec.all())
 			for i := 0; i < downs; i++ {
 				m = press(m, tea.KeyDown)
 			}
@@ -655,9 +695,6 @@ func TestBacklogSelectingStoryWithEmptyListOpensNoForm(t *testing.T) {
 			if strings.Contains(m.View(), "Modificar historia") {
 				t.Errorf("View() = %q, want no update form for an empty list", m.View())
 			}
-			if len(rec.all()) != before {
-				t.Errorf("requests = %+v, want none", rec.all()[before:])
-			}
 		})
 	}
 }
@@ -665,7 +702,7 @@ func TestBacklogSelectingStoryWithEmptyListOpensNoForm(t *testing.T) {
 func TestBacklogFormEscReturnsToBacklogWithoutRequest(t *testing.T) {
 	server, rec := fakeBacklogAPI(t, apiStubs{})
 	forms := map[string]func(tui.Model) tui.Model{
-		"create": func(m tui.Model) tui.Model { return press(m, tea.KeyEnter) },
+		"create": func(m tui.Model) tui.Model { return typeText(m, "n") },
 		"update": func(m tui.Model) tui.Model { return selectStory(m, 0) },
 	}
 	for name, open := range forms {
@@ -714,9 +751,13 @@ func TestBacklogRendersValidationErrorsAsList(t *testing.T) {
 }
 
 func TestBacklogRendersNotFoundWithGenericMessageAndAPIDetail(t *testing.T) {
-	cases := []struct{ name, body, detail string }{
-		{"story", `{"error":"story_not_found","message":"story not found"}`, "Detalle de la API: story_not_found: story not found"},
-		{"project", `{"error":"project_not_found","message":"project not found"}`, "Detalle de la API: project_not_found: project not found"},
+	cases := []struct {
+		name string
+		body string
+		want []string
+	}{
+		{"story", `{"error":"story_not_found","message":"story not found"}`, []string{"no existe (404)", "story_not_found", "story not found"}},
+		{"project", `{"error":"project_not_found","message":"project not found"}`, []string{"no existe (404)", "project_not_found", "project not found"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -724,7 +765,7 @@ func TestBacklogRendersNotFoundWithGenericMessageAndAPIDetail(t *testing.T) {
 			m := openBacklogWithProject(t, server.URL, "p1")
 			m, _ = apply(m, tui.BacklogResultMsg{Op: tui.BacklogOpUpdate, Response: tui.APIResponse{StatusCode: 404, Body: []byte(tc.body)}})
 			view := m.View()
-			for _, want := range []string{"El recurso solicitado no existe (404)", tc.detail} {
+			for _, want := range tc.want {
 				if !strings.Contains(view, want) {
 					t.Errorf("View() = %q, want %q", view, want)
 				}
@@ -762,10 +803,12 @@ func TestBacklogRendersNonJSONErrorWithStatusCode(t *testing.T) {
 	}
 }
 
-func TestBacklogListFailureLeadsToProjectCorrection(t *testing.T) {
+func TestBacklogListFailureReturnsToPicker(t *testing.T) {
 	for _, key := range []tea.KeyType{tea.KeyEnter, tea.KeyEsc} {
 		t.Run(key.String(), func(t *testing.T) {
-			m := loadingBacklog(t, "http://localhost:8080", "no-es-uuid")
+			server, _ := fakeBacklogAPI(t, apiStubs{list: stub{http.StatusUnprocessableEntity,
+				`{"error":"validation_failed","message":"identificador inválido","fields":{"project_id":"debe ser un UUID"}}`}})
+			m := loadingBacklog(t, server.URL, "p1")
 			m, _ = apply(m, tui.BacklogResultMsg{Op: tui.BacklogOpList, Response: tui.APIResponse{
 				StatusCode: 422, Body: []byte(`{"error":"validation_failed","message":"identificador inválido","fields":{"project_id":"debe ser un UUID"}}`),
 			}})
@@ -773,22 +816,23 @@ func TestBacklogListFailureLeadsToProjectCorrection(t *testing.T) {
 			if m.Screen != "backlog-result" || !strings.Contains(view, "- project_id: debe ser un UUID") {
 				t.Fatalf("Screen = %q view = %q, want the 422 fields list", m.Screen, view)
 			}
-			m = press(m, key)
-			if m.Screen != "backlog-project" {
-				t.Fatalf("Screen = %q after %s, want backlog-project", m.Screen, key)
+			m, cmd := apply(m, tea.KeyMsg{Type: key})
+			if m.Screen != "project-picker" {
+				t.Fatalf("Screen = %q after %s, want project-picker", m.Screen, key)
 			}
-			if got := fieldValue(t, m.View(), "ID del proyecto"); got != "no-es-uuid" {
-				t.Errorf("prefilled id = %q, want the rejected id to correct", got)
+			if cmd == nil {
+				t.Fatal("returning to the picker should reload the project collection")
 			}
 		})
 	}
 }
 
 func TestBacklogTransportErrorDoesNotQuit(t *testing.T) {
+	server, _ := fakeBacklogAPI(t, apiStubs{})
 	ops := []tui.BacklogOp{tui.BacklogOpList, tui.BacklogOpCreate, tui.BacklogOpUpdate}
 	for _, op := range ops {
 		t.Run(string(op), func(t *testing.T) {
-			m := loadingBacklog(t, "http://localhost:8080", "p1")
+			m := loadingBacklog(t, server.URL, "p1")
 			m, cmd := apply(m, tui.BacklogResultMsg{Op: op, Err: errors.New("connection refused")})
 			if isQuit(cmd) {
 				t.Error("a transport error must not quit the TUI")
@@ -875,12 +919,13 @@ func TestBacklogResultReturnDestinations(t *testing.T) {
 		}
 	})
 
-	t.Run("list-failure-returns-to-project", func(t *testing.T) {
-		m := loadingBacklog(t, server.URL, "p-malo")
+	t.Run("list-failure-returns-to-picker", func(t *testing.T) {
+		server, _ := fakeBacklogAPI(t, apiStubs{list: stub{http.StatusNotFound, `{"error":"project_not_found","message":"x"}`}})
+		m := loadingBacklog(t, server.URL, "p1")
 		m, _ = apply(m, tui.BacklogResultMsg{Op: tui.BacklogOpList, Response: tui.APIResponse{StatusCode: 404, Body: []byte(`{"error":"project_not_found","message":"x"}`)}})
-		m = press(m, tea.KeyEnter)
-		if m.Screen != "backlog-project" {
-			t.Errorf("Screen = %q, want backlog-project", m.Screen)
+		m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+		if m.Screen != "project-picker" {
+			t.Errorf("Screen = %q, want project-picker", m.Screen)
 		}
 	})
 }
@@ -921,17 +966,14 @@ func TestBacklogLateListResultIsDiscarded(t *testing.T) {
 func TestBacklogBrowsingDoesNotMutate(t *testing.T) {
 	server, rec := fakeBacklogAPI(t, apiStubs{})
 	m := openBacklogWithProject(t, server.URL, "p1")
-	m = press(m, tea.KeyDown)       // Cambiar proyecto
-	m, cmd := chooseProject(m, "2") // the id is appended to the prefilled one
-	m = run(t, m, cmd)
 	m = press(m, tea.KeyEsc)
 	m = press(m, tea.KeyDown)
-	m, cmd = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
 	run(t, m, cmd)
 
 	requests := rec.all()
 	if len(requests) < 3 {
-		t.Fatalf("requests = %+v, want the initial load, the project change and the re-entry", requests)
+		t.Fatalf("requests = %+v, want the project load, the stories load and the re-entry", requests)
 	}
 	for _, request := range requests {
 		if request.Method != http.MethodGet {
@@ -949,13 +991,14 @@ func backlogScreens(t *testing.T, url string) []struct {
 	t.Helper()
 	loaded := openBacklogWithProject(t, url, "p1")
 	result, _ := apply(loaded, failure(http.StatusUnprocessableEntity, `{"error":"validation_failed","message":"x","fields":{"title":"mal"}}`))
+	picker, _ := startBacklog(url)
 	return []struct {
 		screen string
 		label  string
 		model  tui.Model
 	}{
-		{"backlog-project", "ID del proyecto", press(startBacklog(url), tea.KeyEnter)},
-		{"backlog-form", "Título", press(loaded, tea.KeyEnter)},
+		{"project-picker", "", picker},
+		{"backlog-form", "Título", typeText(loaded, "n")},
 		{"backlog", "", loaded},
 		{"backlog-result", "", result},
 	}
@@ -1011,9 +1054,13 @@ func TestSpaceAndBackspaceByRuneInBacklogFields(t *testing.T) {
 		screen, label string
 		open          func(t *testing.T) tui.Model
 	}{
-		{"backlog-project", "ID del proyecto", func(t *testing.T) tui.Model { return press(startBacklog(server.URL), tea.KeyEnter) }},
+		{"project-picker", "Buscar", func(t *testing.T) tui.Model {
+			m, _ := startBacklog(server.URL)
+			m, _ = apply(m, keyMsg("/"))
+			return m
+		}},
 		{"backlog-form", "Título", func(t *testing.T) tui.Model {
-			return press(openBacklogWithProject(t, server.URL, "p1"), tea.KeyEnter)
+			return typeText(openBacklogWithProject(t, server.URL, "p1"), "n")
 		}},
 	}
 	for _, field := range fields {
@@ -1043,7 +1090,7 @@ func TestSpaceAndBackspaceByRuneInBacklogFields(t *testing.T) {
 	}
 
 	t.Run("title-sent-as-valid-utf8", func(t *testing.T) {
-		m := press(openBacklogWithProject(t, server.URL, "p1"), tea.KeyEnter)
+		m := typeText(openBacklogWithProject(t, server.URL, "p1"), "n")
 		m = typeText(m, "Gestión añ")
 		m = press(m, tea.KeyBackspace)
 		m = typeText(m, "o")

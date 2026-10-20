@@ -32,6 +32,32 @@ func (r *PostgresProjectRepository) GetByID(ctx context.Context, id string) (dom
 	return project, nil
 }
 
+// List returns every project ordered by name for stable presentation.
+func (r *PostgresProjectRepository) List(ctx context.Context) ([]domain.Project, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, name, start_date, planned_finish_date
+		FROM projects
+		ORDER BY name ASC, id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	projects := make([]domain.Project, 0)
+	for rows.Next() {
+		var project domain.Project
+		if err := rows.Scan(&project.ID, &project.Name, &project.StartDate, &project.PlannedFinishDate); err != nil {
+			return nil, err
+		}
+		projects = append(projects, project)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return projects, nil
+}
+
 // Update replaces only the basic project fields and reports an unknown ID.
 func (r *PostgresProjectRepository) Update(ctx context.Context, project domain.Project) error {
 	tag, err := r.pool.Exec(ctx, `

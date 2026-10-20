@@ -59,31 +59,33 @@ func fieldValue(t *testing.T, view, label string) string {
 	t.Helper()
 	for _, line := range strings.Split(view, "\n") {
 		if _, value, found := strings.Cut(line, label+": "); found {
-			return strings.TrimSuffix(strings.TrimRight(value, "\r"), "_")
+			value = strings.TrimSuffix(value, "│")
+			value = strings.TrimRight(value, " \r")
+			value = strings.TrimSuffix(value, "_")
+			return strings.TrimSpace(value)
 		}
 	}
 	t.Fatalf("label %q not found in view %q", label, view)
 	return ""
 }
 
-func toProjectID(m tui.Model) tui.Model {
-	m = press(m, tea.KeyEnter) // menu -> projects
-	m = press(m, tea.KeyDown)
-	m = press(m, tea.KeyDown)
-	return press(m, tea.KeyEnter) // "Consultar estado" -> project-id
+// seedProjects feeds the picker a project collection, as its load command would.
+func seedProjects(t *testing.T, m tui.Model, projects ...tui.ProjectSummary) tui.Model {
+	t.Helper()
+	updated, _ := m.Update(tui.ProjectsResultMsg{Response: tui.APIResponse{StatusCode: 200, Body: []byte(projectsBody(t, projects))}})
+	return updated.(tui.Model)
 }
 
 func toCreateProject(m tui.Model) tui.Model {
-	m = press(m, tea.KeyEnter) // menu -> projects
-	return press(m, tea.KeyEnter)
+	m = press(m, tea.KeyEnter) // menu -> project browser
+	return typeText(m, "n")    // n -> create form
 }
 
-func toEditProject(m tui.Model, id string) tui.Model {
-	m = press(m, tea.KeyEnter) // menu -> projects
-	m = press(m, tea.KeyDown)
-	m = press(m, tea.KeyEnter) // "Modificar proyecto" -> project-id
-	m = typeText(m, id)
-	return press(m, tea.KeyEnter) // -> edit-project
+func toEditProject(t *testing.T, m tui.Model, project tui.ProjectSummary) tui.Model {
+	t.Helper()
+	m = press(m, tea.KeyEnter) // menu -> project browser
+	m = seedProjects(t, m, project)
+	return typeText(m, "e") // e -> edit the highlighted project
 }
 
 // projectFieldCase describes a project text field reached from the menu.
@@ -94,7 +96,6 @@ type projectFieldCase struct {
 }
 
 var projectTextFields = []projectFieldCase{
-	{"project-id", "ID", toProjectID},
 	{"create-project", "Nombre", toCreateProject},
 }
 
@@ -137,6 +138,9 @@ func TestMenuShowsFourOptions(t *testing.T) {
 			t.Errorf("View() = %q, want option %q", view, want)
 		}
 	}
+	if strings.Contains(view, "Ayuda") {
+		t.Errorf("View() = %q, want no Ayuda menu option", view)
+	}
 }
 
 func TestCursorMovesDownAndUp(t *testing.T) {
@@ -160,11 +164,11 @@ func TestEnterProjectsAndBack(t *testing.T) {
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(tui.Model)
-	if m.Screen == "menu" {
-		t.Fatalf("Screen = menu after enter, want placeholder")
+	if m.Screen != "project-picker" {
+		t.Fatalf("Screen = %q after enter, want project-picker", m.Screen)
 	}
-	if !strings.Contains(m.View(), "Crear proyecto") {
-		t.Errorf("project View() = %q, want project actions", m.View())
+	if !strings.Contains(m.View(), "Proyectos") {
+		t.Errorf("View() = %q, want the project browser", m.View())
 	}
 
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -174,32 +178,45 @@ func TestEnterProjectsAndBack(t *testing.T) {
 	}
 }
 
-func TestProjectScreenOffersCreateEditAndStatus(t *testing.T) {
+func TestProjectBrowserOffersUseEditCreateAndSearch(t *testing.T) {
 	m := tui.NewModel("http://localhost:8080")
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = updated.(tui.Model)
+	m = press(m, tea.KeyEnter) // menu -> project browser
 	view := strings.ToLower(m.View())
-	for _, want := range []string{"crear", "modificar", "estado"} {
+	for _, want := range []string{"usar", "editar", "crear", "buscar"} {
 		if !strings.Contains(view, want) {
-			t.Errorf("project View() = %q, want %q", view, want)
+			t.Errorf("browser View() = %q, want %q", view, want)
 		}
+	}
+	if strings.Contains(view, "consultar estado") {
+		t.Errorf("browser View() = %q, want the Consultar estado option gone", view)
+	}
+}
+
+func TestProjectBrowserMarksTheActiveProjectWithoutCallingItActivo(t *testing.T) {
+	project := tui.ProjectSummary{ID: "p1", Name: "Portal Alfa", StartDate: "2026-01-01", PlannedFinishDate: "2026-12-31", Status: "active"}
+	m := openBrowser(t, project)
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // use it as the session project
+	m = press(m, tea.KeyEnter)                      // reopen the browser
+	m = seedProjects(t, m, project)
+
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "✓ Portal Alfa") {
+		t.Errorf("View() = %q, want the active project marked with ✓", view)
+	}
+	if !strings.Contains(view, "EN CURSO") {
+		t.Errorf("View() = %q, want the API active status shown as EN CURSO", view)
+	}
+	if strings.Contains(view, "ACTIVO") {
+		t.Errorf("View() = %q, want ACTIVO reserved for the session project, not the status", view)
 	}
 }
 
 func TestProjectAPIErrorIsShownWithoutSuccess(t *testing.T) {
-	m := tui.NewModel("http://localhost:8080")
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = updated.(tui.Model)
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = updated.(tui.Model)
+	m := toCreateProject(tui.NewModel("http://localhost:8080"))
 	for i, value := range []string{"Alpha", "2026-10-01", "2026-12-01"} {
-		for _, r := range value {
-			updated, _ = m.Update(keyMsg(string(r)))
-			m = updated.(tui.Model)
-		}
+		m = typeText(m, value)
 		if i < 2 {
-			updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
-			m = updated.(tui.Model)
+			m = press(m, tea.KeyTab)
 		}
 	}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -231,8 +248,8 @@ func TestProjectNavigationPreservesOtherSectionsAndQuit(t *testing.T) {
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	updated, _ = updated.(tui.Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(tui.Model)
-	if m.Screen != "backlog" {
-		t.Fatalf("screen = %q, want backlog", m.Screen)
+	if m.Screen != "project-picker" {
+		t.Fatalf("screen = %q, want project-picker", m.Screen)
 	}
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = updated.(tui.Model)
@@ -285,9 +302,10 @@ func TestCtrlCQuitsFromProjectForms(t *testing.T) {
 		screen string
 		open   func(tui.Model) tui.Model
 	}{
-		{"project-id", toProjectID},
 		{"create-project", toCreateProject},
-		{"edit-project", func(m tui.Model) tui.Model { return toEditProject(m, "p1") }},
+		{"edit-project", func(m tui.Model) tui.Model {
+			return toEditProject(t, m, tui.ProjectSummary{ID: "p1", Name: "Alpha", StartDate: "2026-01-01", PlannedFinishDate: "2026-12-31", Status: "active"})
+		}},
 	}
 	for _, tc := range screens {
 		t.Run(tc.screen, func(t *testing.T) {
@@ -309,7 +327,7 @@ func TestQuitOnQFromMenuAndProjectLists(t *testing.T) {
 		open   func(tui.Model) tui.Model
 	}{
 		{"menu", func(m tui.Model) tui.Model { return m }},
-		{"projects", func(m tui.Model) tui.Model { return press(m, tea.KeyEnter) }},
+		{"project-picker", func(m tui.Model) tui.Model { return press(m, tea.KeyEnter) }},
 		{"project-result", func(m tui.Model) tui.Model {
 			updated, _ := m.Update(tui.ProjectResultMsg{Err: errors.New("connection refused")})
 			return updated.(tui.Model)

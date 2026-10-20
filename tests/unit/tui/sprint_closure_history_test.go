@@ -15,6 +15,8 @@ func TestSprintCloseAndHistoryFlows(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r.Method+" "+r.URL.Path)
 		switch r.URL.Path {
+		case "/projects":
+			_, _ = w.Write([]byte(projectsBody(t, sampleProjects())))
 		case "/projects/p1/sprints/open":
 			_, _ = w.Write([]byte(`{"sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Ship","is_closed":false}]}`))
 		case "/projects/p1/sprints/sp1/closure":
@@ -27,58 +29,70 @@ func TestSprintCloseAndHistoryFlows(t *testing.T) {
 	}))
 	defer server.Close()
 
-	m := tui.NewModel(server.URL)
-	m = press(m, tea.KeyDown)
-	m = press(m, tea.KeyDown)
-	m = press(m, tea.KeyEnter)
-	if !strings.Contains(m.View(), "Cerrar Sprint") || !strings.Contains(m.View(), "historial") {
-		t.Fatalf("Sprint menu lacks separate close/history actions: %q", m.View())
-	}
-	for range 4 {
-		m = press(m, tea.KeyDown)
-	}
-	m = press(m, tea.KeyEnter)
-	m = typeText(m, "p1")
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if cmd == nil {
-		t.Fatal("project submission must list open Sprints")
-	}
-	updated, _ = updated.(tui.Model).Update(cmd())
-	m = updated.(tui.Model)
-	if m.Screen != "sprint-open-list" {
-		t.Fatalf("screen = %q, want open Sprint selector", m.Screen)
-	}
-	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if cmd == nil {
-		t.Fatal("selecting an open Sprint must issue closure")
-	}
-	updated, _ = updated.(tui.Model).Update(cmd())
-	m = updated.(tui.Model)
-	if !strings.Contains(m.View(), "remain available") {
-		t.Fatalf("closure success lacks history guidance: %q", m.View())
-	}
-	if strings.Join(requests, "|") != "GET /projects/p1/sprints/open|POST /projects/p1/sprints/sp1/closure" {
-		t.Fatalf("closure requests = %v", requests)
-	}
-	m = press(m, tea.KeyEnter)
-	for range 5 {
-		m = press(m, tea.KeyDown)
-	} // history
-	m = press(m, tea.KeyEnter)
-	m = typeText(m, "p1")
-	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if cmd == nil {
-		t.Fatal("history submission must issue GET")
-	}
-	updated, _ = updated.(tui.Model).Update(cmd())
-	m = updated.(tui.Model)
+	// Close flow: x asks for confirmation, Esc cancels, s closes.
+	m := openSprintsWithProject(t, server.URL, "p1")
 	view := m.View()
-	for _, want := range []string{"Goal: Ship", "Done work [Completed]", "Remaining work [Not completed]"} {
+	for _, want := range []string{"Ship", "x cerrar", "h cerrados", "a asignar"} {
 		if !strings.Contains(view, want) {
-			t.Fatalf("history view missing %q: %q", want, view)
+			t.Fatalf("Sprint browser missing %q: %q", want, view)
 		}
 	}
-	if len(requests) != 3 || requests[2] != "GET /projects/p1/sprints" {
+	m, cmd := apply(m, keyMsg("x"))
+	if cmd != nil || m.Screen != "sprint-confirm" {
+		t.Fatalf("x = screen %q, cmd %v; want the confirmation screen without a request", m.Screen, cmd != nil)
+	}
+	if !strings.Contains(m.View(), "¿Cerrar este Sprint?") {
+		t.Fatalf("confirmation view = %q", m.View())
+	}
+	m = press(m, tea.KeyEsc)
+	if m.Screen != "sprints" {
+		t.Fatalf("cancelling left screen %q, want sprints", m.Screen)
+	}
+	m, cmd = apply(m, keyMsg("x"))
+	if cmd != nil {
+		t.Fatal("opening the confirmation issued a request")
+	}
+	m, cmd = apply(m, keyMsg("s"))
+	if cmd == nil {
+		t.Fatal("confirming must issue the closure request")
+	}
+	m = run(t, m, cmd)
+	if !strings.Contains(m.View(), "cerrado") {
+		t.Fatalf("closure success lacks history guidance: %q", m.View())
+	}
+	if got := strings.Join(requests, "|"); got != "GET /projects|GET /projects/p1/sprints/open|POST /projects/p1/sprints/sp1/closure" {
+		t.Fatalf("closure requests = %v", requests)
+	}
+
+	// History flow with a fresh model against the same server.
+	requests = nil
+	history := openSprintsWithProject(t, server.URL, "p1")
+	history, cmd = apply(history, keyMsg("h"))
+	if cmd == nil {
+		t.Fatal("history selection must issue GET")
+	}
+	history = run(t, history, cmd)
+	if history.Screen != "sprint-history" {
+		t.Fatalf("screen = %q, want the history view", history.Screen)
+	}
+	view = history.View()
+	if !strings.Contains(view, "Ship") || !strings.Contains(view, "1/2 historias completadas") {
+		t.Fatalf("history view = %q", view)
+	}
+	if strings.Contains(view, "Done work") {
+		t.Fatalf("history rows must stay collapsed until Enter: %q", view)
+	}
+	history, cmd = apply(history, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Fatal("expanding a closed Sprint must not issue a request")
+	}
+	view = history.View()
+	for _, want := range []string{"Done work", "Remaining work"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expanded history missing %q: %q", want, view)
+		}
+	}
+	if last := requests[len(requests)-1]; last != "GET /projects/p1/sprints" {
 		t.Fatalf("history must be read-only: %v", requests)
 	}
 }
@@ -86,11 +100,11 @@ func TestSprintCloseAndHistoryFlows(t *testing.T) {
 func TestSprintClosureConflictAndEmptyHistory(t *testing.T) {
 	m := tui.NewModel("http://localhost")
 	updated, _ := m.Update(tui.SprintResultMsg{Op: "close", Response: tui.APIResponse{StatusCode: http.StatusConflict, Body: []byte(`{"error":"sprint_already_closed","message":"Sprint was already closed"}`)}})
-	if got := updated.(tui.Model).View(); !strings.Contains(got, "sprint_already_closed") || strings.Contains(got, "remain available") {
+	if got := updated.(tui.Model).View(); !strings.Contains(got, "sprint_already_closed") || strings.Contains(got, "cerrado") {
 		t.Fatalf("closure conflict view = %q", got)
 	}
 	updated, _ = m.Update(tui.SprintResultMsg{Op: "history", Response: tui.APIResponse{StatusCode: http.StatusOK, Body: []byte(`{"project_id":"p1","sprints":[]}`)}})
-	if got := updated.(tui.Model).View(); !strings.Contains(got, "No closed Sprints") {
+	if got := updated.(tui.Model).View(); !strings.Contains(got, "No hay Sprints cerrados") {
 		t.Fatalf("empty history view = %q", got)
 	}
 }
