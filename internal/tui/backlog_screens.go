@@ -465,11 +465,8 @@ func (m Model) viewBacklog() string {
 	b.WriteString("\n\n")
 
 	if m.backlogFiltering || m.backlogFilter != "" {
-		cursor := ""
-		if m.backlogFiltering {
-			cursor = "_"
-		}
-		b.WriteString(cursorStyle.Render("⌕ ") + hintStyle.Render("Buscar: ") + m.backlogFilter + cursor + "\n\n")
+		b.WriteString(searchLine(m.backlogFilter, m.backlogFiltering))
+		b.WriteString("\n\n")
 	}
 
 	switch {

@@ -204,6 +204,9 @@ func (m Model) updateSprints(key tea.KeyMsg) (Model, tea.Cmd) {
 			m.sprintFiltering = true
 		case "n":
 			m.Screen, m.sprintGoal = "sprint-goal", ""
+		case "r":
+			m.sprintLoading = true
+			return m, m.openSprintsCmd()
 		case "a":
 			sprint, ok := sprintAt(sprints, m.sprintCursor)
 			if !ok {
@@ -311,6 +314,9 @@ func (m Model) updateSprintHistory(key tea.KeyMsg) (Model, tea.Cmd) {
 		switch string(key.Runes) {
 		case "/":
 			m.sprintFiltering = true
+		case "r":
+			m.sprintHistoryLoading = true
+			return m, m.historySprintsCmd()
 		case "p":
 			// p is the global shortcut; keep it inert here.
 		default:
@@ -389,6 +395,9 @@ func (m Model) updateAssignedStories(key tea.KeyMsg) (Model, tea.Cmd) {
 		switch string(key.Runes) {
 		case "/":
 			m.sprintFiltering = true
+		case "r":
+			m.sprintStoriesLoading = true
+			return m, m.listAssignedSprintStoriesCmd(m.selectedSprintID)
 		case "c":
 			return m.completeSelectedStory(stories)
 		case "p":
@@ -411,6 +420,7 @@ func (m Model) openTaskForm(stories []Story) (Model, tea.Cmd) {
 	}
 	m.taskStoryID = stories[m.sprintCursor].ID
 	m.taskTitle, m.taskHours, m.taskField, m.Screen = "", "", 0, "sprint-task-form"
+	m.sprintMessage = ""
 	return m, nil
 }
 
@@ -487,6 +497,9 @@ func (m Model) updateSprintStorySelection(key tea.KeyMsg) (Model, tea.Cmd) {
 		switch string(key.Runes) {
 		case "/":
 			m.sprintFiltering = true
+		case "r":
+			m.sprintStoriesLoading = true
+			return m, m.listAssignedBacklogCmd()
 		case "p":
 			// p is the global shortcut; keep it inert here.
 		default:

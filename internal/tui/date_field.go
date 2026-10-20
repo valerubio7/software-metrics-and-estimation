@@ -140,11 +140,21 @@ func (d dateField) backspace(seg int) (dateField, int) {
 	return d, seg
 }
 
+// projectFieldWidth is the label column of the project form: the full cell when
+// there is room and a compact one on narrow terminals, so the segmented dates
+// stay visible instead of being clipped.
+func (m Model) projectFieldWidth() int {
+	if m.innerWidth() < 56 {
+		return 8
+	}
+	return projectLabelWidth
+}
+
 // projectTextRow renders a labelled text field of the project form, padded so
 // the value column lines up with the date rows. The focused row is a full-width
 // selection bar; the name carries a trailing cursor.
 func (m Model) projectTextRow(field int, label, value string) string {
-	cell := padRight(label+":", projectLabelWidth)
+	cell := padRight(label+":", m.projectFieldWidth())
 	text := cell + " " + value
 	if m.formField == field {
 		return selectedBarStyle.Render(padToWidth("▸ "+text+"_", m.innerWidth()))
@@ -157,7 +167,7 @@ func (m Model) projectTextRow(field int, label, value string) string {
 // segment, so the three sub-fields are always visible and no format has to be
 // remembered.
 func (m Model) projectDateRow(field int, label string, d dateField) string {
-	cell := padRight(label+":", projectLabelWidth)
+	cell := padRight(label+":", m.projectFieldWidth())
 	focused := m.formField == field
 	var segments []string
 	for i := 0; i < numDateSegments; i++ {

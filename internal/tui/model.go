@@ -136,7 +136,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.showHelp = true
 		return m, nil
 	}
-	if key.Type == tea.KeyRunes && string(key.Runes) == "p" && quitsOnQ(m.Screen) && m.Screen != "project-picker" && !m.filtering() {
+	if key.Type == tea.KeyRunes && string(key.Runes) == "p" && quitsOnQ(m.Screen) && m.Screen != "project-picker" && m.Screen != "sprint-confirm" && !m.filtering() {
 		return m.openProjectPicker("project")
 	}
 	if isQuitRune(key) && quitsOnQ(m.Screen) && !m.filtering() {
@@ -581,8 +581,12 @@ func (m Model) viewProjectForm() string {
 	}
 	b.WriteString("\n\n")
 	b.WriteString(m.projectTextRow(0, "Nombre", m.form.Name) + "\n")
-	b.WriteString(m.projectDateRow(1, "Fecha inicio", m.formStart) + "\n")
-	b.WriteString(m.projectDateRow(2, "Fecha fin planificada", m.formFinish) + "\n")
+	startLabel, finishLabel := "Fecha inicio", "Fecha fin planificada"
+	if m.projectFieldWidth() < projectLabelWidth {
+		startLabel, finishLabel = "Inicio", "Fin"
+	}
+	b.WriteString(m.projectDateRow(1, startLabel, m.formStart) + "\n")
+	b.WriteString(m.projectDateRow(2, finishLabel, m.formFinish) + "\n")
 	if m.formErr != "" {
 		b.WriteString("\n")
 		b.WriteString(m.errorBlock(m.formErr))
@@ -716,57 +720,57 @@ func isProjectScreen(screen string) bool {
 
 func (m Model) footer() string {
 	if m.showHelp {
-		return keyHints("Esc", "cerrar ayuda", "?", "cerrar", "Ctrl+C", "salir")
+		return m.keyHints("Esc", "cerrar ayuda", "?", "cerrar", "Ctrl+C", "salir")
 	}
 	switch m.Screen {
 	case "menu":
-		return keyHints("↑/↓", "mover", "Enter", "elegir", "?", "ayuda", "q", "salir")
+		return m.keyHints("↑/↓", "mover", "Enter", "elegir", "?", "ayuda", "q", "salir")
 	case "project-picker":
 		if m.projectFiltering {
-			return keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "elegir", "Esc", "limpiar")
+			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "elegir", "Esc", "limpiar")
 		}
-		return keyHints("↑/↓", "mover", "Enter", "usar", "e", "editar", "n", "crear", "/", "buscar", "Esc", "volver")
+		return m.keyHints("↑/↓", "mover", "Enter", "usar", "e", "editar", "n", "crear", "r", "refrescar", "/", "buscar", "Esc", "volver")
 	case "create-project", "edit-project":
-		return keyHints("Tab/↑/↓", "campo", "Enter", "continuar", "Esc", "volver", "Ctrl+C", "salir")
+		return m.keyHints("Tab/↑/↓", "campo", "Enter", "continuar", "Esc", "volver", "Ctrl+C", "salir")
 	case "project-result":
-		return keyHints("Enter/Esc", "volver", "q", "salir")
+		return m.keyHints("Enter/Esc", "volver", "q", "salir")
 	case "backlog":
 		if m.backlogFiltering {
-			return keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
+			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
 		}
-		return keyHints("↑/↓", "mover", "Enter", "editar", "n", "crear", "c", "proyecto", "r", "refrescar", "/", "buscar", "Esc", "menú", "q", "salir")
+		return m.keyHints("↑/↓", "mover", "Enter", "editar", "n", "crear", "c", "proyecto", "r", "refrescar", "/", "buscar", "Esc", "menú", "q", "salir")
 	case "backlog-form":
-		return keyHints("Tab/↑/↓", "campo", "Enter", "siguiente/enviar", "Esc", "volver", "Ctrl+C", "salir")
+		return m.keyHints("Tab/↑/↓", "campo", "Enter", "siguiente/enviar", "Esc", "volver", "Ctrl+C", "salir")
 	case "backlog-result", "sprint-result":
-		return keyHints("Enter/Esc", "volver", "q", "salir")
+		return m.keyHints("Enter/Esc", "volver", "q", "salir")
 	case "sprints":
 		if m.sprintFiltering {
-			return keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
+			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
 		}
-		return keyHints("↑/↓", "mover", "Enter", "historias", "a", "asignar", "x", "cerrar", "h", "cerrados", "n", "nuevo", "/", "buscar", "Esc", "menú", "q", "salir")
+		return m.keyHints("↑/↓", "mover", "Enter", "historias", "a", "asignar", "x", "cerrar", "h", "cerrados", "n", "nuevo", "r", "refrescar", "/", "buscar", "Esc", "menú", "q", "salir")
 	case "sprint-goal":
-		return keyHints("Enter", "enviar", "Esc", "volver", "Ctrl+C", "salir")
+		return m.keyHints("Enter", "enviar", "Esc", "volver", "Ctrl+C", "salir")
 	case "sprint-confirm":
-		return keyHints("s", "confirmar", "n/Esc", "cancelar", "q", "salir")
+		return m.keyHints("s", "confirmar", "n/Esc", "cancelar", "q", "salir")
 	case "sprint-assigned-list":
 		if m.sprintFiltering {
-			return keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
+			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
 		}
-		return keyHints("↑/↓", "mover", "Enter", "tareas", "c", "completar", "/", "buscar", "Esc", "volver", "q", "salir")
+		return m.keyHints("↑/↓", "mover", "Enter", "tareas", "c", "completar", "r", "refrescar", "/", "buscar", "Esc", "volver", "q", "salir")
 	case "sprint-story-select":
 		if m.sprintFiltering {
-			return keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
+			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
 		}
-		return keyHints("↑/↓", "mover", "Space", "marcar", "Enter", "asignar", "/", "buscar", "Esc", "volver", "q", "salir")
+		return m.keyHints("↑/↓", "mover", "Space", "marcar", "Enter", "asignar", "/", "buscar", "Esc", "volver", "q", "salir")
 	case "sprint-task-form":
-		return keyHints("Tab", "campo", "Enter", "continuar/enviar", "Esc", "volver", "Ctrl+C", "salir")
+		return m.keyHints("Tab", "campo", "Enter", "continuar/enviar", "Esc", "volver", "Ctrl+C", "salir")
 	case "sprint-history":
 		if m.sprintFiltering {
-			return keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
+			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
 		}
-		return keyHints("↑/↓", "mover", "Enter", "desplegar", "/", "buscar", "Esc", "volver", "q", "salir")
+		return m.keyHints("↑/↓", "mover", "Enter", "desplegar", "r", "refrescar", "/", "buscar", "Esc", "volver", "q", "salir")
 	default:
-		return keyHints("Esc", "volver", "?", "ayuda", "q", "salir")
+		return m.keyHints("Esc", "volver", "?", "ayuda", "q", "salir")
 	}
 }
 

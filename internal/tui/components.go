@@ -166,13 +166,34 @@ func breadcrumb(parts ...string) string {
 	return b.String()
 }
 
-// keyHints renders an ordered list of "key label" pairs for the footer.
-func keyHints(pairs ...string) string {
-	var parts []string
+// keyHints renders the footer as "key label" pairs, wrapping whole pairs at the
+// content width so narrow terminals keep every shortcut visible instead of
+// letting Bubble Tea clip the overflowing end of the line.
+func (m Model) keyHints(pairs ...string) string {
+	width := m.contentWidth()
+	separator := hintStyle.Render("  ·  ")
+	var lines []string
+	var current strings.Builder
+	currentWidth := 0
 	for i := 0; i+1 < len(pairs); i += 2 {
-		parts = append(parts, kbdStyle.Render(pairs[i])+" "+hintStyle.Render(pairs[i+1]))
+		part := kbdStyle.Render(pairs[i]) + " " + hintStyle.Render(pairs[i+1])
+		partWidth := lipgloss.Width(part)
+		if currentWidth > 0 && currentWidth+lipgloss.Width(separator)+partWidth > width {
+			lines = append(lines, current.String())
+			current.Reset()
+			currentWidth = 0
+		}
+		if currentWidth > 0 {
+			current.WriteString(separator)
+			currentWidth += lipgloss.Width(separator)
+		}
+		current.WriteString(part)
+		currentWidth += partWidth
 	}
-	return strings.Join(parts, hintStyle.Render("  ·  "))
+	if currentWidth > 0 {
+		lines = append(lines, current.String())
+	}
+	return strings.Join(lines, "\n")
 }
 
 // sectionLabel renders an uppercase section heading.

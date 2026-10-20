@@ -129,6 +129,9 @@ func (m Model) updateProjectPicker(key tea.KeyMsg) (Model, tea.Cmd) {
 			return m.editSelectedProject()
 		case "n":
 			return m.openProjectForm("create", ProjectSummary{})
+		case "r":
+			m.projectsLoading = true
+			return m, m.listProjectsCmd()
 		case "p":
 			// p is the global «change project» shortcut; the browser already is
 			// that changer, so keep it inert instead of seeding a search.
@@ -200,11 +203,7 @@ func (m Model) viewProjectPicker() string {
 	b.WriteString("\n\n")
 
 	if m.projectFiltering || m.projectFilter != "" {
-		cursor := ""
-		if m.projectFiltering {
-			cursor = "_"
-		}
-		b.WriteString(cursorStyle.Render("⌕ ") + hintStyle.Render("Buscar: ") + m.projectFilter + cursor)
+		b.WriteString(searchLine(m.projectFilter, m.projectFiltering))
 		b.WriteString("\n\n")
 	}
 
