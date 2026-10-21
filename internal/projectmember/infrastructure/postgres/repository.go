@@ -51,6 +51,44 @@ func (r *PostgresMemberRepository) Register(ctx context.Context, projectID strin
 	return tx.Commit(ctx)
 }
 
+// ListByProject returns the members of an existing project ordered by name and identifier.
+// A project without members is not an error; the returned slice is never nil.
+func (r *PostgresMemberRepository) ListByProject(ctx context.Context, projectID string) ([]domain.Member, error) {
+	var exists bool
+	if err := r.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM projects WHERE id = $1)`, projectID).Scan(&exists); err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, application.ErrProjectNotFound
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, project_id::text, full_name, email
+		FROM project_members
+		WHERE project_id = $1
+		ORDER BY full_name ASC, id ASC
+	`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	members := make([]domain.Member, 0)
+	for rows.Next() {
+		var member domain.Member
+		var email *string
+		if err := rows.Scan(&member.ID, &member.ProjectID, &member.FullName, &email); err != nil {
+			return nil, err
+		}
+		member.Email = email
+		members = append(members, member)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return members, nil
+}
+
 func isMemberUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {

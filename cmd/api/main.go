@@ -75,8 +75,13 @@ func main() {
 		log.Printf("sprint creation unavailable until reconciliation migration 000005 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}
 	if readiness := api.ResolveMigrationReadiness(version, dirty, migrationErr); readiness.Members {
-		dependencies.Members = &api.MemberDependencies{Repository: memberpostgres.NewPostgresMemberRepository(pool), GenerateID: api.NewProjectID}
-		log.Printf("project member registration available (schema version=%d)", version)
+		memberRepository := memberpostgres.NewPostgresMemberRepository(pool)
+		dependencies.Members = &api.MemberDependencies{
+			Repository: memberRepository,
+			GenerateID: api.NewProjectID,
+			Lister:     memberRepository,
+		}
+		log.Printf("project member registration and listing available (schema version=%d)", version)
 	} else {
 		log.Printf("project member registration unavailable until migration 000006 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}
@@ -89,8 +94,13 @@ func main() {
 		log.Printf("story assignment unavailable until migration 000008 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}
 	if readiness := api.ResolveMigrationReadiness(version, dirty, migrationErr); readiness.Tasks {
-		dependencies.Tasks = &api.TaskDependencies{Repository: taskpostgres.NewPostgresTaskRepository(pool), GenerateID: api.NewProjectID}
-		log.Printf("task creation available (schema version=%d)", version)
+		taskRepository := taskpostgres.NewPostgresTaskRepository(pool)
+		dependencies.Tasks = &api.TaskDependencies{
+			Repository: taskRepository,
+			GenerateID: api.NewProjectID,
+			Lister:     taskRepository,
+		}
+		log.Printf("task creation and story task listing available (schema version=%d)", version)
 	} else {
 		log.Printf("task creation unavailable until migration 000009 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}

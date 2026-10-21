@@ -169,6 +169,10 @@ func (m Model) selectProject(project ProjectSummary) (Model, tea.Cmd) {
 		return m.startBacklogLoad()
 	case purpose == "sprints" || isSprintScreen(returnTo):
 		return m.enterSprints()
+	case strings.HasPrefix(purpose, "section:"):
+		return m.openSection(sectionKind(strings.TrimPrefix(purpose, "section:")))
+	case returnTo == "section" && m.section.kind != "":
+		return m.openSection(m.section.kind)
 	default:
 		m.Screen = returnTo
 		if m.Screen == "" {
@@ -195,6 +199,9 @@ func (m Model) viewProjectPicker() string {
 	if m.pickerPurpose == "projects" {
 		title = "Proyectos"
 		hint = "✓ = proyecto activo · Enter usa · e edita · n crea · / busca por nombre o ID."
+	}
+	if strings.HasPrefix(m.pickerPurpose, "section:") {
+		hint = "Enter continúa en " + m.section.kind.title() + " con el proyecto elegido."
 	}
 	var b strings.Builder
 	b.WriteString(screenTitleStyle.Render(title))

@@ -99,9 +99,25 @@ type TaskInput struct {
 	EstimatedHours *float64 `json:"estimated_hours,omitempty"`
 }
 
+// Task is a task as serialized by the story task collection.
+type Task struct {
+	ID             string   `json:"id"`
+	ProjectID      string   `json:"project_id"`
+	SprintID       string   `json:"sprint_id"`
+	StoryID        string   `json:"story_id"`
+	Title          string   `json:"title"`
+	EstimatedHours *float64 `json:"estimated_hours"`
+}
+
 type TaskClient struct{ api apiClient }
 
 func NewTaskClient(baseURL string) *TaskClient { return &TaskClient{api: newAPIClient(baseURL)} }
+
+// ListByStory fetches the tasks of a project-scoped story without mutating data.
+func (c *TaskClient) ListByStory(ctx context.Context, projectID, storyID string) (APIResponse, error) {
+	path := "/projects/" + url.PathEscape(projectID) + "/stories/" + url.PathEscape(storyID) + "/tasks"
+	return c.api.do(ctx, http.MethodGet, path, nil)
+}
 
 func (c *TaskClient) Create(ctx context.Context, projectID, sprintID, storyID string, tasks []TaskInput) (APIResponse, error) {
 	path := "/projects/" + url.PathEscape(projectID) + "/sprints/" + url.PathEscape(sprintID) + "/stories/" + url.PathEscape(storyID) + "/tasks"

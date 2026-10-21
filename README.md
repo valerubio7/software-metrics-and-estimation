@@ -1,7 +1,8 @@
 # Software Metrics & Estimation
 
 API HTTP en Go y una TUI de terminal (Bubble Tea) para gestionar proyectos,
-backlog y Sprints.
+backlog y Sprints, y para navegar las secciones de Planning Poker, Esfuerzo,
+Defectos, Métricas y Dashboard.
 
 ## Requisitos
 
@@ -35,8 +36,8 @@ API_URL='http://127.0.0.1:8080' go run ./cmd/tui
 
 ## Teclas
 
-Las listas (Proyectos, Backlog, Sprints, historias del Sprint e historial)
-comparten el mismo patrón navegable:
+Las listas (Proyectos, Backlog, Sprints, historias del Sprint, historial y los
+selectores de las secciones del Sprint 3) comparten el mismo patrón navegable:
 
 | Tecla         | Acción                                                        |
 | ------------- | ------------------------------------------------------------- |
@@ -53,6 +54,33 @@ comparten el mismo patrón navegable:
 | `Esc`         | Limpiar el filtro y luego volver                              |
 | `?`           | Ayuda                                                         |
 | `q` / `Ctrl+C`| Salir                                                         |
+
+## Secciones
+
+El menú incluye nueve opciones: Proyectos, Backlog, Sprints, Planning Poker,
+Esfuerzo, Defectos, Métricas, Dashboard y Salir. Las cinco secciones nuevas
+abren directamente su pantalla principal y encadenan selectores según el flujo:
+
+| Sección        | Navegación                                      | Flujo futuro |
+| -------------- | ----------------------------------------------- | ------------ |
+| Planning Poker | historia → integrante                           | TUI-07       |
+| Esfuerzo       | historia → tarea                                | TUI-08       |
+| Defectos       | historia → Sprint                               | TUI-09       |
+| Métricas       | Sprint                                          | TUI-10       |
+| Dashboard      | Sprint                                          | TUI-11       |
+
+Estas pantallas son *shells* de navegación de solo lectura: consultan la API con
+`GET`, muestran estados de carga, vacío y error, y terminan con un aviso de la
+historia que implementará el flujo de negocio. No crean, modifican ni eliminan
+datos. Si no hay proyecto activo, la sección abre primero el navegador de
+proyectos; el atajo `p` permite cambiarlo sin salir de la sección.
+
+Lecturas nuevas usadas por los selectores:
+
+| Método | Ruta                                              | Uso                    |
+| ------ | ------------------------------------------------- | ---------------------- |
+| `GET`  | `/projects/{project_id}/members`                  | Integrantes            |
+| `GET`  | `/projects/{project_id}/stories/{story_id}/tasks` | Tareas de una historia |
 
 ## Pruebas
 

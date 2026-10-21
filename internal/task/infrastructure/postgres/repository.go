@@ -85,4 +85,49 @@ func (r *PostgresTaskRepository) CreateForSprintStory(ctx context.Context, proje
 	return tx.Commit(ctx)
 }
 
+// ListByProjectStory returns the tasks of a project-scoped story in creation order.
+// A story without tasks is not an error; the returned slice is never nil.
+func (r *PostgresTaskRepository) ListByProjectStory(ctx context.Context, projectID, storyID string) ([]domain.Task, error) {
+	var projectExists bool
+	if err := r.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM projects WHERE id = $1)`, projectID).Scan(&projectExists); err != nil {
+		return nil, err
+	}
+	if !projectExists {
+		return nil, application.ErrProjectNotFound
+	}
+
+	var storyExists bool
+	if err := r.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM stories WHERE id = $1 AND project_id = $2)`, storyID, projectID).Scan(&storyExists); err != nil {
+		return nil, err
+	}
+	if !storyExists {
+		return nil, application.ErrStoryNotFound
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, project_id::text, sprint_id::text, story_id::text, title, estimated_hours
+		FROM tasks
+		WHERE project_id = $1 AND story_id = $2
+		ORDER BY seq ASC
+	`, projectID, storyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	tasks := make([]domain.Task, 0)
+	for rows.Next() {
+		var task domain.Task
+		if err := rows.Scan(&task.ID, &task.ProjectID, &task.SprintID, &task.StoryID, &task.Title, &task.EstimatedHours); err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return tasks, nil
+}
+
 var _ application.TaskRepository = (*PostgresTaskRepository)(nil)
+var _ application.TaskLister = (*PostgresTaskRepository)(nil)
