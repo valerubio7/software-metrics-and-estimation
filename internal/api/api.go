@@ -70,9 +70,11 @@ type SprintDependencies struct {
 }
 
 // MemberDependencies enables project-member registration after migration v6 is clean.
+// Lister is optional: the member collection is readable only when it is supplied.
 type MemberDependencies struct {
 	Repository memberapplication.MemberRepository
 	GenerateID memberapplication.IDGenerator
+	Lister     memberapplication.MemberLister
 }
 
 // TaskDependencies enables task creation after migration 000009 is clean.
@@ -194,6 +196,10 @@ func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, ge
 	if dependencies.Members != nil {
 		membersUseCase := memberapplication.NewRegisterMembersUseCase(dependencies.Members.Repository, dependencies.Members.GenerateID)
 		mux.Handle("POST /projects/{project_id}/members", memberhttp.NewRegisterMembersHandler(membersUseCase))
+		if dependencies.Members.Lister != nil {
+			listMembersUseCase := memberapplication.NewListMembersUseCase(dependencies.Members.Lister)
+			mux.Handle("GET /projects/{project_id}/members", memberhttp.NewListMembersHandler(listMembersUseCase))
+		}
 	}
 	if dependencies.Tasks != nil {
 		createTasksUseCase := taskapplication.NewCreateTasksUseCase(dependencies.Tasks.Repository, dependencies.Tasks.GenerateID)

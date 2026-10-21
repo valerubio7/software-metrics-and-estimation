@@ -75,8 +75,13 @@ func main() {
 		log.Printf("sprint creation unavailable until reconciliation migration 000005 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}
 	if readiness := api.ResolveMigrationReadiness(version, dirty, migrationErr); readiness.Members {
-		dependencies.Members = &api.MemberDependencies{Repository: memberpostgres.NewPostgresMemberRepository(pool), GenerateID: api.NewProjectID}
-		log.Printf("project member registration available (schema version=%d)", version)
+		memberRepository := memberpostgres.NewPostgresMemberRepository(pool)
+		dependencies.Members = &api.MemberDependencies{
+			Repository: memberRepository,
+			GenerateID: api.NewProjectID,
+			Lister:     memberRepository,
+		}
+		log.Printf("project member registration and listing available (schema version=%d)", version)
 	} else {
 		log.Printf("project member registration unavailable until migration 000006 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}
