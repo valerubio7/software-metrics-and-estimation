@@ -3,6 +3,8 @@ package application
 import (
 	"context"
 
+	"github.com/google/uuid"
+
 	"github.com/valerubio7/software-metrics-and-estimation/internal/task/domain"
 )
 
@@ -34,7 +36,28 @@ func NewListTasksUseCase(lister TaskLister) *ListTasksUseCase {
 	return &ListTasksUseCase{lister: lister}
 }
 
-// Execute is implemented in the GREEN step.
+// Execute validates both route identifiers before reading, returns the port error without
+// a partial collection, and always yields a non-nil task slice.
 func (u *ListTasksUseCase) Execute(ctx context.Context, query ListTasksQuery) (ProjectStoryTasks, error) {
-	return ProjectStoryTasks{}, nil
+	fields := make(map[string]string)
+	projectID, err := uuid.Parse(query.ProjectID)
+	if err != nil {
+		fields["project_id"] = "must be a valid UUID"
+	}
+	storyID, err := uuid.Parse(query.StoryID)
+	if err != nil {
+		fields["story_id"] = "must be a valid UUID"
+	}
+	if len(fields) > 0 {
+		return ProjectStoryTasks{}, &domain.ValidationError{Fields: fields}
+	}
+
+	tasks, err := u.lister.ListByProjectStory(ctx, projectID.String(), storyID.String())
+	if err != nil {
+		return ProjectStoryTasks{}, err
+	}
+	if tasks == nil {
+		tasks = []domain.Task{}
+	}
+	return ProjectStoryTasks{ProjectID: projectID.String(), StoryID: storyID.String(), Tasks: tasks}, nil
 }

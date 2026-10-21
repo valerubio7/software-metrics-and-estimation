@@ -94,8 +94,13 @@ func main() {
 		log.Printf("story assignment unavailable until migration 000008 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}
 	if readiness := api.ResolveMigrationReadiness(version, dirty, migrationErr); readiness.Tasks {
-		dependencies.Tasks = &api.TaskDependencies{Repository: taskpostgres.NewPostgresTaskRepository(pool), GenerateID: api.NewProjectID}
-		log.Printf("task creation available (schema version=%d)", version)
+		taskRepository := taskpostgres.NewPostgresTaskRepository(pool)
+		dependencies.Tasks = &api.TaskDependencies{
+			Repository: taskRepository,
+			GenerateID: api.NewProjectID,
+			Lister:     taskRepository,
+		}
+		log.Printf("task creation and story task listing available (schema version=%d)", version)
 	} else {
 		log.Printf("task creation unavailable until migration 000009 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}
