@@ -78,6 +78,8 @@ type Model struct {
 	taskHours        string
 	taskField        int
 	taskClient       *TaskClient
+	memberClient     *MemberClient
+	section          sectionState
 	openSprints      []Sprint
 	sprintHistory    SprintHistory
 	sprintStories    []Story
@@ -87,14 +89,18 @@ type Model struct {
 // NewModel creates the base navigation model.
 func NewModel(apiURL string) Model {
 	return Model{
-		APIURL:  apiURL,
-		Choices: []string{"Proyectos", "Backlog", "Sprints", "Salir"},
-		Screen:  "menu",
-		client:  NewProjectClient(apiURL),
+		APIURL: apiURL,
+		Choices: []string{
+			"Proyectos", "Backlog", "Sprints", "Planning Poker",
+			"Esfuerzo", "Defectos", "Métricas", "Dashboard", "Salir",
+		},
+		Screen: "menu",
+		client: NewProjectClient(apiURL),
 
 		backlogClient: NewBacklogClient(apiURL),
 		sprintClient:  NewSprintClient(apiURL),
 		taskClient:    NewTaskClient(apiURL),
+		memberClient:  NewMemberClient(apiURL),
 	}
 }
 
@@ -118,6 +124,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if result, ok := msg.(SprintResultMsg); ok {
 		return m.applySprintResult(result)
+	}
+	if result, ok := msg.(SectionResultMsg); ok {
+		return m.applySectionResult(result)
 	}
 	key, isKey := msg.(tea.KeyMsg)
 	if !isKey {
@@ -183,6 +192,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.enterSprints()
 		}
 		return m, nil
+	case "section":
+		return m.updateSection(key)
 	default:
 		if key.Type == tea.KeyEsc {
 			m.Screen = "menu"
@@ -206,7 +217,7 @@ func entersText(screen string) bool {
 // listed, so q is a plain character there; Ctrl+C always quits.
 func quitsOnQ(screen string) bool {
 	switch screen {
-	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select":
+	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section":
 		return true
 	}
 	return false
@@ -221,6 +232,7 @@ func isQuitRune(key tea.KeyMsg) bool {
 func (m Model) filtering() bool {
 	return (m.Screen == "backlog" && m.backlogFiltering) ||
 		(m.Screen == "project-picker" && m.projectFiltering) ||
+		(m.Screen == "section" && m.section.selector.filtering) ||
 		(isSprintScreen(m.Screen) && m.sprintFiltering)
 }
 
@@ -258,6 +270,16 @@ func (m Model) updateMenu(key tea.KeyMsg) (Model, tea.Cmd) {
 			return m.openBacklog()
 		case 2:
 			return m.enterSprints()
+		case 3:
+			return m.openSection(sectionPlanningPoker)
+		case 4:
+			return m.openSection(sectionEffort)
+		case 5:
+			return m.openSection(sectionDefects)
+		case 6:
+			return m.openSection(sectionMetrics)
+		case 7:
+			return m.openSection(sectionDashboard)
 		default:
 			return m, tea.Quit
 		}
@@ -545,6 +567,8 @@ func (m Model) viewBody() string {
 		return m.viewSprintTaskForm()
 	case "sprint-result":
 		return m.viewSprintResult()
+	case "section":
+		return m.viewSection()
 	default:
 		return screenTitleStyle.Render(m.Choices[m.Cursor])
 	}
@@ -665,6 +689,8 @@ func (m Model) crumbParts() []string {
 			parts = append(parts, "Backlog")
 		case m.pickerReturn == "sprints" || isSprintScreen(m.pickerReturn) || m.pickerPurpose == "sprints":
 			parts = append(parts, "Sprints")
+		case m.pickerReturn == "section" || strings.HasPrefix(m.pickerPurpose, "section:"):
+			parts = append(parts, m.section.kind.title())
 		default:
 			parts = append(parts, "Proyectos")
 		}
@@ -696,6 +722,18 @@ func (m Model) crumbParts() []string {
 			parts = append(parts, "Cerrar")
 		case "sprint-result":
 			parts = append(parts, "Resultado")
+		}
+	case "section":
+		parts = append(parts, m.section.kind.title())
+		switch m.section.step {
+		case sectionStepMembers:
+			parts = append(parts, "Participantes")
+		case sectionStepTasks:
+			parts = append(parts, "Tareas")
+		case sectionStepSprints:
+			parts = append(parts, "Sprint")
+		case sectionStepNotice:
+			parts = append(parts, "Próximamente")
 		}
 	default:
 		parts = append(parts, "")
@@ -769,13 +807,31 @@ func (m Model) footer() string {
 			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
 		}
 		return m.keyHints("↑/↓", "mover", "Enter", "desplegar", "r", "refrescar", "/", "buscar", "Esc", "volver", "q", "salir")
+	case "section":
+		return m.sectionFooter()
 	default:
 		return m.keyHints("Esc", "volver", "?", "ayuda", "q", "salir")
 	}
 }
 
 func (m Model) viewHelp() string {
-	rows := [][2]string{
+	var b strings.Builder
+	b.WriteString(screenTitleStyle.Render("Atajos de teclado"))
+	b.WriteString("\n\n")
+	for _, row := range m.helpRows() {
+		b.WriteString("  " + helpKeyStyle.Render(padRight(row[0], 18)) + hintStyle.Render(row[1]) + "\n")
+	}
+	return b.String()
+}
+
+// helpRows returns the keys that are actually available on the active screen.
+// Sections get their own list so the overlay never advertises actions that do
+// not exist there.
+func (m Model) helpRows() [][2]string {
+	if m.Screen == "section" {
+		return m.sectionHelpRows()
+	}
+	return [][2]string{
 		{"↑ / ↓", "Mover la selección"},
 		{"Enter", "Elegir / confirmar la fila resaltada"},
 		{"n", "Crear un elemento nuevo"},
@@ -792,13 +848,6 @@ func (m Model) viewHelp() string {
 		{"q", "Salir (no dentro de un campo de texto)"},
 		{"Ctrl+C", "Salir desde cualquier pantalla"},
 	}
-	var b strings.Builder
-	b.WriteString(screenTitleStyle.Render("Atajos de teclado"))
-	b.WriteString("\n\n")
-	for _, row := range rows {
-		b.WriteString("  " + helpKeyStyle.Render(padRight(row[0], 18)) + hintStyle.Render(row[1]) + "\n")
-	}
-	return b.String()
 }
 
 func padRight(s string, width int) string {
