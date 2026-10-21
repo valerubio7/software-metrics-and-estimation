@@ -208,7 +208,7 @@ func TestSectionFooterAndHelpOnlyShowValidKeys(t *testing.T) {
 	server := sectionServer(t, map[string]string{"/projects/p1/stories": storiesBodyForSection(sectionStories())})
 	m := openSectionWithProject(t, server.URL, "p1", menuPlanning)
 	footer := stripANSI(m.View())
-	for _, want := range []string{"elegir historia", "p proyecto", "? ayuda"} {
+	for _, want := range []string{"elegir historia", "p  proyecto", "?  ayuda"} {
 		if !strings.Contains(footer, want) {
 			t.Errorf("section footer lacks %q: %q", want, footer)
 		}
