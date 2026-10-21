@@ -115,7 +115,8 @@ func NewTaskClient(baseURL string) *TaskClient { return &TaskClient{api: newAPIC
 
 // ListByStory fetches the tasks of a project-scoped story without mutating data.
 func (c *TaskClient) ListByStory(ctx context.Context, projectID, storyID string) (APIResponse, error) {
-	return APIResponse{}, nil
+	path := "/projects/" + url.PathEscape(projectID) + "/stories/" + url.PathEscape(storyID) + "/tasks"
+	return c.api.do(ctx, http.MethodGet, path, nil)
 }
 
 func (c *TaskClient) Create(ctx context.Context, projectID, sprintID, storyID string, tasks []TaskInput) (APIResponse, error) {

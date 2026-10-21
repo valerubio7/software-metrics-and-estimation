@@ -55,8 +55,8 @@ func TestSelectorSlashAndPrintableCharactersStartTheFilter(t *testing.T) {
 	}
 
 	selector.filtering, selector.filter = false, ""
-	if action := selector.update(selectorRune('r')); action != selectorIdle || !selector.filtering || selector.filter != "r" {
-		t.Fatalf("printable start = action %v filtering %t filter %q, want idle/true/r", action, selector.filtering, selector.filter)
+	if action := selector.update(selectorRune('m')); action != selectorIdle || !selector.filtering || selector.filter != "m" {
+		t.Fatalf("printable start = action %v filtering %t filter %q, want idle/true/m", action, selector.filtering, selector.filter)
 	}
 }
 

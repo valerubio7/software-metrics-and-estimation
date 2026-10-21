@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"net/http"
+	"net/url"
 )
 
 // Member is a project member as serialized by GET /projects/{id}/members.
@@ -23,5 +24,5 @@ func NewMemberClient(baseURL string) *MemberClient {
 
 // List fetches the members of a project.
 func (c *MemberClient) List(ctx context.Context, projectID string) (APIResponse, error) {
-	return c.api.do(ctx, http.MethodGet, "/projects/"+projectID+"/members", nil)
+	return c.api.do(ctx, http.MethodGet, "/projects/"+url.PathEscape(projectID)+"/members", nil)
 }
