@@ -69,8 +69,8 @@ func TestListTasksHandlerResponses(t *testing.T) {
 			wantStatus: http.StatusNotFound, wantBody: []string{"story_not_found"},
 		},
 		{
-			name: "empty collection",
-			result: application.ProjectStoryTasks{ProjectID: validProjectID, StoryID: validStoryID, Tasks: []domain.Task{}},
+			name:       "empty collection",
+			result:     application.ProjectStoryTasks{ProjectID: validProjectID, StoryID: validStoryID, Tasks: []domain.Task{}},
 			wantStatus: http.StatusOK, wantBody: []string{`"project_id":"` + validProjectID + `"`, `"story_id":"` + validStoryID + `"`, `"tasks":[]`},
 		},
 		{
@@ -80,7 +80,7 @@ func TestListTasksHandlerResponses(t *testing.T) {
 				{ID: "t2", ProjectID: validProjectID, SprintID: validSprintID, StoryID: validStoryID, Title: "Probar"},
 			}},
 			wantStatus: http.StatusOK,
-			wantBody: []string{`"title":"Diseñar"`, `"estimated_hours":4.5`, `"title":"Probar"`, `"estimated_hours":null`},
+			wantBody:   []string{`"title":"Diseñar"`, `"estimated_hours":4.5`, `"title":"Probar"`, `"estimated_hours":null`},
 		},
 		{
 			name: "internal error", err: errors.New("secret db detail"),

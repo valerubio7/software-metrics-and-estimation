@@ -25,11 +25,11 @@ func TestNewProjectRejectsInvalidBasicData(t *testing.T) {
 	date := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
 
 	tests := []struct {
-		name       string
+		name        string
 		projectName string
-		startDate  time.Time
-		finishDate time.Time
-		field      string
+		startDate   time.Time
+		finishDate  time.Time
+		field       string
 	}{
 		{name: "blank name", projectName: " \t", startDate: date, finishDate: date, field: "name"},
 		{name: "missing start date", projectName: "Metrics portal", finishDate: date, field: "start_date"},
