@@ -62,35 +62,89 @@ func metricsServer(t *testing.T) *httptest.Server {
 	})
 }
 
-func TestPlanningPokerFlowChoosesStoryAndMemberThenShowsTheTUI07Notice(t *testing.T) {
-	server := planningServer(t)
+func TestPlanningPokerParticipantSelectorShowsLoadingAndAPIError(t *testing.T) {
+	server := sprintServer(t, func(w http.ResponseWriter, r *http.Request) bool {
+		switch r.URL.Path {
+		case "/projects/p1/stories":
+			_, _ = w.Write([]byte(storiesBodyForSection(sectionStories())))
+			return true
+		case "/projects/p1/members":
+			http.Error(w, `{"message":"member service unavailable"}`, http.StatusServiceUnavailable)
+			return true
+		}
+		return false
+	})
 	m := openSectionWithProject(t, server.URL, "p1", menuPlanning)
-
 	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
-		t.Fatal("choosing a story should load the member selector")
+		t.Fatal("choosing a story should start loading participants")
+	}
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "Cargando") || strings.Contains(view, "No hay participantes disponibles") {
+		t.Fatalf("loading state should not claim the project has no participants: %q", view)
 	}
 	m = run(t, m, cmd)
-	view := stripANSI(m.View())
-	for _, want := range []string{"Planning Poker", "Participantes", "Ada Lovelace", "Grace Hopper"} {
-		if !strings.Contains(view, want) {
-			t.Errorf("member selector lacks %q: %q", want, view)
-		}
-	}
-
-	m, cmd = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
-	if cmd != nil {
-		t.Fatalf("choosing a member should not issue a command, got %v", cmd)
-	}
 	view = stripANSI(m.View())
-	for _, want := range []string{"TUI-07", "Ada Lovelace", "No se guardó ningún dato"} {
+	if !strings.Contains(view, "503") || strings.Contains(view, "No hay participantes disponibles") {
+		t.Fatalf("API failure should be shown instead of an empty-project message: %q", view)
+	}
+}
+
+func TestPlanningPokerFootersAdvertiseContextualSelectionAndVoteKeys(t *testing.T) {
+	server := planningServer(t)
+	m := openSectionWithProject(t, server.URL, "p1", menuPlanning)
+	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = run(t, m, cmd)
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "Space") {
+		t.Fatalf("participant footer should advertise Space to toggle selection: %q", view)
+	}
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeySpace})
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	view = stripANSI(m.View())
+	if strings.Contains(view, "?  ayuda") || strings.Contains(view, "? ayuda") {
+		t.Fatalf("vote footer must not advertise ? as help because it is a vote card: %q", view)
+	}
+	if !strings.Contains(view, "↑/↓") || !strings.Contains(view, "participante") {
+		t.Fatalf("vote footer should describe arrows for participant navigation: %q", view)
+	}
+}
+
+func TestPlanningPokerCollectsHiddenVotesRevealsResetsAndSaves(t *testing.T) {
+	server := planningServer(t)
+	m := openSectionWithProject(t, server.URL, "p1", menuPlanning)
+	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = run(t, m, cmd)
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeySpace})
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyDown})
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeySpace})
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if got := stripANSI(m.View()); !strings.Contains(got, "Ada Lovelace") || !strings.Contains(got, "Grace Hopper") {
+		t.Fatalf("vote entry should name both selected participants: %q", got)
+	}
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'8'}})
+	if got := stripANSI(m.View()); !strings.Contains(got, "voto cargado") || strings.Contains(got, "voto cargado 8") {
+		t.Fatalf("loaded vote should show only a generic marker, never its value: %q", got)
+	}
+	if got := stripANSI(m.View()); strings.Contains(got, "Ada Lovelace: 8") {
+		t.Fatalf("hidden vote leaked before reveal: %q", got)
+	}
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if got := stripANSI(m.View()); !strings.Contains(got, "revelar") || strings.Contains(got, "Ada Lovelace: 8") || strings.Contains(got, "Ada Lovelace: ?") {
+		t.Fatalf("votes must remain hidden until explicit reveal: %q", got)
+	}
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	view := stripANSI(m.View())
+	for _, want := range []string{"Ada Lovelace", "8", "Grace Hopper", "?", "difieren"} {
 		if !strings.Contains(view, want) {
-			t.Errorf("planning notice lacks %q: %q", want, view)
+			t.Errorf("revealed round lacks %q: %q", want, view)
 		}
 	}
-	m = press(m, tea.KeyEsc)
-	if !strings.Contains(stripANSI(m.View()), "Participantes") {
-		t.Fatalf("Esc from the notice should return to the member selector: %q", stripANSI(m.View()))
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if got := stripANSI(m.View()); strings.Contains(got, "Ada Lovelace: 8") {
+		t.Fatalf("new round leaked prior votes: %q", got)
 	}
 }
 
