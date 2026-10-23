@@ -212,6 +212,20 @@ func (m Model) updateSection(key tea.KeyMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if m.section.kind == sectionPlanningPoker && m.section.step == sectionStepMembers && key.Type == tea.KeySpace {
+		item, ok := m.section.selector.selected()
+		if ok {
+			if m.pokerVotes == nil {
+				m.pokerVotes = make(map[string]string)
+			}
+			if m.pokerVotes[item.ID] == "selected" {
+				delete(m.pokerVotes, item.ID)
+			} else {
+				m.pokerVotes[item.ID] = "selected"
+			}
+		}
+		return m, nil
+	}
 	action := m.section.selector.update(key)
 	switch action {
 	case selectorBack:
@@ -259,6 +273,17 @@ func (m Model) chooseSectionItem() (Model, tea.Cmd) {
 		}
 	}
 
+	if m.section.kind == sectionPlanningPoker && m.section.step == sectionStepMembers {
+		m.pokerParticipants = []selectorItem{item}
+		for _, member := range m.section.selector.items {
+			if m.pokerVotes[member.ID] == "selected" && member.ID != item.ID {
+				m.pokerParticipants = append(m.pokerParticipants, member)
+			}
+		}
+		m.pokerVotes = map[string]string{}
+		m.pokerPhase, m.pokerCursor, m.Screen = "vote", 0, "planning-poker"
+		return m, nil
+	}
 	m.section.detail = item
 	m.section.noticeReturn = m.section.step
 	m.section.step = sectionStepNotice
@@ -298,9 +323,7 @@ func (m Model) viewSection() string {
 		return m.viewSelector(&m.section.selector, m.section.kind.title(), m.section.kind.primaryHint(),
 			m.section.kind.primaryEmptyTitle(), m.section.kind.primaryEmptyHint())
 	case sectionStepMembers:
-		return m.viewSelector(&m.section.selector, m.section.kind.title()+" · Participantes",
-			"Elegí un participante del proyecto.", "El proyecto no tiene integrantes.",
-			"Registrá integrantes para poder elegirlos.")
+		return m.viewPokerParticipants()
 	case sectionStepTasks:
 		return m.viewSelector(&m.section.selector, m.section.kind.title()+" · Tareas",
 			"Elegí una tarea de "+m.section.selected.Label+".", "La historia no tiene tareas.",
@@ -495,6 +518,9 @@ func (m Model) sectionFooter() string {
 		action = "elegir tarea"
 	case sectionStepSprints:
 		action = "elegir Sprint"
+	}
+	if m.section.kind == sectionPlanningPoker && m.section.step == sectionStepMembers {
+		return m.keyHints("↑/↓", "mover", "Space", "seleccionar", "Enter", "confirmar participantes", "/", "buscar", "Esc", "volver", "?", "ayuda", "q", "salir")
 	}
 	return m.keyHints("↑/↓", "mover", "Enter", action, "/", "buscar", "r", "refrescar",
 		"p", "proyecto", "Esc", "volver", "?", "ayuda", "q", "salir")

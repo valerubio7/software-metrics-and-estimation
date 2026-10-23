@@ -58,6 +58,7 @@ type Model struct {
 	backlogMessage       string
 	backlogReturn        string
 	backlogClient        *BacklogClient
+	storyPointsClient    *StoryPointsClient
 	sprintClient         *SprintClient
 	sprintCursor         int
 	historyCursor        int
@@ -72,18 +73,25 @@ type Model struct {
 	sprintHistoryLoading bool
 	sprintStoriesLoading bool
 
-	selectedSprintID string
-	taskStoryID      string
-	taskTitle        string
-	taskHours        string
-	taskField        int
-	taskClient       *TaskClient
-	memberClient     *MemberClient
-	section          sectionState
-	openSprints      []Sprint
-	sprintHistory    SprintHistory
-	sprintStories    []Story
-	selectedStories  map[string]bool
+	selectedSprintID  string
+	taskStoryID       string
+	taskTitle         string
+	taskHours         string
+	taskField         int
+	taskClient        *TaskClient
+	memberClient      *MemberClient
+	section           sectionState
+	openSprints       []Sprint
+	sprintHistory     SprintHistory
+	sprintStories     []Story
+	selectedStories   map[string]bool
+	pokerParticipants []selectorItem
+	pokerVotes        map[string]string
+	pokerCursor       int
+	pokerPhase        string
+	pokerEstimate     int
+	pokerMessage      string
+	pokerStory        Story
 }
 
 // NewModel creates the base navigation model.
@@ -97,10 +105,10 @@ func NewModel(apiURL string) Model {
 		Screen: "menu",
 		client: NewProjectClient(apiURL),
 
-		backlogClient: NewBacklogClient(apiURL),
-		sprintClient:  NewSprintClient(apiURL),
-		taskClient:    NewTaskClient(apiURL),
-		memberClient:  NewMemberClient(apiURL),
+		backlogClient:     NewBacklogClient(apiURL),
+		storyPointsClient: NewStoryPointsClient(apiURL), sprintClient: NewSprintClient(apiURL),
+		taskClient:   NewTaskClient(apiURL),
+		memberClient: NewMemberClient(apiURL),
 	}
 }
 
@@ -128,6 +136,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if result, ok := msg.(SectionResultMsg); ok {
 		return m.applySectionResult(result)
 	}
+	if result, ok := msg.(pokerSaveResult); ok {
+		return m.applyPokerSave(result)
+	}
 	key, isKey := msg.(tea.KeyMsg)
 	if !isKey {
 		return m, nil
@@ -141,7 +152,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if key.Type == tea.KeyRunes && string(key.Runes) == "?" && !entersText(m.Screen) && !m.filtering() {
+	if key.Type == tea.KeyRunes && string(key.Runes) == "?" && !entersText(m.Screen) && !m.filtering() && !(m.Screen == "planning-poker" && m.pokerPhase == "vote") {
 		m.showHelp = true
 		return m, nil
 	}
@@ -194,6 +205,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "section":
 		return m.updateSection(key)
+	case "planning-poker":
+		return m.updatePlanningPoker(key)
 	default:
 		if key.Type == tea.KeyEsc {
 			m.Screen = "menu"
@@ -217,7 +230,7 @@ func entersText(screen string) bool {
 // listed, so q is a plain character there; Ctrl+C always quits.
 func quitsOnQ(screen string) bool {
 	switch screen {
-	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section":
+	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "planning-poker":
 		return true
 	}
 	return false
@@ -569,6 +582,8 @@ func (m Model) viewBody() string {
 		return m.viewSprintResult()
 	case "section":
 		return m.viewSection()
+	case "planning-poker":
+		return m.viewPlanningPoker()
 	default:
 		return screenTitleStyle.Render(m.Choices[m.Cursor])
 	}
@@ -723,7 +738,7 @@ func (m Model) crumbParts() []string {
 		case "sprint-result":
 			parts = append(parts, "Resultado")
 		}
-	case "section":
+	case "section", "planning-poker":
 		parts = append(parts, m.section.kind.title())
 		switch m.section.step {
 		case sectionStepMembers:
@@ -809,6 +824,8 @@ func (m Model) footer() string {
 		return m.keyHints("↑/↓", "mover", "Enter", "desplegar", "r", "refrescar", "/", "buscar", "Esc", "volver", "q", "salir")
 	case "section":
 		return m.sectionFooter()
+	case "planning-poker":
+		return m.planningPokerFooter()
 	default:
 		return m.keyHints("Esc", "volver", "?", "ayuda", "q", "salir")
 	}
@@ -828,6 +845,9 @@ func (m Model) viewHelp() string {
 // Sections get their own list so the overlay never advertises actions that do
 // not exist there.
 func (m Model) helpRows() [][2]string {
+	if m.Screen == "planning-poker" && m.pokerPhase == "vote" {
+		return [][2]string{{"0–100 / ?", "Registrar el voto privado"}, {"Enter", "Confirmar voto y pasar al siguiente participante"}, {"Esc", "Volver"}, {"Ctrl+C", "Salir desde cualquier pantalla"}}
+	}
 	if m.Screen == "section" {
 		return m.sectionHelpRows()
 	}

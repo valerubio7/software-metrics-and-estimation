@@ -175,6 +175,19 @@ func (r *PostgresStoryRepository) CompleteSprintStory(ctx context.Context, proje
 	return application.SprintStoryCompletion{ProjectID: projectID, SprintID: sprintID, StoryID: storyID, CompletedAt: completedAt}, nil
 }
 
+// SetStoryPoints updates only the agreed estimate for a project-scoped story.
+func (r *PostgresStoryRepository) SetStoryPoints(ctx context.Context, projectID, storyID string, points int) (domain.Story, error) {
+	var stored domain.Story
+	// This operation is available from schema v2; estimated_hours is introduced in v3.
+	// Read it through the row's JSON form so older schemas yield NULL without referencing
+	// a column that does not exist, while newer schemas still return the full story.
+	err := r.pool.QueryRow(ctx, `UPDATE stories SET story_points = $3 WHERE id = $1 AND project_id = $2 RETURNING id, project_id, title, description, priority, status, story_points, acceptance_criteria, (to_jsonb(stories)->>'estimated_hours')::numeric`, storyID, projectID, points).Scan(&stored.ID, &stored.ProjectID, &stored.Title, &stored.Description, &stored.Priority, &stored.Status, &stored.StoryPoints, &stored.AcceptanceCriteria, &stored.EstimatedHours)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Story{}, application.ErrStoryNotFound
+	}
+	return stored, err
+}
+
 // Create inserts one story; only the named project FK identifies a missing project.
 func (r *PostgresStoryRepository) Create(ctx context.Context, story domain.Story) error {
 	_, err := r.pool.Exec(ctx, `
@@ -285,6 +298,7 @@ var (
 	_ application.ProjectScopedStorySprintAssigner = (*PostgresStoryRepository)(nil)
 	_ application.StoryRepository                  = (*PostgresStoryRepository)(nil)
 	_ application.StoryUpdater                     = (*PostgresStoryRepository)(nil)
+	_ application.StoryPointsSetter                = (*PostgresStoryRepository)(nil)
 	_ application.StoryLister                      = (*PostgresStoryRepository)(nil)
 )
 

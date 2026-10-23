@@ -64,6 +64,18 @@ func storiesPath(projectID string) string {
 	return "/projects/" + url.PathEscape(projectID) + "/stories"
 }
 
+// StoryPointsClient writes an explicitly agreed story estimate.
+type StoryPointsClient struct{ api apiClient }
+
+func NewStoryPointsClient(baseURL string) *StoryPointsClient {
+	return &StoryPointsClient{api: newAPIClient(baseURL)}
+}
+func (c *StoryPointsClient) Set(ctx context.Context, projectID, storyID string, points int) (APIResponse, error) {
+	return c.api.do(ctx, http.MethodPut, storiesPath(projectID)+"/"+url.PathEscape(storyID)+"/story-points", struct {
+		StoryPoints int `json:"story_points"`
+	}{points})
+}
+
 // BacklogOp identifies which backlog operation produced a BacklogResultMsg.
 type BacklogOp string
 

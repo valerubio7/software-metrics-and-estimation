@@ -530,6 +530,34 @@ Las pantallas que muestran colecciones (proyectos, historias y Sprints) DEBERÁN
 - **WHEN** el usuario opera cualquier colección
 - **THEN** la TUI nunca solicita que se escriba un identificador
 
+### Requirement: Estimar historias con Planning Poker
+
+La TUI DEBERÁ permitir seleccionar una historia del backlog del proyecto activo y elegir uno o más integrantes del proyecto como participantes. El facilitador ingresará un voto por participante en la misma terminal usando `0, 1, 2, 3, 5, 8, 13, 20, 40, 100` o `?`. Los votos serán transitorios en memoria y NO DEBERÁN mostrarse hasta que el facilitador revele explícitamente la ronda. La revelación mostrará cada participante y su voto, e indicará si hay diferencias. Una nueva ronda DEBERÁ ocultar y reiniciar los votos. La TUI NO calculará consenso ni persistirá votos.
+
+Luego de revisar la ronda, el facilitador DEBERÁ elegir explícitamente un Story Points numérico acordado y confirmarlo. La TUI enviará únicamente `PUT /projects/{project_id}/stories/{story_id}/story-points` con `{"story_points": <integer>}`. La validación corresponde a la API; `?` no se puede guardar. Tras el éxito se actualizará el backlog mediante una nueva consulta. Ante errores 404, 409 o 422 se mostrará el motivo de la API y no se afirmará que el cambio se guardó ni se modificará el Story Points local.
+
+#### Scenario: Votos privados y revelación explícita
+- **GIVEN** que se seleccionaron participantes y se ingresaron votos
+- **WHEN** la ronda todavía no fue revelada
+- **THEN** las vistas de voto no muestran ningún valor de voto
+- **AND** solo la acción explícita de revelar muestra los votos e indica si difieren
+
+#### Scenario: Reiniciar una ronda
+- **GIVEN** que los votos de una ronda fueron revelados
+- **WHEN** el facilitador inicia una nueva ronda
+- **THEN** los votos anteriores dejan de mostrarse y cada participante vuelve a votar
+
+#### Scenario: Guardar el estimado acordado
+- **GIVEN** una historia seleccionada y una ronda revisada
+- **WHEN** el facilitador elige un valor numérico y confirma explícitamente
+- **THEN** la TUI envía el PUT dedicado con el cuerpo `story_points`
+- **AND** tras el éxito vuelve a mostrar el backlog actualizado
+
+#### Scenario: Fallo al guardar el estimado
+- **GIVEN** que la API responde 404, 409 o 422
+- **WHEN** la TUI presenta el resultado
+- **THEN** muestra el motivo informado por la API sin comunicar éxito ni alterar el Story Points local
+
 ### Requirement: Operar los Sprints mediante la TUI
 
 La TUI DEBERÁ permitir operar los Sprints del proyecto activo desde la opción «Sprints», que abre directamente el navegador de Sprints abiertos en lugar de un menú de operaciones. Desde el navegador el usuario abre las historias de un Sprint (`Enter`), asigna historias del backlog al Sprint resaltado (`a`), cierra el Sprint resaltado (`x`, con confirmación), crea un Sprint (`n`) y consulta los Sprints cerrados con `h`. Las pantallas de asignación (multiselección con `Space`), de historias del Sprint, de creación de tareas y de resultado reutilizan el patrón navegable (Requirement: Listas navegables con teclas uniformes) y consumen la API existente sin incorporar reglas de negocio.

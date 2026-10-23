@@ -50,12 +50,13 @@ func NewProjectID() string {
 // supplied and the backlog query only when Lister is supplied, which the caller does
 // after verifying migrations 000003 and 000004 respectively.
 type StoryDependencies struct {
-	Repository     storyapplication.StoryRepository
-	GenerateID     storyapplication.IDGenerator
-	Updater        storyapplication.StoryUpdater
-	Lister         storyapplication.StoryLister               // nil: GET on the collection is not registered (the mux answers 405)
-	Assigner       storyapplication.StorySprintAssigner       // supplied only after migration 000008 is clean
-	AssignedLister storyapplication.AssignedSprintStoryReader // supplied only after migration 000008 is clean
+	Repository        storyapplication.StoryRepository
+	GenerateID        storyapplication.IDGenerator
+	Updater           storyapplication.StoryUpdater
+	StoryPointsSetter storyapplication.StoryPointsSetter
+	Lister            storyapplication.StoryLister               // nil: GET on the collection is not registered (the mux answers 405)
+	Assigner          storyapplication.StorySprintAssigner       // supplied only after migration 000008 is clean
+	AssignedLister    storyapplication.AssignedSprintStoryReader // supplied only after migration 000008 is clean
 }
 
 // SprintDependencies enables sprint creation after reconciliation migration 000005 is clean.
@@ -104,6 +105,7 @@ type HTTPDependencies struct {
 type MigrationReadiness struct {
 	Projects    bool
 	Stories     bool
+	StoryPoints bool // story_points exists from schema version 2, independently of generic story updates
 	Sprints     bool
 	Members     bool
 	Assignment  bool
@@ -121,6 +123,7 @@ func ResolveMigrationReadiness(version int, dirty bool, lookupErr error) Migrati
 		return readiness
 	}
 	readiness.Stories = version >= 2
+	readiness.StoryPoints = version >= 2
 	readiness.Sprints = version >= 5
 	readiness.Members = version >= 6
 	readiness.Assignment = version >= 8
@@ -132,9 +135,9 @@ func ResolveMigrationReadiness(version int, dirty bool, lookupErr error) Migrati
 }
 
 // NewHTTPHandler builds the HTTP handler; existing project-only callers remain valid.
-// The caller must verify migration 000002 before supplying story dependencies,
-// migration 000003 before supplying StoryDependencies.Updater and migration 000004
-// before supplying StoryDependencies.Lister.
+// The caller must verify migration 000002 before supplying story dependencies or
+// StoryDependencies.StoryPointsSetter, migration 000003 before supplying Updater,
+// and migration 000004 before supplying Lister.
 func NewHTTPHandler(repository application.ProjectRepository, generateID application.IDGenerator, stories ...StoryDependencies) http.Handler {
 	dependencies := HTTPDependencies{}
 	if len(stories) > 0 {
@@ -162,6 +165,10 @@ func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, ge
 	if dependencies.Stories != nil {
 		storyUseCase := storyapplication.NewCreateStoryUseCase(dependencies.Stories.Repository, dependencies.Stories.GenerateID)
 		mux.Handle("POST /projects/{project_id}/stories", storyhttp.NewCreateStoryHandler(storyUseCase))
+		if dependencies.Stories.StoryPointsSetter != nil {
+			setPointsUseCase := storyapplication.NewSetStoryPointsUseCase(dependencies.Stories.StoryPointsSetter)
+			mux.Handle("PUT /projects/{project_id}/stories/{story_id}/story-points", storyhttp.NewSetStoryPointsHandler(setPointsUseCase))
+		}
 		if dependencies.Stories.Updater != nil {
 			updateStoryUseCase := storyapplication.NewUpdateStoryUseCase(dependencies.Stories.Updater)
 			mux.Handle("PUT /projects/{project_id}/stories/{story_id}", storyhttp.NewUpdateStoryHandler(updateStoryUseCase))
