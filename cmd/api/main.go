@@ -47,14 +47,15 @@ func main() {
 	case migrationErr == nil && !dirty && version >= 4:
 		stories := storypostgres.NewPostgresStoryRepository(pool)
 		log.Printf("story creation, update and backlog available (schema version=%d)", version)
-		dependencies.Stories = &api.StoryDependencies{Repository: stories, GenerateID: api.NewProjectID, Updater: stories, Lister: stories}
+		dependencies.Stories = &api.StoryDependencies{Repository: stories, GenerateID: api.NewProjectID, Updater: stories, StoryPointsSetter: stories, Lister: stories}
 	case migrationErr == nil && !dirty && version >= 3:
 		stories := storypostgres.NewPostgresStoryRepository(pool)
 		log.Printf("story backlog unavailable until migration 000004 is clean (version=%d)", version)
-		dependencies.Stories = &api.StoryDependencies{Repository: stories, GenerateID: api.NewProjectID, Updater: stories}
+		dependencies.Stories = &api.StoryDependencies{Repository: stories, GenerateID: api.NewProjectID, Updater: stories, StoryPointsSetter: stories}
 	case migrationErr == nil && !dirty && version >= 2:
 		log.Printf("story update unavailable until migration 000003 is clean (version=%d)", version)
-		dependencies.Stories = &api.StoryDependencies{Repository: storypostgres.NewPostgresStoryRepository(pool), GenerateID: api.NewProjectID}
+		stories := storypostgres.NewPostgresStoryRepository(pool)
+		dependencies.Stories = &api.StoryDependencies{Repository: stories, GenerateID: api.NewProjectID, StoryPointsSetter: stories}
 	default:
 		log.Printf("story creation unavailable until migration 000002 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}

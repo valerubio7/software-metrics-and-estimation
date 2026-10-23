@@ -341,6 +341,21 @@ El sistema MUST permitir registrar en una historia una estimación de esfuerzo `
 - THEN el sistema responde `200` con `estimated_hours` `1.5` y `story_points` `8`
 - AND no se aplica ninguna regla que relacione las horas con los Story Points
 
+### Requirement: Registrar los Story Points acordados de una historia existente
+
+El sistema MUST ofrecer una operación dedicada `PUT /projects/{project_id}/stories/{story_id}/story-points`, separada de la modificación genérica de la historia. Debe recibir un objeto JSON con el único campo numérico entero `story_points`; acepta únicamente 0, 1, 2, 3, 5, 8, 13, 20, 40 o 100 y responde `200` con la representación completa de la historia almacenada. La operación MUST actualizar solo `story_points`, devolver `404 story_not_found` si la historia no existe bajo el proyecto indicado y `422 validation_failed` para valores no permitidos. Un cuerpo inválido o un tipo no entero recibe `400 invalid_request`. El token `?` de Planning Poker representa un voto indeciso, no una estimación numérica, y MUST NOT ser persistible. Los votos y rondas son efímeros y no se almacenan; el cliente presenta el valor final acordado y el servidor es responsable de validar y persistirlo. La API no calcula consenso.
+
+#### Scenario: Guardar el valor final acordado
+- GIVEN una historia existente
+- WHEN se envía `PUT` con `{"story_points":13}`
+- THEN la respuesta `200` contiene la historia con `story_points` `13`
+- AND los demás campos de la historia permanecen intactos
+
+#### Scenario: Rechazar valores que no están en la escala
+- GIVEN una historia existente
+- WHEN se envía un valor no admitido o el token `?`
+- THEN la operación rechaza la solicitud sin cambiar la historia
+
 ### Requirement: Preservar la identidad y los Story Points en la modificación
 
 El sistema MUST NOT modificar `id`, `project_id` ni `story_points` en la operación de modificación. La operación MUST rechazar con `400 invalid_request` un cuerpo que contenga cualquiera de esas tres claves, como campos desconocidos, sin escribir. `id` y `project_id` MUST tomarse exclusivamente de la ruta. La estimación en Story Points corresponde a US-14 y MUST NOT aceptarse aquí.
