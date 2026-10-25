@@ -12,8 +12,8 @@
 | 2 | Dominio `EffortRecord` | Completa (tareas 2.1–2.6) | `3e06cef` `feat(effort): add effort record domain` |
 | 3 | Caso de uso `RegisterEffortUseCase` | Completa (tareas 3.1–3.6) | `d2353e6` `feat(effort): add register effort use case` |
 | 4 | Repositorio PostgreSQL y `MapConstraintError` | Completa (tareas 4.1–4.7) | `cf4d223` `feat(effort): persist effort records in PostgreSQL` |
-| 5 | Transporte HTTP `RegisterEffortHandler` | Completa (tareas 5.1–5.6) | `feat(effort): agregar handler HTTP de registro de esfuerzo` (el hash se registra en el commit de la UT 6, porque un commit no puede contener su propio hash) |
-| 6 | Cableado, integración HTTP y documentación | Pendiente | |
+| 5 | Transporte HTTP `RegisterEffortHandler` | Completa (tareas 5.1–5.6) | `a8cf4d4` `feat(effort): agregar handler HTTP de registro de esfuerzo` |
+| 6 | Cableado, integración HTTP y documentación | Completa (tareas 6.1–6.11) | `feat(effort): exponer la ruta de registro de esfuerzo` (el hash se registra en la Fase 7, porque un commit no puede contener su propio hash) |
 
 ## UT 1: Migración `000012_create_effort_records`
 
@@ -338,3 +338,85 @@ No se ejecutó `go test ./...` en esta UT por instrucción del orquestador; la v
 ### Desviaciones del diseño
 
 Ninguna: el orden de evaluación y el mapeo de errores coinciden con la sección "Capa `transport/http`" de `design.md`. Detalle de implementación: `decodeEffortObject` devuelve solo `error` (no necesita las claves crudas, a diferencia de `decodeTaskObject`). La prueba de método incorrecto invoca el handler directamente, porque el `ServeMux` de Go responde `405` por sí mismo con cuerpo de texto antes de llegar al handler. La discrepancia 1 de `tasks.md` queda cubierta: los cuatro sentinelas (incluido `ErrProjectNotFound`) producen `404` con su código y mensaje.
+
+## UT 6: Cableado, gate de esquema, integración HTTP y documentación
+
+### Evidencia de ciclo TDD
+
+| Tarea | Archivo de prueba | Capa | Safety net | RED | GREEN | TRIANGULATE | REFACTOR |
+|-------|-------------------|------|------------|-----|-------|-------------|----------|
+| 6.1 / 6.2 | `tests/unit/cmd/api/effort_route_test.go` | Unitaria (composición con `api.NewHTTPHandlerWithDependencies`, fake de repositorio) | Verde previo de `tests/unit/cmd/api` | Falla observada (no compila: faltan `EffortDependencies`, `HTTPDependencies.Effort`, `MigrationReadiness.Effort`) | `TestMigrationReadinessResolvesEffortByVersion` (6 subpruebas) y `TestEffortRouteRequiresExplicitDependency` (3) pasan | Ver 6.3 | Ver 6.7 |
+| 6.3 | mismo archivo | Unitaria | Verde previo (9 subpruebas) | Pasaron al primer intento (ver nota) | 4 pruebas de primer nivel nuevas pasan | Reloj inyectado, reloj por defecto, independencia, coexistencia + 5 mutaciones | Ver 6.7 |
+| 6.4 / 6.5 | `tests/integration/effort/postgres/http_integration_test.go` | Integración (PostgreSQL real, Testcontainers, `NewHTTPHandlerWithDependencies` + `PostgresEffortRepository`) | Verde previo: integración de esfuerzo de las UT 1 y 4 | Pasó al primer intento; RED obtenido forzando el fallo (ver nota) | `TestEffortHTTPEndToEnd` (14 subpruebas) pasa | Ver 6.6 | Ver 6.7 |
+| 6.6 | mismo archivo | Integración | Verde previo (6.5) | Pasaron al primer intento; fallo forzado (ver nota) | `TestEffortHTTPStorageFailureRespondsInternalErrorWithoutRows` y `TestEffortHTTPRouteUnavailableBelowVersion12` pasan | 2 pruebas nuevas | Ver 6.7 |
+| 6.7 | `internal/api/api.go`, `cmd/api/main.go` | Unitaria + integración | Verde previo (6.6) | ➖ No aplica | Todo verde tras el refactor | ➖ No aplica | Comentario de cabecera de migraciones de `main.go` actualizado a la versión 12; sin cambio de comportamiento |
+
+### RED observado
+
+- Comando: `go test ./tests/unit/cmd/api/... ./internal/api/...` (solo con las pruebas de 6.1).
+  Resultado: `FAIL ... [build failed]`. Motivo correcto: `unknown field Effort in struct literal of type api.HTTPDependencies`, `undefined: api.EffortDependencies` y `readiness.Effort undefined (type api.MigrationReadiness has no field or method Effort)`, es decir, el cableado todavía no existe.
+
+### GREEN observado
+
+- `internal/api/api.go`: se agregaron los imports `effortapplication` y `efforthttp`, el tipo `EffortDependencies{Repository, GenerateID, Now}`, el campo `HTTPDependencies.Effort`, el campo `MigrationReadiness.Effort`, `readiness.Effort = version >= 12` (tras la salida temprana existente para `dirty` y error de lectura, por lo que ambos casos dejan `Effort` en falso) y el bloque condicional que registra `POST /projects/{project_id}/stories/{story_id}/effort-records` solo si `dependencies.Effort != nil`, con reloj por defecto `time.Now().UTC()` cuando `Now` es nil. El bloque es independiente de `Stories`, `Members` y `Tasks`.
+- `cmd/api/main.go`: bloque `if readiness := api.ResolveMigrationReadiness(...); readiness.Effort { ... }` que construye `EffortDependencies` con `effortpostgres.NewPostgresEffortRepository(pool)`, `api.NewProjectID` y el reloj UTC, con mensajes de log para disponible y no disponible; no lee `dependencies.Stories`, `Members` ni `Tasks`.
+- `go test ./tests/unit/cmd/api/... -count=1`: `ok`.
+
+### TRIANGULATE (las pruebas pasaron al primer intento, por eso se forzó el fallo)
+
+Se agregaron `TestEffortRouteUsesInjectedClock` (con el reloj `2026-03-10`, esa fecha se acepta y `2026-03-11` da `422` con `work_date`), `TestEffortRouteDefaultsToCurrentUTCClockWhenNowIsNil` (`Now` nil: `2000-01-01` se acepta y `2999-12-31` se rechaza), `TestEffortRouteIsIndependentFromOtherModules` (`HTTPDependencies{Effort}` sin `Stories`, `Members` ni `Tasks` responde `201` y `POST /projects/{id}/stories` sigue en `404`) y `TestEffortRouteCoexistsWithExistingStoryAndTaskRoutes` (con `Stories` y `Tasks` presentes, `PUT .../story-points`, `PUT .../stories/{story_id}` y `GET .../tasks` responden como antes, `POST .../effort-records` da `201` y `GET` sobre esa ruta da `405`). El test no importa `internal/tui`. Como el código ya generalizaba, pasaron al primer intento; para no inventar evidencia se mutó temporalmente `internal/api/api.go` (cada mutación se revirtió restaurando una copia y se verificó con `git diff --stat`: 23 inserciones, solo el cableado):
+
+| Mutación temporal | Prueba que debía fallar | Resultado observado |
+|-------------------|-------------------------|---------------------|
+| `readiness.Effort = version >= 13` | `TestMigrationReadinessResolvesEffortByVersion` | Falla `v12` |
+| `Effort: true` en el valor inicial de `MigrationReadiness` (antes de la salida temprana) | `TestMigrationReadinessResolvesEffortByVersion` | Fallan `dirty v12`, `lookup error` y `missing migration table` |
+| Ignorar `Effort.Now` y usar siempre el reloj real | `TestEffortRouteUsesInjectedClock` | Falla |
+| Eliminar el reloj por defecto cuando `Now` es nil | `TestEffortRouteDefaultsToCurrentUTCClockWhenNowIsNil` | Falla con `nil pointer dereference` |
+| Registrar la ruta solo si además `Stories != nil` | `TestEffortRouteRequiresExplicitDependency`, `...UsesInjectedClock`, `...DefaultsToCurrentUTCClock...`, `...IsIndependentFromOtherModules` | Fallan 5 pruebas |
+
+Las 5 mutaciones fueron detectadas; ninguna sobrevive.
+
+### Integración HTTP real (6.4, 6.5, 6.6)
+
+- Comando: `go test -p 1 ./tests/integration/effort/postgres/... -run TestEffortHTTP -count=1 -v` (Docker Desktop, Testcontainers `postgres:16-alpine`).
+- `TestEffortHTTPEndToEnd` (14 subpruebas) pasó al primer intento: `201` sobre historia (respuesta con `task_id: null`, sin `created_at` ni `seq`, descripción recortada, fila almacenada igual a la respuesta), `201` sobre tarea (`task_id` en mayúsculas devuelto en minúsculas canónicas, `8.00` almacenado), `201` sobre historia de Sprint cerrado y de backlog, dos solicitudes idénticas con IDs distintos, y sin filas tras `404` (`member_not_found` con integrante inexistente y de otro proyecto, `task_not_found` con tarea de otra historia y de otro proyecto, `story_not_found` con historia inexistente y de otro proyecto, `project_not_found`), `422` con varios campos (`hours`, `description`, `work_date`) y precedencia del `422` sobre un integrante inexistente, y `400 invalid_request` por clave desconocida. El aislamiento entre proyectos queda cubierto por los casos de integrante, tarea e historia de otro proyecto.
+- `TestEffortHTTPStorageFailureRespondsInternalErrorWithoutRows` crea un `TRIGGER BEFORE INSERT` que lanza una excepción: `POST` válido da `500 internal_error`, el cuerpo no contiene `secret internal detail` ni `forced storage failure` y `effort_records` queda con 0 filas.
+- `TestEffortHTTPRouteUnavailableBelowVersion12` aplica solo `000001`–`000011`, compone sin `Effort` y observa `404` con la tabla `effort_records` inexistente.
+- Resultado: `ok ... 84.477s` con las 16 pruebas y subpruebas en verde.
+
+Como las pruebas pasaron al primer intento, el RED se obtuvo forzando el fallo (cada cambio se revirtió restaurando una copia previa del archivo):
+
+| Cambio temporal en la prueba | Prueba que debía fallar | Resultado observado |
+|------------------------------|-------------------------|---------------------|
+| Componer el handler sin `Effort` (`api.HTTPDependencies{}`) | `TestEffortHTTPEndToEnd/...201...`, `...unknown_member...`, `...several_invalid_fields...` | Fallan las tres: `status = 404, want 201: 404 page not found` (y `404 page not found` en lugar de `member_not_found` y de `422`) |
+| `WHEN (false)` en el trigger, que lo vuelve inofensivo | `TestEffortHTTPStorageFailureRespondsInternalErrorWithoutRows` | Falla: `status = 201, want 500` |
+
+### Defectos reales encontrados
+
+- Ninguno en el repositorio, el transporte ni el cableado. Único error propio de la prueba, corregido antes de ejecutar: el código del `422` es `validation_failed` (no `validation_error`).
+
+### REFACTOR
+
+- Comentario de cabecera del bloque de migraciones de `cmd/api/main.go` actualizado para mencionar la versión 12 (`effort_records`). Nombres y mensajes de log del cableado alineados con los de Tasks y Completion; el comportamiento de los gates existentes no cambió.
+- `gofmt -l` sin salida sobre el contenido de `api.go`, `main.go` y las dos pruebas nuevas (los archivos existentes aparecen como CRLF en el árbol de trabajo por `core.autocrlf=true`, ver UT 1); `go build ./...` y `go vet ./internal/... ./cmd/... ./tests/unit/cmd/... ./tests/unit/effort/... ./tests/integration/effort/...` sin hallazgos.
+
+### Documentación
+
+- `README.md`: subsección `## API de esfuerzo` antes de `## Pruebas` con la ruta, el cuerpo, las respuestas (`201`, `400`, `404`, `422`, `500`) y la nota de que la ruta solo existe con el esquema limpio en versión `>= 12`; no se modificó la tabla de lecturas de la TUI.
+- `openspec/config.yaml`: se reemplazó la nota obsoleta de los dos `000003` por una nota vigente (12 pares `000001`–`000012`, sin duplicados, despliegue externo) y se agregó "Implementada: US-15". No hay un analizador YAML disponible en el entorno (el intérprete no incluye `yaml`); la validez se verificó por inspección de indentación y comillas contra las líneas vecinas.
+
+### Work Unit Evidence (UT 6)
+
+| Evidencia | Valor |
+|-----------|-------|
+| Comando de prueba focalizado y resultado | `go test -p 1 ./internal/... ./tests/unit/cmd/... ./tests/unit/effort/... ./tests/integration/effort/... -count=1`: `ok` en `internal/tui`, `tests/unit/cmd/api`, los cuatro paquetes de `tests/unit/effort` y `tests/integration/effort/postgres` (149.8 s) |
+| Arnés de ejecución real | Testcontainers `postgres:16-alpine` con Docker Desktop (engine 29.8.1): `api.NewHTTPHandlerWithDependencies` con `PostgresEffortRepository` real, migraciones `000001`–`000012` desde archivos, `TRIGGER` forzando un `500` |
+| Límite de reversión | Revertir los bloques de `internal/api/api.go` y `cmd/api/main.go`, la sección del `README.md`, las líneas de `openspec/config.yaml` y eliminar `tests/unit/cmd/api/effort_route_test.go` y `tests/integration/effort/postgres/http_integration_test.go`; sin ellos la ruta nunca se registra |
+
+### Suite completa
+
+No se ejecutó `go test ./...` en esta UT por instrucción del orquestador (la contención de Docker en paralelo produce `EOF` y límites de tiempo); la verificación final corresponde a la Fase 7.
+
+### Desviaciones del diseño
+
+Ninguna: el cableado coincide con la sección de composición de `design.md`. Detalle: el asunto del commit es `feat(effort): exponer la ruta de registro de esfuerzo` (en español, por instrucción del orquestador) en lugar de `feat(api): gate effort registration on migration 12` de la tarea 6.11.

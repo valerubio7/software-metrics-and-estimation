@@ -39,6 +39,7 @@ notes:
   - "Implementada: US-10 (descomponer historia en tareas)."
   - "Implementada: US-11 (registrar historia completada en el Sprint)."
   - "Implementada: US-13 (consultar Sprints anteriores)."
+  - "Implementada: US-15 (registrar esfuerzo realizado en una historia o tarea)."
   - Las historias se siguen como issues de GitHub y las épicas se representan como milestones.
   - Las migraciones se aplican externamente; schema_migrations condiciona la disponibilidad de rutas opcionales al arrancar.
-  - Hay dos migraciones numeradas 000003 en el directorio compartido; su reconciliación y la validación del despliegue siguen pendientes.
+  - El directorio compartido de migraciones contiene 12 pares 000001–000012 sin números duplicados (lo verifica migration_files_test.go); el despliegue de las migraciones es externo.
