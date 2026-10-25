@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/valerubio7/software-metrics-and-estimation/internal/api"
+	defectapplication "github.com/valerubio7/software-metrics-and-estimation/internal/defect/application"
 	defectdomain "github.com/valerubio7/software-metrics-and-estimation/internal/defect/domain"
 )
 
@@ -26,6 +27,16 @@ type fakeDefectRepository struct {
 	calls  int
 	record defectdomain.Defect
 	err    error
+}
+
+func (r *fakeDefectRepository) Update(_ context.Context, command defectapplication.UpdateDefectCommand) (defectdomain.Defect, error) {
+	r.calls++
+	r.record.Status = command.Status
+	r.record.ResolutionSprintID = command.ResolutionSprintID
+	if r.err != nil {
+		return defectdomain.Defect{}, r.err
+	}
+	return r.record, nil
 }
 
 func (r *fakeDefectRepository) Create(_ context.Context, defect defectdomain.Defect) error {
@@ -60,6 +71,9 @@ func TestMigrationReadinessResolvesDefectByVersion(t *testing.T) {
 			readiness := api.ResolveMigrationReadiness(tc.version, tc.dirty, tc.lookup)
 			if readiness.Defect != tc.want {
 				t.Fatalf("Defect = %t, want %t (readiness = %+v)", readiness.Defect, tc.want, readiness)
+			}
+			if readiness.DefectUpdate != (tc.lookup == nil && !tc.dirty && tc.version >= 14) {
+				t.Fatalf("DefectUpdate = %t, want %t", readiness.DefectUpdate, tc.lookup == nil && !tc.dirty && tc.version >= 14)
 			}
 			// The defect flag never alters the flags of the existing modules.
 			clean := tc.lookup == nil && !tc.dirty
@@ -109,6 +123,75 @@ func TestDefectRouteRequiresExplicitDependency(t *testing.T) {
 			t.Fatalf("GET status/writes = %d/%d, want 405/0", response.Code, repository.calls)
 		}
 	})
+}
+
+func TestDefectUpdateRoutePersistsLifecycleState(t *testing.T) {
+	repository := &fakeDefectRepository{record: defectdomain.Defect{
+		ID: defectRouteRecordID, ProjectID: defectRouteProjectID, StoryID: defectRouteStoryID, SprintID: defectRouteSprintID,
+	}}
+	dependencies := defectDependencies(repository)
+	dependencies.Defect.Updater = repository
+	handler := api.NewHTTPHandlerWithDependencies(&fakeProjectRepository{}, func() string { return defectRouteRecordID }, dependencies)
+	path := defectRouteProject + "/" + defectRouteRecordID
+	body := `{"status":"resuelto","resolution_sprint_id":"` + defectRouteSprintID + `"}`
+
+	response := serve(handler, http.MethodPatch, path, body)
+	if response.Code != http.StatusOK || repository.calls != 1 {
+		t.Fatalf("status/writes = %d/%d, want 200/1: %s", response.Code, repository.calls, response.Body.String())
+	}
+	if repository.record.Status != "resuelto" || repository.record.ResolutionSprintID != defectRouteSprintID ||
+		!contains(response.Body.String(), `"status":"resuelto"`, `"resolution_sprint_id":"`+defectRouteSprintID+`"`) {
+		t.Fatalf("persisted=%+v response=%s", repository.record, response.Body.String())
+	}
+}
+
+func TestDefectUpdateRouteMapsValidationAndDomainErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		body       string
+		repository error
+		wantStatus int
+		wantError  string
+	}{
+		{name: "missing resolution Sprint", body: `{"status":"resuelto"}`, wantStatus: http.StatusUnprocessableEntity, wantError: "validation_failed"},
+		{name: "missing defect", body: `{"status":"detectado"}`, repository: defectapplication.ErrDefectNotFound, wantStatus: http.StatusNotFound, wantError: "defect_not_found"},
+		{name: "invalid resolution Sprint", body: `{"status":"resuelto","resolution_sprint_id":"` + defectRouteSprintID + `"}`, repository: defectapplication.ErrResolutionSprintNotFound, wantStatus: http.StatusNotFound, wantError: "resolution_sprint_not_found"},
+		{name: "chronology conflict", body: `{"status":"resuelto","resolution_sprint_id":"` + defectRouteSprintID + `"}`, repository: defectapplication.ErrResolutionSprintBeforeDetection, wantStatus: http.StatusConflict, wantError: "resolution_sprint_before_detection"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repository := &fakeDefectRepository{err: tc.repository}
+			dependencies := defectDependencies(repository)
+			dependencies.Defect.Updater = repository
+			handler := api.NewHTTPHandlerWithDependencies(&fakeProjectRepository{}, func() string { return defectRouteRecordID }, dependencies)
+			response := serve(handler, http.MethodPatch, defectRouteProject+"/"+defectRouteRecordID, tc.body)
+			if response.Code != tc.wantStatus || !strings.Contains(response.Body.String(), `"error":"`+tc.wantError+`"`) {
+				t.Fatalf("response = %d %s, want status %d and error %s", response.Code, response.Body.String(), tc.wantStatus, tc.wantError)
+			}
+			if tc.wantStatus == http.StatusUnprocessableEntity && repository.calls != 0 {
+				t.Errorf("invalid request caused %d writes, want 0", repository.calls)
+			}
+		})
+	}
+}
+
+func TestDefectUpdateRouteIsGatedWithoutResolutionMigration(t *testing.T) {
+	repository := &fakeDefectRepository{}
+	handler := api.NewHTTPHandlerWithDependencies(&fakeProjectRepository{}, func() string { return defectRouteRecordID }, defectDependencies(repository))
+	response := serve(handler, http.MethodPatch, defectRouteProject+"/"+defectRouteRecordID, `{"status":"resuelto"}`)
+	if response.Code != http.StatusNotFound || repository.calls != 0 {
+		t.Fatalf("status/writes = %d/%d, want 404/0", response.Code, repository.calls)
+	}
+}
+
+func TestDefectUpdateRouteRejectsMalformedJSONWithoutWrites(t *testing.T) {
+	repository := &fakeDefectRepository{}
+	dependencies := defectDependencies(repository)
+	dependencies.Defect.Updater = repository
+	handler := api.NewHTTPHandlerWithDependencies(&fakeProjectRepository{}, func() string { return defectRouteRecordID }, dependencies)
+	response := serve(handler, http.MethodPatch, defectRouteProject+"/"+defectRouteRecordID, `{"status":"resuelto","unknown":true}`)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"error":"invalid_request"`) || repository.calls != 0 {
+		t.Fatalf("status/writes/body = %d/%d/%s, want 400/0 invalid_request", response.Code, repository.calls, response.Body.String())
+	}
 }
 
 // contains reports whether the body includes every supplied fragment.
