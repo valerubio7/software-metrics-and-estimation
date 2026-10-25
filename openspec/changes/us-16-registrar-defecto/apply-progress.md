@@ -123,4 +123,36 @@ Cobertura: persistencia y lectura de vuelta; precedencia proyecto→historia→S
 
 ### Hash del commit
 
+`5cc5be3 feat(defect): persist defect records in PostgreSQL`.
+
+## UT 5 — `feat(defect): agregar handler HTTP de registro de defectos`
+## UT 5 — `feat(defect): add defect HTTP handler`
+
+### Alcance
+
+- `internal/defect/transport/http/handler.go` (nuevo).
+- `tests/unit/defect/transport/http/handler_test.go` (nuevo).
+
+### RED observado
+
+| Comando | Resultado |
+|---|---|
+| `go test ./tests/unit/defect/transport/http/... -count=1` | FAIL de setup: paquete `internal/defect/transport/http` inexistente |
+
+### GREEN observado
+
+| Comando | Resultado |
+|---|---|
+| `go test ./tests/unit/defect/... -count=1` | ok (4 paquetes) |
+| `go vet`/`gofmt -l`/`go build ./...` | limpios |
+
+Ciclos cortos RED→GREEN observados:
+
+1. El caso `nul_description` enviaba por error el byte NUL crudo (JSON inválido → `400` correcto); el caso `422` del NUL viaja como secuencia `\u0000` (JSON válido) que el decodificador convierte en NUL real y el dominio rechaza.
+2. `405 method_not_allowed`: el `ServeMux` con patrón `POST /...` responde `405` con body plano *antes* de invocar al handler (igual que effort en producción), así que el subtest invoca al handler directo con `request.SetPathValue(...)` y verifica el JSON del handler (patrón del repositorio).
+
+Cobertura: `201` con exactamente 7 claves (`id, project_id, story_id, sprint_id, description, severity, status`), id del servidor (`00000000-0000-0000-0000-000000000001`), descripción recortada, sin `created_at`/`seq`, `Content-Type: application/json`; `405` JSON para GET/PUT; `400 invalid_request` para 10 cuerpos malformados (vacío, texto, JSON roto, arreglo, null, contenido extra, clave desconocida `priority`, `id` y `created_at` inyectadas, tipo incompatible en `sprint_id`); `422` para `project_id` de ruta inválido y para errores de campo: UUID inválido, requeridos, `resuelto` con mensaje propio, acumulación de 5 errores, NUL, 501 caracteres; `404` con precedencia textual (`project_not_found`, `story_not_found`, `sprint_not_found`); `500 internal_error` genérico sin filtrar detalles del error interno; forma del error body (sin `fields` en `404`).
+
+### Hash del commit
+
 Registro tras el commit de la UT.
