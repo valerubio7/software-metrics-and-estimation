@@ -33,13 +33,14 @@ var InitialStatuses = []string{"detectado", "en_correccion"}
 // Defect is a problem detected during development, always scoped to one project with its
 // related story and its detection sprint. Resolution data ships with US-17.
 type Defect struct {
-	ID          string
-	ProjectID   string
-	StoryID     string
-	SprintID    string // Sprint de detección
-	Description string // already trimmed
-	Severity    string
-	Status      string
+	ID                 string
+	ProjectID          string
+	StoryID            string
+	SprintID           string // Sprint de detección
+	Description        string // already trimmed
+	Severity           string
+	Status             string
+	ResolutionSprintID string
 }
 
 // NewDefectParams groups the input already normalized by the application layer: all IDs
