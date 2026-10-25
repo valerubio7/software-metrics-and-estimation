@@ -71,4 +71,31 @@ Cobertura: catálogo ejecutado por combinación (3 severidades × 2 estados inic
 
 ### Hash del commit
 
+`3fb51b3 feat(defect): add defect domain`.
+
+## UT 3 — `feat(defect): add register defect use case`
+
+### Alcance
+
+- `internal/defect/application/register_defect.go` (nuevo).
+- `tests/unit/defect/application/register_defect_test.go` (nuevo).
+
+### RED observado
+
+| Comando | Resultado |
+|---|---|
+| `go test ./tests/unit/defect/application/... -count=1` | FAIL de setup: paquete `internal/defect/application` inexistente |
+
+### GREEN observado
+
+| Comando | Resultado |
+|---|---|
+| `go test ./tests/unit/defect/... -count=1` | ok (dominio + aplicación) |
+| `go vet ./internal/defect/...` | sin hallazgos |
+| `gofmt -l` | un archivo sin formato (test); corregido |
+
+Cobertura: persistencia válida con descripción recortada; normalización canónica de UUIDs en mayúsculas; acumulación de 5 errores de campo (`story_id` inválido, `sprint_id` vacío, descripción vacía, severidad fuera, `resuelto`); faltantes con mensaje `is required`; paso transparente de sentinelas del repositorio (comparables con `errors.Is`, sin `wrap`); generador de IDs: 0 veces con errores de campo, 1 por intento que alcanza la persistencia.
+
+### Hash del commit
+
 Registro tras el commit de la UT.
