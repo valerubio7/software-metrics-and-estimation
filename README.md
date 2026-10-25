@@ -118,6 +118,44 @@ La ruta solo existe cuando el esquema está limpio en la versión 12 o superior 
 `000012`); con una versión menor, o en estado `dirty`, responde `404`. Esta capacidad solo
 registra: no lista, edita ni elimina registros de esfuerzo.
 
+## API de defectos
+
+Registra un defecto detectado durante el desarrollo dentro de un proyecto, indicando la
+historia relacionada y el Sprint de detección:
+
+| Método | Ruta                                    | Uso                                         |
+| ------ | --------------------------------------- | ------------------------------------------- |
+| `POST` | `/projects/{project_id}/defects`        | Registrar un defecto de un proyecto          |
+
+Cuerpo (JSON, solo estas claves):
+
+```json
+{
+  "story_id": "<uuid de la historia relacionada>",
+  "sprint_id": "<uuid del Sprint de detección>",
+  "description": "El login acepta contraseñas vacías",
+  "severity": "alta",
+  "status": "detectado"
+}
+```
+
+- `201`: devuelve `id`, `project_id`, `story_id`, `sprint_id`, `description` (sin espacios
+  sobrantes), `severity` y `status`.
+- `400 invalid_request`: el cuerpo no es un objeto JSON válido o trae claves desconocidas.
+- `422 validation_failed`: `fields` indica cada campo inválido (`project_id`, `story_id`,
+  `sprint_id`, `description`, `severity`, `status`). La descripción admite hasta 500
+  caracteres; `severity` es `alta`, `media` o `baja`; el alta acepta `detectado` o
+  `en_correccion` (actualizar a `resuelto` es US-17, no este alta).
+- `404`: `project_not_found`, `story_not_found` o `sprint_not_found`; la historia y el
+  Sprint de detección deben pertenecer al proyecto. Una historia del backlog sin Sprint
+  asignado es válida, igual que un defecto detectado en un Sprint cerrado.
+- `500 internal_error`: fallo de almacenamiento, sin detalles internos; no se persiste nada.
+
+Se permiten defectos duplicados (mismos valores en los cinco campos). La ruta solo existe
+cuando el esquema está limpio en la versión 13 o superior (migración `000013`); con una
+versión menor, o en estado `dirty`, responde `404`. Esta capacidad solo registra: no lista,
+edita ni elimina defectos, y la resolución con Sprint de resolución es US-17.
+
 ## Pruebas
 
 ```sh
