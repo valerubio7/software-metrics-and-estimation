@@ -186,4 +186,19 @@ Cobertura e2e real (Postgres + handler compuesto como en `main.go`): 201 con per
 
 ### Hash del commit
 
-Registro tras el commit de la UT.
+`4ac8107 feat(defect): expose defect registration route`.
+
+## UT 7 — Verificación y cierre
+### Corrida final de cierre (UT 7)
+
+| Comando | Resultado |
+|---|---|
+| `go build ./...` | exit 0 |
+| `go vet ./...` | sin hallazgos |
+| `gofmt -l internal tests` | sin salida |
+| `go test ./internal/... ./tests/unit/... -count=1` | ok: 26 paquetes con pruebas, 0 FAIL |
+| `go test -p 1 ./tests/integration/... -count=1` | ok: 8 paquetes (defect 48,8 s; effort 86,1 s; migrations 0,003 s; project 10,8 s; projectmember 14,1 s; sprint 96,2 s; story 236,3 s; task 44,4 s). Sin regresiones en módulos existentes. |
+
+Detalle de algunos errores corregidos durante la cámara de RED (documentados arriba): NUL crudo vs `\u0000` en JSON, `defectof` sin el proyecto como argumento, ID duplicado entre subtests de FK, `nonexistent_story` con historia realmente sembrada y `fmt` sin uso.
+
+Notas de alcance: la migración quedó en `000013` (13 pares contados, no 14); los defensores de la decisión 2 (catálogo completo en la base vs. subconjunto del alta) quedaron verificados en las dos capas (CHECK acepta `resuelto` remanente directo y el caso de uso lo rechaza con `422` y mensaje propio).
