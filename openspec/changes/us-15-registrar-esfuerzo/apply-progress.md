@@ -10,8 +10,8 @@
 |----|-------------|--------|--------|
 | 1 | Migración `000012_create_effort_records` | Completa (tareas 1.1–1.7) | `af25b91` `feat(db): add effort records migration` |
 | 2 | Dominio `EffortRecord` | Completa (tareas 2.1–2.6) | `3e06cef` `feat(effort): add effort record domain` |
-| 3 | Caso de uso `RegisterEffortUseCase` | Completa (tareas 3.1–3.6) | `feat(effort): add register effort use case` (el hash se registra en el commit de la UT 4, porque un commit no puede contener su propio hash) |
-| 4 | Repositorio PostgreSQL y `MapConstraintError` | Pendiente | |
+| 3 | Caso de uso `RegisterEffortUseCase` | Completa (tareas 3.1–3.6) | `d2353e6` `feat(effort): add register effort use case` |
+| 4 | Repositorio PostgreSQL y `MapConstraintError` | Completa (tareas 4.1–4.7) | `feat(effort): persist effort records in PostgreSQL` (el hash se registra en el commit de la UT 5, porque un commit no puede contener su propio hash) |
 | 5 | Transporte HTTP | Pendiente | |
 | 6 | Cableado, integración HTTP y documentación | Pendiente | |
 
@@ -200,3 +200,74 @@ No se ejecutó `go test ./...` en esta UT por instrucción del orquestador; la v
 ### Desviaciones del diseño
 
 Ninguna: el flujo coincide con la sección "Capa `application`" de `design.md`. Detalle de implementación: `normalizeUUID` distingue campo obligatorio (`member_id`, vacío → `is required`) de opcional (`task_id`, vacío → `must be a valid UUID`), tal como fijan los pasos 2 y 3 del diseño. La dependencia `github.com/google/uuid` ya estaba en `go.mod`.
+
+## UT 4: Repositorio PostgreSQL y `MapConstraintError`
+
+### Evidencia de ciclo TDD
+
+| Tarea | Archivo de prueba | Capa | Safety net | RED | GREEN | TRIANGULATE | REFACTOR |
+|-------|-------------------|------|------------|-----|-------|-------------|----------|
+| 4.1 | `tests/unit/effort/infrastructure/postgres/constraint_error_test.go` | Unitaria (errores `*pgconn.PgError` sintéticos) | N/A (archivo nuevo) | Falla observada (paquete inexistente) | 8 de 8 subpruebas pasan | 8 casos cubren las tres FKs, envoltura, otra FK, `23514`, error ajeno y `nil` + mutación | Ver 4.5 |
+| 4.2 / 4.3 | `tests/integration/effort/postgres/repository_integration_test.go` | Integración (PostgreSQL real, Testcontainers) | Verde previo: 5 de 5 `TestEffortMigration*` | Falla observada (paquete inexistente) | 4 pruebas de primer nivel (17 subpruebas) pasan | Ver 4.4 | Ver 4.5 |
+| 4.4 | mismo archivo | Integración | Verde previo (4.3) | Pasaron al primer intento salvo un defecto de la propia prueba (ver abajo) | 11 pruebas de primer nivel en total, todas pasan | 7 pruebas nuevas + 7 mutaciones forzadas | Ver 4.5 |
+| 4.5 | `internal/effort/infrastructure/postgres/repository.go` | Unitaria + integración | Verde previo (4.4) | ➖ No aplica | Todo verde tras el refactor | ➖ No aplica | `requireRow` y constantes de SQL y de restricciones; sin cambio de comportamiento |
+
+### RED observado
+
+- Comando: `go test ./tests/unit/effort/infrastructure/postgres/... -count=1` (solo con las pruebas de la tarea 4.1).
+  Resultado: `FAIL ... [setup failed]`. Motivo correcto: `no required module provides package .../internal/effort/infrastructure/postgres`, es decir, el paquete del repositorio todavía no existe.
+- Comando: `go test ./tests/integration/effort/postgres/... -run TestEffortRepository -count=1` (tarea 4.2, con Docker disponible).
+  Resultado: `FAIL ... [setup failed]` por el mismo motivo.
+
+### GREEN observado
+
+- Se creó `internal/effort/infrastructure/postgres/repository.go` con `PostgresEffortRepository`, `NewPostgresEffortRepository`, `Create` y `MapConstraintError` según la sección "Capa `infrastructure/postgres`" de `design.md`: una transacción (`defer tx.Rollback`), `SELECT EXISTS` para el proyecto, `SELECT 1 ... FOR KEY SHARE` para historia (`id, project_id`), integrante (`id, project_id`) y tarea (`id, story_id, project_id`, solo si `TaskID != nil`), `INSERT` con `work_date` como `time.Time`, `hours` como `float64` y `task_id` como `*string`, y `Commit`. El proyecto se lee con `SELECT EXISTS` (no se escanea `SELECT 1` en un `bool`, defecto histórico de `internal/task`).
+- `go test ./tests/unit/effort/infrastructure/postgres/... -count=1 -v`: 8 de 8 subpruebas de `TestMapConstraintError` en verde.
+- `go test -p 1 ./tests/integration/effort/postgres/... -run TestEffortRepository -count=1 -v`: `PASS` en `TestEffortRepositoryPersistsRecordOverStory`, `...OverTask`, `...CountsTaskEffortOnceForItsStory` y `...RejectsMissingOrForeignReferencesWithoutWrites` (11 subpruebas: proyecto, historia e integrante inexistentes o ajenos, tarea inexistente, de otra historia y de otro proyecto, y tres casos de precedencia), con cero filas tras cada rechazo.
+
+### TRIANGULATE
+
+Se agregaron siete pruebas de integración: `TestEffortRepositoryAcceptsClosedSprintAndBacklogStory` (historia y tarea de un Sprint con `is_closed = true`, e historia fuera de todo Sprint), `TestEffortRepositoryAllowsExactDuplicates` (dos altas idénticas, dos filas), `TestEffortRepositoryDoesNotCapDailyHours` (cuatro registros de 8 h el mismo día, suma `32.00`), `TestEffortRecordsTableRejectsCrossProjectReferences` (inserciones SQL directas: `23503` con el `ConstraintName` de cada FK), `TestEffortRecordsTableSkipsTaskConstraintWhenTaskIsNull` (`MATCH SIMPLE`: `task_id` nulo se acepta y una tarea inexistente se rechaza), `TestEffortRecordsTableEnforcesChecks` (`23514` con `hours` `0` y `24.01`, descripción vacía, de 501 caracteres y de 501 multibyte; aceptadas `24`, `0.01` y 500 caracteres multibyte) y `TestEffortRecordsRestrictDeletesOfReferencedParents` (`DELETE` de tarea, integrante e historia referenciados → `23503` con la FK correspondiente).
+
+- Defecto real de la propia prueba (no del código de producción): el primer intento de `TestEffortRecordsTableEnforcesChecks` generó identificadores con letras fuera de `a-f` (`...00g`) y PostgreSQL respondió `invalid input syntax for type uuid (SQLSTATE 22P02)` en dos subpruebas. Corrección: identificadores con `fmt.Sprintf("...%012d", index+1)`. Después pasó completa (8 de 8).
+- Las demás pruebas pasaron al primer intento; para no inventar evidencia se mutó temporalmente el código y el SQL (cada mutación se revirtió; `git status` sin cambios en archivos rastreados y `diff` contra la copia original):
+
+| Mutación temporal | Prueba que debía fallar | Resultado observado |
+|-------------------|-------------------------|---------------------|
+| `MapConstraintError` devuelve siempre el error original | `TestMapConstraintError` | Fallan 4 casos (las tres FKs y el error envuelto) |
+| La verificación de proyecto nunca rechaza | `...RejectsMissingOrForeignReferencesWithoutWrites` | Fallan `missing project` y `everything missing reports the project first` |
+| El `INSERT` ignora `TaskID` (siempre `NULL`) | `TestEffortRepositoryPersistsRecordOverTask` | Falla |
+| Se verifica el integrante antes que la historia | `...RejectsMissingOrForeignReferencesWithoutWrites` | Falla `story, member and task missing reports the story first` |
+| SQL: FK de integrante con `ON DELETE CASCADE` | `TestEffortRecordsRestrictDeletesOfReferencedParents` | Fallan `member with effort` y `story with effort` (la cascada elimina las filas de esfuerzo) |
+| SQL: `CHECK` de horas con `<= 25` | `TestEffortRecordsTableEnforcesChecks` | Falla `hours above 24` |
+| SQL: `CHECK` de descripción con `octet_length` en vez de `char_length` | `TestEffortRecordsTableEnforcesChecks` | Falla `description of 500 multibyte characters` |
+
+Mutaciones que **sobreviven**, por diseño y registradas con honestidad:
+
+- Deshabilitar la verificación transaccional de la tarea, o hacer que la consulta del integrante ignore el proyecto, no hace fallar `...RejectsMissingOrForeignReferencesWithoutWrites`: el `INSERT` choca entonces con la FK compuesta y `MapConstraintError` devuelve el mismo sentinela (`ErrTaskNotFound`, `ErrMemberNotFound`). Son mutantes equivalentes en comportamiento observable (defensa en profundidad entre las verificaciones y las FKs); lo que distingue a las verificaciones es la precedencia y el bloqueo, y la precedencia sí está cubierta (mutación del orden).
+- Quitar `FOR KEY SHARE` no hace fallar ninguna prueba: la carrera (eliminación concurrente entre la verificación y el `INSERT`) no es reproducible de forma determinista. Por eso la defensa de `23503` se prueba de forma sintética en `TestMapConstraintError`, tal como prevé el diseño, y el bloqueo queda sin prueba que lo aísle (observación para `sdd-verify`).
+
+### REFACTOR
+
+- Las tres consultas de verificación repetidas se extrajeron a `requireRow(ctx, tx, missing, query, args...)`; el SQL y los nombres de restricción pasaron a constantes. Se conservan el orden de verificación, los bloqueos `FOR KEY SHARE` y el mapeo sin cambios.
+- `gofmt -l internal/effort tests/unit/effort tests/integration/effort`: sin salida. `go vet ./internal/effort/... ./tests/unit/effort/... ./tests/integration/effort/...`: sin hallazgos. `go test ./internal/effort/... ./tests/unit/effort/... -count=1`: `ok`.
+
+### Work Unit Evidence (UT 4)
+
+| Evidencia | Valor |
+|-----------|-------|
+| Comando de prueba focalizado y resultado | `go test -p 1 ./internal/effort/... ./tests/unit/effort/... ./tests/integration/effort/... -count=1`: `ok` en `tests/unit/effort/{application,domain,infrastructure/postgres}` y `tests/integration/effort/postgres` (77.6 s, 5 pruebas de migración y 11 de repositorio, sin omitidas) |
+| Arnés de ejecución real | Testcontainers `postgres:16-alpine` con Docker Desktop (engine 29.8.1), migraciones `000001`–`000012` aplicadas desde archivos; transacciones, `FOR KEY SHARE`, FKs compuestas, `CHECK` y `RESTRICT` ejercitados contra PostgreSQL real |
+| Límite de reversión | Eliminar `internal/effort/infrastructure/`, `tests/unit/effort/infrastructure/` y `tests/integration/effort/postgres/repository_integration_test.go`; la tabla `effort_records` (UT 1) queda sin código que la use |
+
+### Suite completa
+
+No se ejecutó `go test ./...` en esta UT por instrucción del orquestador (la contención de Docker en paralelo produce `EOF` y límites de tiempo); la verificación final corresponde a la Fase 7.
+
+### Defectos reales encontrados
+
+- Ninguno en el repositorio ni en el esquema. Único defecto: el generador de identificadores de la propia prueba de `CHECK` (letras fuera de `a-f`), corregido tras observar `SQLSTATE 22P02`.
+
+### Desviaciones del diseño
+
+Ninguna: el flujo transaccional y el mapeo coinciden con la sección "Capa `infrastructure/postgres`" de `design.md`. Detalle de implementación: las verificaciones de historia, integrante y tarea comparten el auxiliar `requireRow`, y la discrepancia 1 de `tasks.md` se mantiene (`ErrProjectNotFound` lo cubre solo la verificación transaccional, sin FK de proyecto que mapear). El helper `assertDatabaseError` volvió al archivo de pruebas, como anticipaba la UT 1.
