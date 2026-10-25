@@ -155,4 +155,35 @@ Cobertura: `201` con exactamente 7 claves (`id, project_id, story_id, sprint_id,
 
 ### Hash del commit
 
+`c8161f7 feat(defect): add defect HTTP handler`.
+
+## UT 6 — `feat(defect): expose defect registration route`
+### Alcance
+
+- `internal/api/api.go` (modificado: `DefectDependencies`, `HTTPDependencies.Defect`, `MigrationReadiness.Defect` con `version >= 13`, registro de la ruta).
+- `cmd/api/main.go` (modificado: bloque de composición con gate `>= 13`, comentario de versiones, log de disponibilidad).
+- `tests/unit/cmd/api/defect_route_test.go` (nuevo).
+- `tests/integration/defect/postgres/http_integration_test.go` (nuevo).
+- `README.md` (sección "API de defectos") y `openspec/config.yaml` (nota US-16 + 13 pares).
+
+### RED observado
+
+| Comando | Resultado |
+|---|---|
+| `go test ./tests/unit/cmd/api/... -count=1 -run Defect` | FAIL de compilación: `api.DefectDependencies`, `readiness.Defect` y la ruta no existen |
+
+### GREEN observado
+
+| Comando | Resultado |
+|---|---|
+| `go test ./tests/unit/cmd/api/... -count=1 -run Defect` | ok (readiness por versiones 12/13/14/dirty/lookup, 404 sin dependencia, 201 con 1 escritura, GET → 405) |
+| `go test ./tests/integration/defect/postgres -run TestDefectHTTPEndToEnd -count=1` | ok (11,2 s) |
+| `go test ./internal/... ./tests/unit/... -count=1` | ok: 26 paquetes, 0 FAIL |
+| `go test -p 1 ./tests/integration/... -count=1` | ok: los 8 paquetes (defect, effort, migrations, project, projectmember, sprint, story, task); sin regresiones |
+| `gofmt -l`, `go vet ./...`, `go build ./...` | limpios |
+
+Cobertura e2e real (Postgres + handler compuesto como en `main.go`): 201 con persistencia verificada leyendo la fila; duplicados reales (2 posts → 2 filas, IDs distintos, sin `UNIQUE` que lo impida); precedencia de 404 real (proyecto desconocido → `project_not_found`; historia+sprint de otro proyecto → `story_not_found`; sprint de otro proyecto → `sprint_not_found`), todas sin filas y sin `fields`; GET → 405 sin escrituras.
+
+### Hash del commit
+
 Registro tras el commit de la UT.

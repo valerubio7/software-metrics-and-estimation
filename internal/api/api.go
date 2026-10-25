@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	defectapplication "github.com/valerubio7/software-metrics-and-estimation/internal/defect/application"
+	defecthttp "github.com/valerubio7/software-metrics-and-estimation/internal/defect/transport/http"
 	effortapplication "github.com/valerubio7/software-metrics-and-estimation/internal/effort/application"
 	efforthttp "github.com/valerubio7/software-metrics-and-estimation/internal/effort/transport/http"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/application"
@@ -101,6 +103,12 @@ type EffortDependencies struct {
 	Now        effortapplication.Clock
 }
 
+// DefectDependencies enables defect registration after migration 000013 is clean.
+type DefectDependencies struct {
+	Repository defectapplication.DefectRepository
+	GenerateID defectapplication.IDGenerator
+}
+
 // HTTPDependencies contains optional migration-backed API modules.
 type HTTPDependencies struct {
 	Stories *StoryDependencies
@@ -111,6 +119,8 @@ type HTTPDependencies struct {
 	Completion *CompletionDependencies
 	// Effort nil: the effort registration route is not registered (the mux answers 404).
 	Effort *EffortDependencies
+	// Defect nil: the defect registration route is not registered (the mux answers 404).
+	Defect *DefectDependencies
 }
 
 // MigrationReadiness describes which handlers are safe to compose for a schema state.
@@ -128,6 +138,8 @@ type MigrationReadiness struct {
 	SprintHistory bool
 	// Effort is true for a clean schema at version 12 or later (effort_records from migration 000012).
 	Effort bool
+	// Defect is true for a clean schema at version 13 or later (defects from migration 000013).
+	Defect bool
 }
 
 // ResolveMigrationReadiness keeps project creation available while gating schema-backed routes.
@@ -146,6 +158,7 @@ func ResolveMigrationReadiness(version int, dirty bool, lookupErr error) Migrati
 	readiness.Completion = version >= 10
 	readiness.SprintHistory = version >= 11
 	readiness.Effort = version >= 12
+	readiness.Defect = version >= 13
 	return readiness
 }
 
@@ -244,6 +257,10 @@ func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, ge
 		}
 		registerEffortUseCase := effortapplication.NewRegisterEffortUseCase(dependencies.Effort.Repository, dependencies.Effort.GenerateID, now)
 		mux.Handle("POST /projects/{project_id}/stories/{story_id}/effort-records", efforthttp.NewRegisterEffortHandler(registerEffortUseCase))
+	}
+	if dependencies.Defect != nil {
+		registerDefectUseCase := defectapplication.NewRegisterDefectUseCase(dependencies.Defect.Repository, dependencies.Defect.GenerateID)
+		mux.Handle("POST /projects/{project_id}/defects", defecthttp.NewRegisterDefectHandler(registerDefectUseCase))
 	}
 	return mux
 }

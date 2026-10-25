@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/api"
+	defectpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/defect/infrastructure/postgres"
 	effortpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/effort/infrastructure/postgres"
 	projectpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/project/infrastructure/postgres"
 	memberpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/projectmember/infrastructure/postgres"
@@ -39,7 +40,8 @@ func main() {
 	// version 4; sprint creation needs reconciled schema version 5. Task creation needs
 	// schema version 9 and story completion schema version 10; the closed sprint history needs
 	// schema version 11 (migration 000011, sprints.seq); effort registration needs schema version 12
-	// (migration 000012, effort_records). All of them require a clean externally managed migration state.
+	// (migration 000012, effort_records) and defect registration schema version 13 (migration
+	// 000013, defects). All of them require a clean externally managed migration state.
 	var version int
 	var dirty bool
 	migrationErr := pool.QueryRow(ctx, "SELECT version, dirty FROM schema_migrations").Scan(&version, &dirty)
@@ -123,6 +125,15 @@ func main() {
 		log.Printf("effort registration available (schema version=%d)", version)
 	} else {
 		log.Printf("effort registration unavailable until migration 000012 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
+	}
+	if readiness := api.ResolveMigrationReadiness(version, dirty, migrationErr); readiness.Defect {
+		dependencies.Defect = &api.DefectDependencies{
+			Repository: defectpostgres.NewPostgresDefectRepository(pool),
+			GenerateID: api.NewProjectID,
+		}
+		log.Printf("defect registration available (schema version=%d)", version)
+	} else {
+		log.Printf("defect registration unavailable until migration 000013 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}
 	handler := api.NewHTTPHandlerWithDependencies(projects, api.NewProjectID, dependencies)
 	server := &http.Server{Addr: config.Address, Handler: handler}
