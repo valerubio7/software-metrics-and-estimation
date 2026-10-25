@@ -44,4 +44,31 @@ Detalles de RED→GREEN observados en el ciclo (iteración corta de helpers):
 
 ### Hash del commit
 
-Pendiente de registrar tras crear el commit de la UT.
+`a9d6717 feat(db): add defect records migration`.
+
+## UT 2 — `feat(defect): add defect domain`
+
+### Alcance
+
+- `internal/defect/domain/defect.go` (nuevo).
+- `tests/unit/defect/domain/defect_test.go` (nuevo).
+
+### RED observado
+
+| Comando | Resultado |
+|---|---|
+| `go test ./tests/unit/defect/domain/... -count=1` | FAIL de setup: `no required module provides package .../internal/defect/domain` |
+
+### GREEN observado
+
+| Comando | Resultado |
+|---|---|
+| `go test ./tests/unit/defect/domain/... -count=1` | ok (24 casos de primer nivel con subtests) |
+| `gofmt -l internal/defect tests/unit/defect` | un archivo sin formato (test); corregido con `gofmt -w` y verificado vacío |
+| `go vet ./internal/defect/... ./tests/unit/defect/...` | sin hallazgos |
+
+Cobertura: catálogo ejecutado por combinación (3 severidades × 2 estados iniciales); 501 caracteres multibyte rechazados; trim; NUL; mensajes congelados por prueba (`TestNewDefectMessageConstantsAreStable`); acumulación de 3 errores; falso positivo de `resuelto → InitialStatusMessage` distinto del error de catálogo.
+
+### Hash del commit
+
+Registro tras el commit de la UT.
