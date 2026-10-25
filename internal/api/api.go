@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	effortapplication "github.com/valerubio7/software-metrics-and-estimation/internal/effort/application"
+	efforthttp "github.com/valerubio7/software-metrics-and-estimation/internal/effort/transport/http"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/application"
 	transporthttp "github.com/valerubio7/software-metrics-and-estimation/internal/project/transport/http"
 	memberapplication "github.com/valerubio7/software-metrics-and-estimation/internal/projectmember/application"
@@ -91,6 +93,14 @@ type CompletionDependencies struct {
 	Completer storyapplication.SprintStoryCompleter
 }
 
+// EffortDependencies enables effort registration after migration 000012 is clean.
+// Now is optional: when nil the route reads the current UTC time.
+type EffortDependencies struct {
+	Repository effortapplication.EffortRepository
+	GenerateID effortapplication.IDGenerator
+	Now        effortapplication.Clock
+}
+
 // HTTPDependencies contains optional migration-backed API modules.
 type HTTPDependencies struct {
 	Stories *StoryDependencies
@@ -99,6 +109,8 @@ type HTTPDependencies struct {
 	Tasks   *TaskDependencies // nil: the task route is not registered (the mux answers 404)
 	// Completion nil: the completion route is not registered (the mux answers 404).
 	Completion *CompletionDependencies
+	// Effort nil: the effort registration route is not registered (the mux answers 404).
+	Effort *EffortDependencies
 }
 
 // MigrationReadiness describes which handlers are safe to compose for a schema state.
@@ -114,6 +126,8 @@ type MigrationReadiness struct {
 	Completion  bool
 	// SprintHistory is true for a clean schema at version 11 or later (sprints.seq from migration 000011).
 	SprintHistory bool
+	// Effort is true for a clean schema at version 12 or later (effort_records from migration 000012).
+	Effort bool
 }
 
 // ResolveMigrationReadiness keeps project creation available while gating schema-backed routes.
@@ -131,6 +145,7 @@ func ResolveMigrationReadiness(version int, dirty bool, lookupErr error) Migrati
 	readiness.Tasks = version >= 9
 	readiness.Completion = version >= 10
 	readiness.SprintHistory = version >= 11
+	readiness.Effort = version >= 12
 	return readiness
 }
 
@@ -221,6 +236,14 @@ func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, ge
 	if dependencies.Completion != nil {
 		completeUseCase := storyapplication.NewCompleteSprintStoryUseCase(dependencies.Completion.Completer)
 		mux.Handle("POST /projects/{project_id}/sprints/{sprint_id}/stories/{story_id}/completion", storyhttp.NewCompleteSprintStoryHandler(completeUseCase))
+	}
+	if dependencies.Effort != nil {
+		now := dependencies.Effort.Now
+		if now == nil {
+			now = func() time.Time { return time.Now().UTC() }
+		}
+		registerEffortUseCase := effortapplication.NewRegisterEffortUseCase(dependencies.Effort.Repository, dependencies.Effort.GenerateID, now)
+		mux.Handle("POST /projects/{project_id}/stories/{story_id}/effort-records", efforthttp.NewRegisterEffortHandler(registerEffortUseCase))
 	}
 	return mux
 }

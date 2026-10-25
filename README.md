@@ -82,6 +82,42 @@ Lecturas nuevas usadas por los selectores:
 | `GET`  | `/projects/{project_id}/members`                  | Integrantes            |
 | `GET`  | `/projects/{project_id}/stories/{story_id}/tasks` | Tareas de una historia |
 
+## API de esfuerzo
+
+Registra el esfuerzo realizado por un integrante en una historia o en una de sus
+tareas:
+
+| Método | Ruta                                                    | Uso                                                |
+| ------ | ------------------------------------------------------- | -------------------------------------------------- |
+| `POST` | `/projects/{project_id}/stories/{story_id}/effort-records` | Registrar esfuerzo realizado en una historia o tarea |
+
+Cuerpo (JSON, solo estas claves):
+
+```json
+{
+  "member_id": "<uuid del integrante>",
+  "task_id": "<uuid de la tarea, opcional>",
+  "work_date": "2026-03-10",
+  "description": "Revisión de código",
+  "hours": 2.5
+}
+```
+
+- `201`: devuelve `id`, `project_id`, `story_id`, `task_id` (`null` si el esfuerzo es de la
+  historia), `member_id`, `work_date`, `description` (sin espacios sobrantes) y `hours`.
+- `400 invalid_request`: el cuerpo no es un objeto JSON válido o trae claves desconocidas.
+- `422 validation_failed`: `fields` indica cada campo inválido (`project_id`, `story_id`,
+  `member_id`, `task_id`, `work_date`, `description`, `hours`). Las horas deben ser mayores
+  que 0, hasta 24 y con a lo sumo dos decimales; la fecha (`YYYY-MM-DD`) no puede ser
+  posterior al día actual en UTC; la descripción admite hasta 500 caracteres.
+- `404`: `project_not_found`, `story_not_found`, `member_not_found` o `task_not_found`.
+  La tarea debe pertenecer a la historia y el integrante al proyecto.
+- `500 internal_error`: fallo de almacenamiento, sin detalles internos; no se persiste nada.
+
+La ruta solo existe cuando el esquema está limpio en la versión 12 o superior (migración
+`000012`); con una versión menor, o en estado `dirty`, responde `404`. Esta capacidad solo
+registra: no lista, edita ni elimina registros de esfuerzo.
+
 ## Pruebas
 
 ```sh
