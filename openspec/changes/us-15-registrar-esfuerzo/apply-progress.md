@@ -8,8 +8,8 @@
 
 | UT | Descripción | Estado | Commit |
 |----|-------------|--------|--------|
-| 1 | Migración `000012_create_effort_records` | Completa (tareas 1.1–1.7) | `feat(db): add effort records migration` (el hash se registra en el commit de la UT 2, porque un commit no puede contener su propio hash) |
-| 2 | Dominio `EffortRecord` | Pendiente | |
+| 1 | Migración `000012_create_effort_records` | Completa (tareas 1.1–1.7) | `af25b91` `feat(db): add effort records migration` |
+| 2 | Dominio `EffortRecord` | Completa (tareas 2.1–2.6) | `feat(effort): add effort record domain` (el hash se registra en el commit de la UT 3, porque un commit no puede contener su propio hash) |
 | 3 | Caso de uso `RegisterEffortUseCase` | Pendiente | |
 | 4 | Repositorio PostgreSQL y `MapConstraintError` | Pendiente | |
 | 5 | Transporte HTTP | Pendiente | |
@@ -84,3 +84,58 @@ Ninguna: el SQL coincide con la sección "Migración `000012_create_effort_recor
 ### Observaciones
 
 - Los archivos nuevos se escribieron con finales de línea LF; los archivos existentes del repositorio aparecen como CRLF en el árbol de trabajo por `core.autocrlf=true`, por lo que `gofmt -l` los lista todos sin que eso provenga de este cambio.
+
+## UT 2: Dominio `EffortRecord`
+
+### Evidencia de ciclo TDD
+
+| Tarea | Archivo de prueba | Capa | Safety net | RED | GREEN | TRIANGULATE | REFACTOR |
+|-------|-------------------|------|------------|-----|-------|-------------|----------|
+| 2.1 / 2.2 | `tests/unit/effort/domain/effort_record_test.go` | Unitaria (dominio puro) | N/A (archivos nuevos) | Falla observada (paquete inexistente) | 8 de 8 subpruebas pasan | Ver 2.3 | Ver 2.4 |
+| 2.3 | mismo archivo | Unitaria | Verde previo (8/8) | Pasaron al primer intento (ver nota) | 16 de 16 subpruebas pasan | 8 subpruebas nuevas + mutaciones | Ver 2.4 |
+| 2.4 | `internal/effort/domain/effort_record.go` | Unitaria | Verde previo (16/16) | ➖ No aplica | 16 de 16 pasan | ➖ No aplica | Validaciones extraídas a funciones auxiliares, sin cambio de comportamiento |
+
+### RED observado
+
+- Comando: `go test ./tests/unit/effort/domain/...` (solo con las pruebas de la tarea 2.1).
+  Resultado: `FAIL ... [setup failed]`. Motivo correcto: `no required module provides package .../internal/effort/domain`, es decir, el paquete de dominio todavía no existe.
+
+### GREEN observado
+
+- Se creó `internal/effort/domain/effort_record.go` con `EffortRecord`, `NewEffortRecordParams`, `ValidationError`, las constantes `MaxHours`, `maxHoursDecimals`, `MaxDescriptionLength` y los mensajes, `decimalPlaces` (copia local de la técnica de `internal/task/domain/task.go`, decisión D14) y `NewEffortRecord(params, today)` según la sección "Capa `domain`" de `design.md`.
+- `go test ./tests/unit/effort/domain/... -count=1 -v`: `PASS` en las 8 subpruebas de `TestNewEffortRecord` (registro válido sobre historia y sobre tarea, descripción requerida, descripción recortada, horas requeridas, horas inválidas con `0`, `-1`, `-0.01`, `24.01`, `100`, `1.005`, `0.001`, `NaN` y `+Inf`, fecha futura rechazada, fecha igual o anterior aceptada).
+
+### TRIANGULATE (las pruebas pasaron al primer intento, por eso se forzó el fallo)
+
+Se agregaron 8 subpruebas: descripción de exactamente 500 runas multibyte (aceptada), 501 runas (rechazada contando runas y no bytes, incluyendo relleno de espacios que se recorta), relleno que no cuenta para el límite, horas válidas `0.01`, `0.5`, `7.25`, `8` y `24`, horas `2.555` rechazadas, tres campos inválidos a la vez (tres claves en `Fields` y mensaje de `Error()`), `WorkDate` cero sin error de `work_date`, y `TaskID` sin aliasing. Como la implementación ya generalizaba, pasaron todas al primer intento; para no inventar evidencia se mutó temporalmente el código (cada mutación se revirtió y se verificó con `diff` contra la copia original):
+
+| Mutación temporal | Prueba que debía fallar | Resultado observado |
+|-------------------|-------------------------|---------------------|
+| Contar bytes (`len`) en lugar de runas | `description of exactly 500 multibyte characters is accepted` | Falla |
+| Copiar el puntero de `TaskID` sin duplicarlo | `task ID is copied without aliasing the caller's pointer` | Falla: `TaskID aliases the caller's pointer` |
+| Eliminar la comprobación de decimales de `hours` | `invalid hours` y `hours with more than two decimals are rejected...` | Fallan ambas |
+
+### REFACTOR
+
+- Las reglas de `description`, `hours` y `work_date` se extrajeron a `validateDescription`, `validateHours` y `validateWorkDate`, con la misma estructura que `internal/task/domain/task.go`; mensajes y semántica sin cambios.
+- `gofmt -l internal/effort tests/unit/effort`: sin salida. `go vet ./internal/effort/... ./tests/unit/effort/...`: sin hallazgos. `go test ./tests/unit/effort/domain/... -count=1`: `ok`, 16 de 16 subpruebas.
+
+### Work Unit Evidence (UT 2)
+
+| Evidencia | Valor |
+|-----------|-------|
+| Comando de prueba focalizado y resultado | `go test ./internal/effort/... ./tests/unit/effort/... -count=1`: `ok` (`tests/unit/effort/domain`), 16 subpruebas de `TestNewEffortRecord` en verde |
+| Arnés de ejecución real | N/A: dominio puro sin dependencias externas ni frontera de ejecución |
+| Límite de reversión | Eliminar `internal/effort/domain/` y `tests/unit/effort/domain/`; nada más los importa todavía |
+
+### Suite completa
+
+No se ejecutó `go test ./...` en esta UT por instrucción del orquestador (tarda ~10 min con Docker); la verificación final corresponde a la Fase 7.
+
+### Defectos reales encontrados
+
+- Ninguno.
+
+### Desviaciones del diseño
+
+Ninguna: el dominio coincide con la sección "Capa `domain`" de `design.md`. Se agregó, solo como refactor interno, la extracción en `validateDescription`/`validateHours`/`validateWorkDate`.
