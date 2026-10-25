@@ -11,8 +11,8 @@
 | 1 | Migración `000012_create_effort_records` | Completa (tareas 1.1–1.7) | `af25b91` `feat(db): add effort records migration` |
 | 2 | Dominio `EffortRecord` | Completa (tareas 2.1–2.6) | `3e06cef` `feat(effort): add effort record domain` |
 | 3 | Caso de uso `RegisterEffortUseCase` | Completa (tareas 3.1–3.6) | `d2353e6` `feat(effort): add register effort use case` |
-| 4 | Repositorio PostgreSQL y `MapConstraintError` | Completa (tareas 4.1–4.7) | `feat(effort): persist effort records in PostgreSQL` (el hash se registra en el commit de la UT 5, porque un commit no puede contener su propio hash) |
-| 5 | Transporte HTTP | Pendiente | |
+| 4 | Repositorio PostgreSQL y `MapConstraintError` | Completa (tareas 4.1–4.7) | `cf4d223` `feat(effort): persist effort records in PostgreSQL` |
+| 5 | Transporte HTTP `RegisterEffortHandler` | Completa (tareas 5.1–5.6) | `feat(effort): agregar handler HTTP de registro de esfuerzo` (el hash se registra en el commit de la UT 6, porque un commit no puede contener su propio hash) |
 | 6 | Cableado, integración HTTP y documentación | Pendiente | |
 
 ## UT 1: Migración `000012_create_effort_records`
@@ -271,3 +271,70 @@ No se ejecutó `go test ./...` en esta UT por instrucción del orquestador (la c
 ### Desviaciones del diseño
 
 Ninguna: el flujo transaccional y el mapeo coinciden con la sección "Capa `infrastructure/postgres`" de `design.md`. Detalle de implementación: las verificaciones de historia, integrante y tarea comparten el auxiliar `requireRow`, y la discrepancia 1 de `tasks.md` se mantiene (`ErrProjectNotFound` lo cubre solo la verificación transaccional, sin FK de proyecto que mapear). El helper `assertDatabaseError` volvió al archivo de pruebas, como anticipaba la UT 1.
+
+## UT 5: Transporte HTTP `RegisterEffortHandler`
+
+### Evidencia de ciclo TDD
+
+| Tarea | Archivo de prueba | Capa | Safety net | RED | GREEN | TRIANGULATE | REFACTOR |
+|-------|-------------------|------|------------|-----|-------|-------------|----------|
+| 5.1 / 5.2 | `tests/unit/effort/transport/http/handler_test.go` | Unitaria (`httptest` sobre `http.ServeMux` local, caso de uso real, fake de repositorio, reloj fijo y generador fijo) | N/A (archivos nuevos) | Falla observada (paquete inexistente) | 4 pruebas de primer nivel (38 subpruebas) pasan | Ver 5.3 | Ver 5.4 |
+| 5.3 | mismo archivo | Unitaria | Verde previo (38 subpruebas) | Pasaron al primer intento (ver nota) | 5 pruebas de primer nivel (48 subpruebas) pasan | 10 subpruebas nuevas + 13 mutaciones | Ver 5.4 |
+| 5.4 | `internal/effort/transport/http/handler.go` | Unitaria | Verde previo (48 subpruebas) | ➖ No aplica | 48 subpruebas pasan | ➖ No aplica | Constante `invalidUUID` renombrada a `invalidUUIDMessage` (convención de `application`); sin cambio de comportamiento |
+
+### RED observado
+
+- Comando: `go test ./tests/unit/effort/transport/http/... -count=1` (solo con las pruebas de la tarea 5.1).
+  Resultado: `FAIL ... [setup failed]`. Motivo correcto: `no required module provides package .../internal/effort/transport/http`, es decir, el paquete del handler todavía no existe.
+
+### GREEN observado
+
+- Se creó `internal/effort/transport/http/handler.go` (paquete `transporthttp`) con `RegisterEffortHandler`, `NewRegisterEffortHandler`, los DTOs `registerEffortRequest`, `effortRecordResponse` (`task_id *string` siempre presente, sin `created_at`) y `errorResponse`, `decodeEffortObject` (primer byte `{`, sin datos posteriores, `DisallowUnknownFields`) y el orden de evaluación método → cuerpo → `project_id` → `story_id` → caso de uso. El mapeo de errores está aislado en `writeUseCaseError` (`*domain.ValidationError` con `errors.As`, sentinelas con `errors.Is`, cualquier otro error → `500 internal_error` genérico).
+- `go test ./tests/unit/effort/transport/http/... -count=1 -v`: `PASS` en `TestRegisterEffortHandler` (26 casos: 3 de éxito, 14 de `400`, 2 de ruta, 2 de `422` de cuerpo y precedencia sobre `404`, 5 de `404`/`500`), `TestRegisterEffortHandlerErrorMessages` (5), `TestRegisterEffortHandlerSuccessBodyShape` (3, clave por clave: sin `created_at` ni `seq`, `task_id` `null` o UUID) y `TestRegisterEffortHandlerRejectsOtherMethods` (4 métodos, `405 method_not_allowed` con `Content-Type` JSON y cero llamadas).
+
+### TRIANGULATE (las pruebas pasaron al primer intento, por eso se forzó el fallo)
+
+Se agregó `TestRegisterEffortHandlerEdgeCases` (10 subpruebas): horas `0.01`, `7.25` y `24` devueltas sin pérdida de precisión; descripción de 500 caracteres multibyte aceptada e íntegra y de 501 rechazada; `task_id` y IDs de ruta en mayúsculas devueltos en minúsculas canónicas; `member_id` ausente y `task_id` `"abc"` informados en `fields`; `project_id` y `story_id` inválidos a la vez informan solo `project_id`; `400` del cuerpo con precedencia sobre el `422` de ruta; y fecha futura rechazada contra el reloj inyectado. Como la implementación ya generalizaba, pasaron al primer intento. Para no inventar evidencia se mutó temporalmente `handler.go` con un programa de mutaciones (cada una se revirtió y se verificó con `git status` y una re-ejecución en verde):
+
+| Mutación temporal | Pruebas que debían fallar | Resultado observado |
+|-------------------|---------------------------|---------------------|
+| Sin `DisallowUnknownFields` | claves desconocidas (`status`, `story_id`, `id`, `created_at`) | Falla (5 pruebas) |
+| Sin la comprobación de contenido posterior | `two objects`, `trailing content` | Falla (3 pruebas) |
+| Sin la comprobación del primer byte `{` | `null body`, `array body` | Falla (2 pruebas) |
+| `project_id` leído del valor de `story_id` (origen de la validación de ruta) | rutas inválidas y precedencia de ruta | Falla (9 pruebas) |
+| Sin mapeo de `ErrMemberNotFound` | `member not found`, mensajes | Falla (4 pruebas) |
+| Sin mapeo de `ErrTaskNotFound` | `task not found`, mensajes | Falla (4 pruebas) |
+| `500` con `err.Error()` como mensaje | `unexpected error` (fuga de `secret db detail`) | Falla (4 pruebas) |
+| `work_date` formateada como RFC 3339 | forma del `201`, precisión de horas | Falla (6 pruebas) |
+| `task_id` con `omitempty` | forma del `201` (clave siempre presente) | Falla (3 pruebas) |
+| Sin `Content-Type` | todas las respuestas | Falla (36 pruebas) |
+| Sin comprobación de método | `RejectsOtherMethods` | Falla (5 pruebas) |
+| `fields` omitidos en el `422` | casos de `422` de cuerpo | Falla (7 pruebas) |
+| `TaskID` siempre `nil` en el comando | éxito sobre tarea, `task_id` en mayúsculas | Falla (5 pruebas) |
+
+Las 13 mutaciones fueron detectadas; ninguna sobrevive.
+
+### REFACTOR
+
+- Constante `invalidUUID` renombrada a `invalidUUIDMessage` para alinearse con `internal/effort/application`; revisión de DTOs y mensajes contra `internal/task/transport/http/handler.go` (mismo mensaje de `400`, mismas claves de `error`). Ningún status, código ni mensaje probado cambió. `writeUseCaseError` mantiene `ServeHTTP` lineal.
+- `gofmt -l internal/effort tests/unit/effort`: sin salida. `go vet ./internal/effort/... ./tests/unit/effort/...`: sin hallazgos. `go test ./internal/effort/... ./tests/unit/effort/... -count=1`: `ok` en `application`, `domain`, `infrastructure/postgres` y `transport/http` (5 pruebas de primer nivel y 48 subpruebas en el paquete HTTP).
+
+### Work Unit Evidence (UT 5)
+
+| Evidencia | Valor |
+|-----------|-------|
+| Comando de prueba focalizado y resultado | `go test ./internal/effort/... ./tests/unit/effort/... -count=1`: `ok` (4 paquetes de prueba); `tests/unit/effort/transport/http`: 5 pruebas de primer nivel y 48 subpruebas en verde |
+| Arnés de ejecución real | N/A: el handler se prueba con `httptest` sobre un `http.ServeMux` local con el caso de uso real y un fake de repositorio; no hay frontera de ejecución real hasta el cableado y la integración HTTP de la UT 6 |
+| Límite de reversión | Eliminar `internal/effort/transport/` y `tests/unit/effort/transport/`; depende solo de la UT 3 y nada más lo importa todavía |
+
+### Suite completa
+
+No se ejecutó `go test ./...` en esta UT por instrucción del orquestador; la verificación final corresponde a la Fase 7.
+
+### Defectos reales encontrados
+
+- Ninguno.
+
+### Desviaciones del diseño
+
+Ninguna: el orden de evaluación y el mapeo de errores coinciden con la sección "Capa `transport/http`" de `design.md`. Detalle de implementación: `decodeEffortObject` devuelve solo `error` (no necesita las claves crudas, a diferencia de `decodeTaskObject`). La prueba de método incorrecto invoca el handler directamente, porque el `ServeMux` de Go responde `405` por sí mismo con cuerpo de texto antes de llegar al handler. La discrepancia 1 de `tasks.md` queda cubierta: los cuatro sentinelas (incluido `ErrProjectNotFound`) producen `404` con su código y mensaje.
