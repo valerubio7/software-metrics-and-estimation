@@ -110,6 +110,6 @@ Discrepancias que permanecen (ninguna cambia el comportamiento de la spec; se li
 
 ### Fase 7 — Verificación y cierre
 - [x] 7.1 Corrida completa: `go build ./...`, `go vet ./...`, `gofmt -l` sobre los `.go` del cambio, `go test ./internal/... ./tests/unit/...` y `go test -p 1 ./tests/integration/...`; registrar evidencia en `apply-progress.md` (UT 7).
-- [ ] 7.2 Verificación de trazabilidad spec↔pruebas y contraste con el issue #44 (`gh issue view 44`), produciendo `verify-report.md` (UT 8).
-- [ ] 7.3 Archivar el cambio en `openspec/changes/archive/2026-10-25-us-16-registrar-defecto/`, consolidar el spec en `openspec/specs/defecto/spec.md` y escribir `archive-report.md` (UT 9).
-- [ ] 7.4 Abrir el PR único hacia `main` con `size:exception` y asuntos por UT en la descripción.
+- [x] 7.2 Verificación de trazabilidad spec↔pruebas y contraste con el issue #44 (`gh issue view 44`), produciendo `verify-report.md` (UT 8).
+- [x] 7.3 Archivar el cambio en `openspec/changes/archive/2026-10-25-us-16-registrar-defecto/`, consolidar el spec en `openspec/specs/defecto/spec.md` y escribir `archive-report.md` (UT 9).
+- [x] 7.4 Abrir el PR único hacia `main` con `size:exception` y asuntos por UT en la descripción. (Resuelto a continuación del archivo: el PR se abre en el mismo paso.)
