@@ -98,4 +98,29 @@ Cobertura: persistencia válida con descripción recortada; normalización canó
 
 ### Hash del commit
 
+`5c2f012 feat(defect): add register defect use case`.
+
+## UT 4 — `feat(defect): persist defect records in PostgreSQL`
+
+### RED observado
+
+| Comando | Resultado |
+|---|---|
+| `go test ./tests/unit/defect/infrastructure/... -count=1` | FAIL de setup: paquete `internal/defect/infrastructure/postgres` inexistente |
+| `go build ./tests/integration/defect/...` | no compila por la falta del paquete |
+
+### GREEN observado
+
+| Comando | Resultado |
+|---|---|
+| `go test ./tests/unit/defect/infrastructure/... -count=1` | ok (2 pruebas, 7 subpruebas: 2 FKs traducidas + 4 passthrough + no-PgError) |
+| `go test ./tests/integration/defect/... -count=1` | ok (36,0 s): paquete completo con migración + repositorio |
+| `go build ./...` y `go vet ./...` | exit 0 |
+
+Ciclo corto observado: `defectof` necesitaba el proyecto como argumento (el caso de proyecto desconocido usaba el sembrado) y `fmt` quedó sin uso al recortar un bloque muerto en el test de error de almacenamiento; ambos se corrigieron antes del GREEN final.
+
+Cobertura: persistencia y lectura de vuelta; precedencia proyecto→historia→Sprint (proyecto desconocido, historia+Sprint de otro proyecto, historias/Sprints desconocidos); historia de backlog; Sprint de detección cerrado (`is_closed=true`); tres duplicados exactos; FK violada entre verificación e INSERT vía trigger que borra la historia (→ `ErrStoryNotFound`, traducción determinista sin `500`); error de almacenamiento arbitrario vía trigger que levanta excepción (pasa sin traducir a centinela).
+
+### Hash del commit
+
 Registro tras el commit de la UT.
