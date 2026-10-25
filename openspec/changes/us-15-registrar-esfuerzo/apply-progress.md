@@ -9,8 +9,8 @@
 | UT | Descripción | Estado | Commit |
 |----|-------------|--------|--------|
 | 1 | Migración `000012_create_effort_records` | Completa (tareas 1.1–1.7) | `af25b91` `feat(db): add effort records migration` |
-| 2 | Dominio `EffortRecord` | Completa (tareas 2.1–2.6) | `feat(effort): add effort record domain` (el hash se registra en el commit de la UT 3, porque un commit no puede contener su propio hash) |
-| 3 | Caso de uso `RegisterEffortUseCase` | Pendiente | |
+| 2 | Dominio `EffortRecord` | Completa (tareas 2.1–2.6) | `3e06cef` `feat(effort): add effort record domain` |
+| 3 | Caso de uso `RegisterEffortUseCase` | Completa (tareas 3.1–3.6) | `feat(effort): add register effort use case` (el hash se registra en el commit de la UT 4, porque un commit no puede contener su propio hash) |
 | 4 | Repositorio PostgreSQL y `MapConstraintError` | Pendiente | |
 | 5 | Transporte HTTP | Pendiente | |
 | 6 | Cableado, integración HTTP y documentación | Pendiente | |
@@ -139,3 +139,64 @@ No se ejecutó `go test ./...` en esta UT por instrucción del orquestador (tard
 ### Desviaciones del diseño
 
 Ninguna: el dominio coincide con la sección "Capa `domain`" de `design.md`. Se agregó, solo como refactor interno, la extracción en `validateDescription`/`validateHours`/`validateWorkDate`.
+
+## UT 3: Caso de uso `RegisterEffortUseCase`
+
+### Evidencia de ciclo TDD
+
+| Tarea | Archivo de prueba | Capa | Safety net | RED | GREEN | TRIANGULATE | REFACTOR |
+|-------|-------------------|------|------------|-----|-------|-------------|----------|
+| 3.1 / 3.2 | `tests/unit/effort/application/register_effort_test.go` | Unitaria (caso de uso con fake de repositorio, generador contador y reloj fijo) | N/A (archivos nuevos) | Falla observada (paquete inexistente) | 20 de 20 subpruebas pasan | Ver 3.3 | Ver 3.4 |
+| 3.3 | mismo archivo | Unitaria | Verde previo (20/20) | Pasaron al primer intento (ver nota) | 34 subpruebas en total (4 pruebas de primer nivel) pasan | 10 bordes de reloj UTC, 4 grafías de UUID, duplicados + 7 mutaciones | Ver 3.4 |
+| 3.4 | `internal/effort/application/register_effort.go` | Unitaria | Verde previo (34 subpruebas) | ➖ No aplica | 34 subpruebas pasan | ➖ No aplica | Fusión de errores de dominio extraída a `mergeDomainFields`; sentinelas documentados; sin cambio de comportamiento |
+
+### RED observado
+
+- Comando: `go test ./tests/unit/effort/application/... -count=1` (solo con las pruebas de la tarea 3.1).
+  Resultado: `FAIL ... [setup failed]`. Motivo correcto: `no required module provides package .../internal/effort/application`, es decir, el paquete de aplicación todavía no existe.
+
+### GREEN observado
+
+- Se creó `internal/effort/application/register_effort.go` con los cuatro sentinelas, `RegisterEffortCommand`, `EffortRepository`, `IDGenerator`, `Clock`, `RegisterEffortUseCase`, `NewRegisterEffortUseCase` y `Execute` según el flujo de 8 pasos de `design.md`: UUID de `member_id` (obligatorio, `is required` si vacío) y de `task_id` (opcional, la cadena vacía es `must be a valid UUID`) normalizados con `uuid.Parse(...).String()`; `work_date` con `time.Parse` y comparación de ida y vuelta; `today` como fecha civil UTC derivada de `now().UTC()`; fusión de los campos de `*domain.ValidationError` con los de la capa de aplicación; ID generado y repositorio invocados solo si no hay errores.
+- `go test ./tests/unit/effort/application/... -count=1 -v`: 20 de 20 subpruebas de `TestRegisterEffortUseCaseExecute` en verde (éxito sobre historia y sobre tarea, normalización a minúsculas, 12 casos de validación, 5 errores del repositorio propagados sin envolver).
+
+### TRIANGULATE (las pruebas pasaron al primer intento, por eso se forzó el fallo)
+
+Se agregaron `TestRegisterEffortUseCaseUTCClockBoundaries` (10 bordes: reloj `2026-10-24T22:30:00-03:00` con `2026-10-25` aceptada y `2026-10-26` rechazada, `2026-10-24T23:59:59Z`, `2026-10-25T00:00:00Z`, fecha pasada `2026-01-05`, y dos casos de "fecha UTC y no local" en ambos sentidos de huso), `TestRegisterEffortUseCaseNormalizesAlternativeUUIDSpellings` (4 grafías: sin guiones, `urn:uuid:`, entre llaves y ya canónica) y `TestRegisterEffortUseCaseAllowsExactDuplicates` (dos ejecuciones idénticas → dos IDs distintos y dos llamadas al repositorio). Pasaron al primer intento; para no inventar evidencia se mutó temporalmente `register_effort.go` (cada mutación se revirtió y se verificó con `diff` contra la copia original):
+
+| Mutación temporal | Prueba que debía fallar | Resultado observado |
+|-------------------|-------------------------|---------------------|
+| `instant.UTC().Date()` → `instant.Date()` (fecha local en vez de UTC) | `TestRegisterEffortUseCaseUTCClockBoundaries` | Fallan 3 bordes (`...next UTC day: that day is accepted`, `...not the local one`, `...local time is ahead of UTC`) |
+| Generar el ID antes de validar | `TestRegisterEffortUseCaseExecute` (casos de validación y éxito) | Fallan todos los casos de 422 (contador del generador distinto de 0) y el éxito (ID `generated-id-2`) |
+| No normalizar el UUID (devolver el valor recibido) | `uppercase member and task IDs are normalized...` | Falla |
+| Devolver una fecha futura cuando `work_date` no se puede interpretar | casos de formato de fecha y de acumulación | Fallan 5 casos (se agregaría un error `must not be in the future` además del de formato) |
+| ID constante en lugar de `u.generateID()` | `TestRegisterEffortUseCaseAllowsExactDuplicates` y el éxito sobre historia | Fallan |
+| Envolver el error del repositorio con `fmt.Errorf("%w")` | `repository error propagates unwrapped: ...` | Fallan los 5 casos (se compara por identidad) |
+| Quitar la comparación de ida y vuelta de `work_date` | (ninguna) | **Sobrevive**: no falla ninguna prueba |
+
+Sobre la última mutación: se comprobó con un programa de sondeo que, para el diseño `"2006-01-02"`, `time.Parse` de Go ya rechaza por sí mismo `2026-3-10`, `2026-03-1`, espacios laterales, `02026-03-10`, `+2026-03-10`, `2026-03-10Z` y dígitos no ASCII; ninguna entrada probada hace que la comparación de ida y vuelta cambie el resultado. Se conserva porque el diseño y la tarea 3.2 la exigen como defensa ante cambios de comportamiento del parser, pero no hay entrada observable que la distinga; queda como observación para `sdd-verify` (código defensivo sin prueba que lo aísle).
+
+### REFACTOR
+
+- La fusión de errores de dominio se extrajo a `mergeDomainFields` y los sentinelas quedaron documentados; `truncateToUTCDate` y `parseWorkDate` se revisaron sin cambios. Firma de `EffortRepository` y comportamiento de `Execute` sin cambios.
+- `gofmt -l internal/effort tests/unit/effort`: sin salida. `go vet ./internal/effort/... ./tests/unit/effort/...`: sin hallazgos. `go test ./internal/effort/... ./tests/unit/effort/... -count=1`: `ok` en `application` y `domain`.
+
+### Work Unit Evidence (UT 3)
+
+| Evidencia | Valor |
+|-----------|-------|
+| Comando de prueba focalizado y resultado | `go test ./internal/effort/... ./tests/unit/effort/... -count=1`: `ok` (`tests/unit/effort/application` y `tests/unit/effort/domain`); 34 subpruebas en 4 pruebas de primer nivel para la aplicación |
+| Arnés de ejecución real | N/A: caso de uso probado con fake de repositorio, generador contador y reloj fijo; no hay frontera de ejecución real hasta la UT 4 |
+| Límite de reversión | Eliminar `internal/effort/application/` y `tests/unit/effort/application/`; depende solo de la UT 2 y nada más lo importa todavía |
+
+### Suite completa
+
+No se ejecutó `go test ./...` en esta UT por instrucción del orquestador; la verificación final corresponde a la Fase 7.
+
+### Defectos reales encontrados
+
+- Ninguno.
+
+### Desviaciones del diseño
+
+Ninguna: el flujo coincide con la sección "Capa `application`" de `design.md`. Detalle de implementación: `normalizeUUID` distingue campo obligatorio (`member_id`, vacío → `is required`) de opcional (`task_id`, vacío → `must be a valid UUID`), tal como fijan los pasos 2 y 3 del diseño. La dependencia `github.com/google/uuid` ya estaba en `go.mod`.
