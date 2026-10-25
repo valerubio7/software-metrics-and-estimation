@@ -14,7 +14,7 @@
 | 4 | Repositorio PostgreSQL y `MapConstraintError` | Completa (tareas 4.1–4.7) | `cf4d223` `feat(effort): persist effort records in PostgreSQL` |
 | 5 | Transporte HTTP `RegisterEffortHandler` | Completa (tareas 5.1–5.6) | `a8cf4d4` `feat(effort): agregar handler HTTP de registro de esfuerzo` |
 | 6 | Cableado, integración HTTP y documentación | Completa (tareas 6.1–6.11) | `8ea4329` `feat(effort): exponer la ruta de registro de esfuerzo` |
-| 7 | Verificación final | 7.1 y 7.3 cumplidas; 7.2 pendiente de `sdd-verify` | Sin commit de corrección (ninguna detectada hasta ahora) |
+| 7 | Verificación final | 7.1 a 7.4 cumplidas; 7.5 (archivado) fuera de `sdd-apply` | `fix(effort): rechazar el carácter NUL en la descripción` (tarea 7.4) |
 
 ## UT 1: Migración `000012_create_effort_records`
 
@@ -449,4 +449,61 @@ Commit verificado en ambas corridas: `8ea4329` (sin cambios entre una corrida y 
 
 ### 7.4 Correcciones
 
-Ninguna detectada hasta ahora. Los puntos abiertos para `sdd-verify` son: la comprobación de round-trip de `work_date` (UT 3) y el bloqueo `FOR KEY SHARE` (UT 4) no tienen una prueba que los aísle, y dos mutaciones de la UT 4 sobreviven por redundancia deliberada con la clave foránea compuesta.
+`sdd-verify` (tarea 7.2) dejó una sospecha sin confirmar: una descripción con el carácter NUL (`U+0000`) llegaría a PostgreSQL, que rechaza `0x00` en `text` (SQLSTATE 22021), y la API respondería `500 internal_error` en lugar de un error de validación. Se corrigió con el ciclo completo de TDD estricto y un commit adicional.
+
+#### Evidencia de ciclo TDD (7.4)
+
+| Archivo de prueba | Capa | Safety net | RED | GREEN | TRIANGULATE | REFACTOR |
+|-------------------|------|------------|-----|-------|-------------|----------|
+| `tests/integration/effort/postgres/http_integration_test.go` | Integración HTTP real (PostgreSQL) | Corrida previa de la fase 7 en verde | Falla observada: `500`, se esperaba `422` | Pasa: `422` y 0 filas | Cubierto por las pruebas de dominio y de handler | Sin cambios |
+| `tests/unit/effort/domain/effort_record_test.go` | Unitaria | `ok` en `tests/unit/effort/...` | Falla observada: ocho posiciones de NUL aceptadas | Pasa | Ocho posiciones de NUL más cuatro caracteres de control que deben seguir aceptándose | Comentario único en `validateDescription` |
+| `tests/unit/effort/transport/http/handler_test.go` | Unitaria (handler) | `ok` en `tests/unit/effort/...` | Falla observada: `201` con 1 llamada al repositorio, se esperaba `422` con 0 | Pasa | Tres posiciones (medio, inicio, fin) | Sin cambios |
+
+#### RED observado
+
+- Primero a nivel real: la subprueba `TestEffortHTTPEndToEnd/description_with_a_NUL_character_responds_422_validation_failed_without_writes` (`go test -p 1 ./tests/integration/effort/postgres/ -run 'TestEffortHTTPEndToEnd/description_with_a_NUL' -count=1`) falló con `status = 500, want 422: {"error":"internal_error",...}`. La hipótesis quedó confirmada: el defecto existía.
+- Después a nivel unitario: `TestNewEffortRecord/description_containing_a_NUL_character_is_rejected_wherever_the_NUL_is` falló (`NewEffortRecord("abc\x00   ") error = <nil>`) y `TestRegisterEffortHandlerEdgeCases/description_with_a_NUL_character_is_rejected_without_calling_the_repository` falló con `status/calls = 201/1, want 422/0`.
+- Un primer intento del handler envió un NUL crudo en el cuerpo y obtuvo `400` por JSON inválido; fue un error de la prueba, no evidencia de RED. Se corrigió enviando el escape JSON `\u0000`.
+
+#### GREEN observado
+
+- `internal/effort/domain/effort_record.go`: nueva constante `nulMessage = "must not contain NUL characters"` y un caso `strings.ContainsRune(description, 0)` en `validateDescription`, antes del límite de longitud. Se evalúa sobre la descripción recortada: `TrimSpace` no elimina NUL, por eso un NUL entre espacios también se rechaza.
+- `go test ./internal/effort/... ./tests/unit/effort/... -count=1`: `ok` en los cuatro paquetes con pruebas.
+- La subprueba real pasó con `422` y 0 filas. Una primera ejecución falló por infraestructura antes de llegar al código (no se capturó el mensaje, patrón conocido de `wait for PostgreSQL`); la repetición aislada pasó.
+- `go test -p 1 ./tests/integration/effort/... -count=1 -v`: `ok` (172,6 s), 63 líneas `--- PASS` y ninguna falla, sin `unexpected EOF` en esta corrida.
+
+#### TRIANGULATE y mutaciones
+
+Se mutó temporalmente `validateDescription` y se revirtió cada vez (la última comprobación fue `git diff --stat` sin cambios inesperados y el paquete en verde):
+
+| Mutación | Resultado observado |
+|----------|---------------------|
+| `strings.IndexRune(description, 0) > 0` (no detecta NUL en la posición 0) | Fallan dominio (`wherever_the_NUL_is`) y handler |
+| Rechazar cualquier carácter de control (`unicode.IsControl`) | Falla `description_with_other_control_characters_is_still_accepted` |
+| `strings.HasPrefix(description, "\x00")` (solo al inicio) | Fallan dominio y handler (`in_the_middle`, `at_the_end`) |
+
+La mutación de eliminar la regla ya estaba demostrada por el RED. Cada mutación falló en al menos una prueba, de modo que las pruebas pueden fallar.
+
+#### Otras rutas de texto libre
+
+Solo `description` es texto libre. `project_id`, `story_id`, `member_id` y `task_id` se validan como UUID y se normalizan antes de llegar al repositorio, `work_date` se analiza con `time.Parse` en formato `YYYY-MM-DD` y `hours` es numérico, así que ninguno puede transportar un NUL hasta PostgreSQL.
+
+#### REFACTOR
+
+Se unificó la explicación del NUL en el comentario de `validateDescription` (se eliminó un comentario duplicado dentro del `case`) y se actualizó el comentario de `NewEffortRecord`. Sin cambios de comportamiento; pruebas en verde.
+
+#### Spec
+
+`specs/esfuerzo/spec.md`: R8 incluye el carácter NUL entre las descripciones rechazadas con un escenario nuevo (`422`, `fields.description`, nada persistido). Además se corrigió el hallazgo WARNING 2 del informe de verificación: el requisito y el escenario de R15 ya no nombran una FK de proyecto (no existe); `project_not_found` proviene de la verificación de existencia dentro de la transacción.
+
+#### Work Unit Evidence (7.4)
+
+| Evidencia | Valor |
+|-----------|-------|
+| Prueba enfocada | `go test ./internal/effort/... ./tests/unit/effort/... -count=1`: `ok` en los cuatro paquetes con pruebas |
+| Arnés de ejecución real | `go test -p 1 ./tests/integration/effort/... -count=1 -v`: `ok` (172,6 s), subprueba NUL en `422` con 0 filas |
+| Punto de reversión | `internal/effort/domain/effort_record.go`, las tres pruebas citadas, `specs/esfuerzo/spec.md`, `tasks.md` y este archivo; revertir el commit no afecta al resto de la rama |
+
+#### Cierre
+
+Con la 7.4 aplicada, solo queda la 7.5 (`sdd-archive` y consolidación del spec), que corresponde al orquestador. La advertencia de estabilidad del paquete de integración (WARNING 1) y el gate sin prueba ejecutable de `cmd/api/main.go` (WARNING 3) siguen siendo observaciones de entorno y de alcance, no defectos de negocio.

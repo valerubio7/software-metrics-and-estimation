@@ -205,6 +205,12 @@ func TestEffortHTTPEndToEnd(t *testing.T) {
 			wantInBody: []string{`"error":"validation_failed"`, `"hours"`, `"description"`, `"work_date":"must not be in the future"`},
 		},
 		{
+			name: "description with a NUL character responds 422 validation_failed", projectID: effortProjectAID, storyID: effortStoryID,
+			body:       `{"member_id":"` + effortMemberID + `","work_date":"2026-03-10","description":"a\u0000b","hours":1}`,
+			wantStatus: http.StatusUnprocessableEntity,
+			wantInBody: []string{`"error":"validation_failed"`, `"description":"must not contain NUL characters"`},
+		},
+		{
 			name: "invalid fields win over a missing member", projectID: effortProjectAID, storyID: effortStoryID,
 			body:       `{"member_id":"` + effortUnknownID + `","work_date":"2026-03-10","description":"Trabajo","hours":24.01}`,
 			wantStatus: http.StatusUnprocessableEntity, wantInBody: []string{`"hours"`},

@@ -15,6 +15,7 @@ const (
 	hoursMessage       = "must be greater than 0, at most 24 and have at most 2 decimals"
 	futureDateMessage  = "must not be in the future"
 	descriptionMessage = "must be at most 500 characters"
+	nulMessage         = "must not contain NUL characters"
 )
 
 var today = time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
@@ -162,6 +163,49 @@ func TestNewEffortRecord(t *testing.T) {
 			}
 			if validation.Fields["description"] != descriptionMessage {
 				t.Errorf("%s: Fields[description] = %q, want %q", name, validation.Fields["description"], descriptionMessage)
+			}
+		}
+	})
+
+	t.Run("description containing a NUL character is rejected wherever the NUL is", func(t *testing.T) {
+		for name, description := range map[string]string{
+			"in the middle":                  "a\x00b",
+			"at the start":                   "\x00abc",
+			"at the end":                     "abc\x00",
+			"alone":                          "\x00",
+			"after leading padding":          "   \x00abc",
+			"before trailing padding":        "abc\x00   ",
+			"inside multibyte text":          "ñ\x00ñ",
+			"between two valid descriptions": "Revisión\x00de código",
+		} {
+			params := validParams()
+			params.Description = description
+			_, err := domain.NewEffortRecord(params, today)
+			var validation *domain.ValidationError
+			if !errors.As(err, &validation) {
+				t.Fatalf("%s: NewEffortRecord(%q) error = %v, want ValidationError", name, description, err)
+			}
+			if validation.Fields["description"] != nulMessage {
+				t.Errorf("%s: Fields[description] = %q, want %q", name, validation.Fields["description"], nulMessage)
+			}
+		}
+	})
+
+	t.Run("description with other control characters is still accepted", func(t *testing.T) {
+		for name, description := range map[string]string{
+			"tab":             "a\tb",
+			"newline":         "a\nb",
+			"carriage return": "a\rb",
+			"DEL":             "a\x7fb",
+		} {
+			params := validParams()
+			params.Description = description
+			record, err := domain.NewEffortRecord(params, today)
+			if err != nil {
+				t.Fatalf("%s: NewEffortRecord(%q) error = %v, want nil", name, description, err)
+			}
+			if record.Description != description {
+				t.Errorf("%s: Description = %q, want %q", name, record.Description, description)
 			}
 		}
 	})

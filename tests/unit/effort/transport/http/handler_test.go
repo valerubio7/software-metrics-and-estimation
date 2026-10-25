@@ -389,6 +389,23 @@ func TestRegisterEffortHandlerEdgeCases(t *testing.T) {
 		}
 	})
 
+	t.Run("description with a NUL character is rejected without calling the repository", func(t *testing.T) {
+		// The JSON escape (not a raw NUL byte) is sent, so the body stays valid JSON.
+		for name, description := range map[string]string{
+			"in the middle": "a\\u0000b",
+			"at the start":  "\\u0000abc",
+			"at the end":    "abc\\u0000",
+		} {
+			repo := &fakeEffortRepository{}
+			body := `{"member_id":"` + validMemberID + `","work_date":"2026-03-10","description":"` + description + `","hours":1}`
+			response := post(newMux(repo), validProjectID, validStoryID, body)
+
+			t.Run(name, func(t *testing.T) {
+				assertValidationField(t, response, repo, "description", "must not contain NUL characters")
+			})
+		}
+	})
+
 	t.Run("uppercase task_id is returned in canonical lowercase", func(t *testing.T) {
 		repo := &fakeEffortRepository{}
 		body := validBody(`"task_id":"` + strings.ToUpper(validTaskID) + `"`)

@@ -19,6 +19,7 @@ const (
 	requiredMessage    = "is required"
 	hoursMessage       = "must be greater than 0, at most 24 and have at most 2 decimals"
 	descriptionMessage = "must be at most 500 characters"
+	nulMessage         = "must not contain NUL characters"
 	futureDateMessage  = "must not be in the future"
 )
 
@@ -51,7 +52,7 @@ type ValidationError struct {
 
 func (e *ValidationError) Error() string { return "effort record validation failed" }
 
-// NewEffortRecord validates description (required, at most 500 characters after TrimSpace),
+// NewEffortRecord validates description (required, no NUL character, at most 500 characters after TrimSpace),
 // hours (required, > 0, <= 24, at most 2 decimals) and work date (not after today, which is
 // a UTC-midnight civil date). On failure it returns *ValidationError with keys "description",
 // "hours" and/or "work_date". The returned record holds the trimmed description and a copy
@@ -85,11 +86,14 @@ func NewEffortRecord(params NewEffortRecordParams, today time.Time) (EffortRecor
 	}, nil
 }
 
-// validateDescription expects an already trimmed description.
+// validateDescription expects an already trimmed description. NUL is rejected because
+// PostgreSQL text cannot store 0x00 (SQLSTATE 22021) and it would surface as a 500.
 func validateDescription(fields map[string]string, description string) {
 	switch {
 	case description == "":
 		fields["description"] = requiredMessage
+	case strings.ContainsRune(description, 0):
+		fields["description"] = nulMessage
 	case utf8.RuneCountInString(description) > MaxDescriptionLength:
 		fields["description"] = descriptionMessage
 	}

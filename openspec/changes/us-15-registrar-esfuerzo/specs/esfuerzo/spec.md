@@ -235,7 +235,7 @@ El sistema MUST exigir `hours` como número y MUST aceptarlo únicamente si es e
 
 ### Requirement: Validar la descripción de la actividad
 
-El sistema MUST exigir `description` como cadena que, una vez recortados los espacios iniciales y finales, no esté vacía y tenga como máximo 500 caracteres (se cuentan caracteres, no bytes). El sistema MUST persistir y devolver la descripción ya recortada. Una descripción ausente, vacía, compuesta solo por espacios o mayor que 500 caracteres MUST rechazarse con `422 validation_failed` indicando `description` en `fields`, sin persistir ningún registro.
+El sistema MUST exigir `description` como cadena que, una vez recortados los espacios iniciales y finales, no esté vacía y tenga como máximo 500 caracteres (se cuentan caracteres, no bytes). El sistema MUST persistir y devolver la descripción ya recortada. Una descripción ausente, vacía, compuesta solo por espacios, mayor que 500 caracteres o que contenga el carácter NUL (`U+0000`) MUST rechazarse con `422 validation_failed` indicando `description` en `fields`, sin persistir ningún registro.
 
 #### Scenario: La descripción se recorta antes de persistir
 
@@ -270,6 +270,16 @@ El sistema MUST exigir `description` como cadena que, una vez recortados los esp
 - THEN el sistema responde `422 validation_failed`
 - AND `fields` incluye `description`
 - AND no se persiste ningún registro
+
+#### Scenario: Rechazar una descripción con el carácter NUL
+
+- GIVEN un proyecto, una historia y un integrante válidos
+- AND una solicitud con una `description` que contiene el carácter NUL (`U+0000`), por ejemplo `"a\u0000b"` en el JSON
+- WHEN se solicita registrar el esfuerzo
+- THEN el sistema responde `422 validation_failed`
+- AND `fields` incluye `description`
+- AND no se persiste ningún registro
+- AND no se consulta ni se escribe en el almacenamiento
 
 ### Requirement: Validar los identificadores del cuerpo y de la ruta
 
@@ -438,7 +448,7 @@ El sistema MUST persistir cada registro de esfuerzo aceptado con, como mínimo, 
 
 ### Requirement: Garantizar la integridad referencial del esfuerzo en el almacenamiento
 
-El almacenamiento MUST impedir, con independencia de las verificaciones de la aplicación, los registros de esfuerzo cuyo integrante, historia o tarea no pertenezcan al mismo proyecto, y los registros con una tarea que no pertenezca a su historia. Cuando `task_id` es nulo, MUST NOT evaluarse la restricción de tarea. El almacenamiento MUST rechazar además horas fuera de `(0, 24]` y descripciones vacías o de más de 500 caracteres. Si una violación de integridad referencial llega al almacenamiento pese a la verificación previa (por ejemplo, por concurrencia), el sistema MUST traducirla al error de referencia correspondiente (`404 member_not_found`, `404 task_not_found`, `404 story_not_found` o `404 project_not_found`) y MUST NOT responder `500`.
+El almacenamiento MUST impedir, con independencia de las verificaciones de la aplicación, los registros de esfuerzo cuyo integrante, historia o tarea no pertenezcan al mismo proyecto, y los registros con una tarea que no pertenezca a su historia. Cuando `task_id` es nulo, MUST NOT evaluarse la restricción de tarea. El almacenamiento MUST rechazar además horas fuera de `(0, 24]` y descripciones vacías o de más de 500 caracteres. Si una violación de integridad referencial llega al almacenamiento pese a la verificación previa (por ejemplo, por concurrencia), el sistema MUST traducirla al error de referencia correspondiente (`404 member_not_found`, `404 task_not_found` o `404 story_not_found`) y MUST NOT responder `500`. La inexistencia del proyecto (`404 project_not_found`) no proviene de una clave foránea de proyecto, sino de la verificación de existencia que se ejecuta dentro de la misma transacción de la inserción.
 
 #### Scenario: El almacenamiento rechaza un integrante de otro proyecto
 
@@ -472,9 +482,9 @@ El almacenamiento MUST impedir, con independencia de las verificaciones de la ap
 
 #### Scenario: Una violación de clave foránea no produce `500`
 
-- GIVEN un repositorio de esfuerzo cuyo alta recibe una violación de clave foránea de integrante, de tarea, de historia o de proyecto
+- GIVEN un repositorio de esfuerzo cuyo alta recibe una violación de clave foránea de integrante, de tarea o de historia
 - WHEN la aplicación procesa ese error
-- THEN lo traduce al error de referencia correspondiente (`member_not_found`, `task_not_found`, `story_not_found` o `project_not_found`)
+- THEN lo traduce al error de referencia correspondiente (`member_not_found`, `task_not_found` o `story_not_found`)
 - AND la respuesta HTTP es `404` con ese código y no `500`
 
 ### Requirement: Versionar la migración de esfuerzo de forma reversible
