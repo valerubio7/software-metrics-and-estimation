@@ -13,7 +13,8 @@
 | 3 | Caso de uso `RegisterEffortUseCase` | Completa (tareas 3.1–3.6) | `d2353e6` `feat(effort): add register effort use case` |
 | 4 | Repositorio PostgreSQL y `MapConstraintError` | Completa (tareas 4.1–4.7) | `cf4d223` `feat(effort): persist effort records in PostgreSQL` |
 | 5 | Transporte HTTP `RegisterEffortHandler` | Completa (tareas 5.1–5.6) | `a8cf4d4` `feat(effort): agregar handler HTTP de registro de esfuerzo` |
-| 6 | Cableado, integración HTTP y documentación | Completa (tareas 6.1–6.11) | `feat(effort): exponer la ruta de registro de esfuerzo` (el hash se registra en la Fase 7, porque un commit no puede contener su propio hash) |
+| 6 | Cableado, integración HTTP y documentación | Completa (tareas 6.1–6.11) | `8ea4329` `feat(effort): exponer la ruta de registro de esfuerzo` |
+| 7 | Verificación final | 7.1 y 7.3 cumplidas; 7.2 pendiente de `sdd-verify` | Sin commit de corrección (ninguna detectada hasta ahora) |
 
 ## UT 1: Migración `000012_create_effort_records`
 
@@ -420,3 +421,32 @@ No se ejecutó `go test ./...` en esta UT por instrucción del orquestador (la c
 ### Desviaciones del diseño
 
 Ninguna: el cableado coincide con la sección de composición de `design.md`. Detalle: el asunto del commit es `feat(effort): exponer la ruta de registro de esfuerzo` (en español, por instrucción del orquestador) en lugar de `feat(api): gate effort registration on migration 12` de la tarea 6.11.
+
+## Fase 7: Verificación final
+
+Commit verificado en ambas corridas: `8ea4329` (sin cambios entre una corrida y la otra).
+
+### 7.1 Compilación, formato y suite completa
+
+- `go build ./...` y `go vet ./...`: sin salida de error.
+- `gofmt -l internal tests cmd` lista archivos preexistentes del proyecto porque el árbol de trabajo está en CRLF por `core.autocrlf=true`. Se comprobó el contenido realmente guardado en Git: `git show HEAD:<archivo> | gofmt -l` sobre los 15 archivos `.go` que cambió la rama devuelve vacío (0 sin formato).
+- No se usó `-short` y no hubo pruebas omitidas.
+- La contención de Docker Desktop (precedente de US-10 y de la UT 1) obligó a ejecutar `go test -p 1 ./... -count=1`. Se hicieron dos corridas completas sobre el mismo commit:
+
+| Paquete | Corrida 1 | Corrida 2 |
+|---------|-----------|-----------|
+| `tests/integration/effort/postgres` (nuevo) | FAIL: `TestEffortHTTPEndToEnd/effort_over_a_story_responds_201_and_persists_the_same_data`, `wait for PostgreSQL ... unexpected EOF` (182.7 s) | ok (144.5 s) |
+| `tests/integration/story/postgres` (preexistente) | ok (436.6 s) | FAIL: `TestAPIStartupRoutesFollowMigrationState/dirty_version_four`, `wait for PostgreSQL ... unexpected EOF` (399.2 s) |
+| Resto de paquetes con pruebas (27) | ok | ok |
+
+- Motivo: ambos fallos ocurren en `waitForPostgres`, al conectar al contenedor recién arrancado, antes de que se ejecute cualquier código de la aplicación, y cada paquete que falló en una corrida pasó en la otra con el mismo commit. Es el mismo `unexpected EOF` por contención de Docker de la UT 1 y de US-10. No hay ninguna aserción de negocio fallida.
+- Evidencia adicional: `go test -p 1 ./tests/integration/effort/... -count=1` pasó de forma aislada (176.0 s) y el agente de la UT 6 lo había visto pasar (149.8 s).
+- **Límite:** no hay una única corrida completa en verde. La evidencia es la unión de dos corridas sobre el mismo commit, con cada paquete en `ok` al menos una vez.
+
+### 7.3 Número de migración
+
+`internal/project/infrastructure/postgres/migrations/` contiene 12 pares `000001`–`000012` sin duplicados, y `tests/integration/migrations` pasa. En `origin/main` (tras `git fetch`) la última migración es `000011`, por lo que `000012` sigue libre.
+
+### 7.4 Correcciones
+
+Ninguna detectada hasta ahora. Los puntos abiertos para `sdd-verify` son: la comprobación de round-trip de `work_date` (UT 3) y el bloqueo `FOR KEY SHARE` (UT 4) no tienen una prueba que los aísle, y dos mutaciones de la UT 4 sobreviven por redundancia deliberada con la clave foránea compuesta.
