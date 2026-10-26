@@ -75,6 +75,9 @@ func TestMigrationReadinessResolvesDefectByVersion(t *testing.T) {
 			if readiness.DefectUpdate != (tc.lookup == nil && !tc.dirty && tc.version >= 14) {
 				t.Fatalf("DefectUpdate = %t, want %t", readiness.DefectUpdate, tc.lookup == nil && !tc.dirty && tc.version >= 14)
 			}
+			if readiness.DefectList != (tc.lookup == nil && !tc.dirty && tc.version >= 14) {
+				t.Fatalf("DefectList = %t, want %t", readiness.DefectList, tc.lookup == nil && !tc.dirty && tc.version >= 14)
+			}
 			// The defect flag never alters the flags of the existing modules.
 			clean := tc.lookup == nil && !tc.dirty
 			if readiness.Effort != (clean && tc.version >= 12) || readiness.Tasks != (clean && tc.version >= 9) || !readiness.Projects {
