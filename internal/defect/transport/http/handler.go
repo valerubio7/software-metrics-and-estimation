@@ -40,13 +40,14 @@ type registerDefectRequest struct {
 // defectResponse is the flat 201 body: exactly the seven contract keys. created_at and seq
 // stay internal to storage and are deliberately not exposed.
 type defectResponse struct {
-	ID          string `json:"id"`
-	ProjectID   string `json:"project_id"`
-	StoryID     string `json:"story_id"`
-	SprintID    string `json:"sprint_id"`
-	Description string `json:"description"`
-	Severity    string `json:"severity"`
-	Status      string `json:"status"`
+	ID                 string `json:"id"`
+	ProjectID          string `json:"project_id"`
+	StoryID            string `json:"story_id"`
+	SprintID           string `json:"sprint_id"`
+	Description        string `json:"description"`
+	Severity           string `json:"severity"`
+	Status             string `json:"status"`
+	ResolutionSprintID string `json:"resolution_sprint_id,omitempty"`
 }
 
 type errorResponse struct {
@@ -108,6 +109,12 @@ func writeUseCaseError(response http.ResponseWriter, err error) {
 		writeJSON(response, http.StatusNotFound, errorResponse{Error: "story_not_found", Message: "story not found"})
 	case errors.Is(err, application.ErrSprintNotFound):
 		writeJSON(response, http.StatusNotFound, errorResponse{Error: "sprint_not_found", Message: "sprint not found"})
+	case errors.Is(err, application.ErrDefectNotFound):
+		writeJSON(response, http.StatusNotFound, errorResponse{Error: "defect_not_found", Message: "defect not found"})
+	case errors.Is(err, application.ErrResolutionSprintNotFound):
+		writeJSON(response, http.StatusNotFound, errorResponse{Error: "resolution_sprint_not_found", Message: "resolution sprint not found in project"})
+	case errors.Is(err, application.ErrResolutionSprintBeforeDetection):
+		writeJSON(response, http.StatusConflict, errorResponse{Error: "resolution_sprint_before_detection", Message: "resolution sprint cannot be earlier than detection sprint"})
 	default:
 		writeJSON(response, http.StatusInternalServerError, errorResponse{
 			Error: "internal_error", Message: "an unexpected error occurred",
@@ -118,13 +125,14 @@ func writeUseCaseError(response http.ResponseWriter, err error) {
 // newDefectResponse projects the stored record to the public response.
 func newDefectResponse(defect domain.Defect) defectResponse {
 	return defectResponse{
-		ID:          defect.ID,
-		ProjectID:   defect.ProjectID,
-		StoryID:     defect.StoryID,
-		SprintID:    defect.SprintID,
-		Description: defect.Description,
-		Severity:    defect.Severity,
-		Status:      defect.Status,
+		ID:                 defect.ID,
+		ProjectID:          defect.ProjectID,
+		StoryID:            defect.StoryID,
+		SprintID:           defect.SprintID,
+		Description:        defect.Description,
+		Severity:           defect.Severity,
+		Status:             defect.Status,
+		ResolutionSprintID: defect.ResolutionSprintID,
 	}
 }
 

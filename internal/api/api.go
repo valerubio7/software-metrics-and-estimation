@@ -107,6 +107,7 @@ type EffortDependencies struct {
 type DefectDependencies struct {
 	Repository defectapplication.DefectRepository
 	GenerateID defectapplication.IDGenerator
+	Updater    defectapplication.DefectUpdater // supplied only after migration 000014 is clean
 }
 
 // HTTPDependencies contains optional migration-backed API modules.
@@ -140,6 +141,8 @@ type MigrationReadiness struct {
 	Effort bool
 	// Defect is true for a clean schema at version 13 or later (defects from migration 000013).
 	Defect bool
+	// DefectUpdate is true for a clean schema at version 14 or later (resolution Sprint).
+	DefectUpdate bool
 }
 
 // ResolveMigrationReadiness keeps project creation available while gating schema-backed routes.
@@ -159,6 +162,7 @@ func ResolveMigrationReadiness(version int, dirty bool, lookupErr error) Migrati
 	readiness.SprintHistory = version >= 11
 	readiness.Effort = version >= 12
 	readiness.Defect = version >= 13
+	readiness.DefectUpdate = version >= 14
 	return readiness
 }
 
@@ -261,6 +265,10 @@ func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, ge
 	if dependencies.Defect != nil {
 		registerDefectUseCase := defectapplication.NewRegisterDefectUseCase(dependencies.Defect.Repository, dependencies.Defect.GenerateID)
 		mux.Handle("POST /projects/{project_id}/defects", defecthttp.NewRegisterDefectHandler(registerDefectUseCase))
+		if dependencies.Defect.Updater != nil {
+			updateDefectUseCase := defectapplication.NewUpdateDefectUseCase(dependencies.Defect.Updater)
+			mux.Handle("PATCH /projects/{project_id}/defects/{defect_id}", defecthttp.NewUpdateDefectHandler(updateDefectUseCase))
+		}
 	}
 	return mux
 }
