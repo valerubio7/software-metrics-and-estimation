@@ -11,6 +11,8 @@ import (
 	defecthttp "github.com/valerubio7/software-metrics-and-estimation/internal/defect/transport/http"
 	effortapplication "github.com/valerubio7/software-metrics-and-estimation/internal/effort/application"
 	efforthttp "github.com/valerubio7/software-metrics-and-estimation/internal/effort/transport/http"
+	metricsapplication "github.com/valerubio7/software-metrics-and-estimation/internal/metrics/application"
+	metricshttp "github.com/valerubio7/software-metrics-and-estimation/internal/metrics/transport/http"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/project/application"
 	transporthttp "github.com/valerubio7/software-metrics-and-estimation/internal/project/transport/http"
 	memberapplication "github.com/valerubio7/software-metrics-and-estimation/internal/projectmember/application"
@@ -110,6 +112,11 @@ type DefectDependencies struct {
 	Updater    defectapplication.DefectUpdater // supplied only after migration 000014 is clean
 }
 
+// MetricsDependencies enables read-only project and Sprint metrics after migration 000014 is clean.
+type MetricsDependencies struct {
+	Reader metricsapplication.MetricsReader
+}
+
 // HTTPDependencies contains optional migration-backed API modules.
 type HTTPDependencies struct {
 	Stories *StoryDependencies
@@ -122,6 +129,8 @@ type HTTPDependencies struct {
 	Effort *EffortDependencies
 	// Defect nil: the defect registration route is not registered (the mux answers 404).
 	Defect *DefectDependencies
+	// Metrics nil: both metrics routes are not registered (the mux answers 404).
+	Metrics *MetricsDependencies
 }
 
 // MigrationReadiness describes which handlers are safe to compose for a schema state.
@@ -143,6 +152,8 @@ type MigrationReadiness struct {
 	Defect bool
 	// DefectUpdate is true for a clean schema at version 14 or later (resolution Sprint).
 	DefectUpdate bool
+	// Metrics is true for a clean schema at version 14 or later (resolution Sprint and defects).
+	Metrics bool
 }
 
 // ResolveMigrationReadiness keeps project creation available while gating schema-backed routes.
@@ -163,6 +174,7 @@ func ResolveMigrationReadiness(version int, dirty bool, lookupErr error) Migrati
 	readiness.Effort = version >= 12
 	readiness.Defect = version >= 13
 	readiness.DefectUpdate = version >= 14
+	readiness.Metrics = version >= 14
 	return readiness
 }
 
@@ -269,6 +281,12 @@ func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, ge
 			updateDefectUseCase := defectapplication.NewUpdateDefectUseCase(dependencies.Defect.Updater)
 			mux.Handle("PATCH /projects/{project_id}/defects/{defect_id}", defecthttp.NewUpdateDefectHandler(updateDefectUseCase))
 		}
+	}
+	if dependencies.Metrics != nil {
+		readMetricsUseCase := metricsapplication.NewReadMetricsUseCase(dependencies.Metrics.Reader)
+		metricsHandler := metricshttp.NewMetricsHandler(readMetricsUseCase)
+		mux.Handle("GET /projects/{project_id}/metrics", metricsHandler)
+		mux.Handle("GET /projects/{project_id}/sprints/{sprint_id}/metrics", metricsHandler)
 	}
 	return mux
 }
