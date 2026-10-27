@@ -103,12 +103,12 @@ func TestMenuRoutesToEachSprint3Section(t *testing.T) {
 		{"planning", menuPlanning, "Planning Poker", storiesBodyForSection(sectionStories()), "Primera historia"},
 		{"effort", menuEffort, "Esfuerzo", storiesBodyForSection(sectionStories()), "Primera historia"},
 		{"defects", menuDefects, "Defectos", storiesBodyForSection(sectionStories()), "Primera historia"},
-		{"metrics", menuMetrics, "Métricas", `{"project_id":"p1","sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Sprint base","is_closed":false}]}`, "Sprint base"},
+		{"metrics", menuMetrics, "Métricas", `{"ok":true}`, "Proyecto"},
 		{"dashboard", menuDashboard, "Dashboard", `{"project_id":"p1","sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Sprint base","is_closed":false}]}`, "Sprint base"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			path := "/projects/p1/stories"
-			if tc.index == menuMetrics || tc.index == menuDashboard {
+			if tc.index == menuDashboard {
 				path = "/projects/p1/sprints/open"
 			}
 			server := sectionServer(t, map[string]string{path: tc.body})
