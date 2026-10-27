@@ -51,6 +51,65 @@ func TestDefectRepositoryPersistsDefect(t *testing.T) {
 	}
 }
 
+func TestDefectRepositoryListsProjectDefectsWithResolutionSprint(t *testing.T) {
+	pool := seededDefectDatabase(t)
+	applyDefectMigration(t, pool, defectResolutionMigrationVersion, "up")
+	repository := defectpostgres.NewPostgresDefectRepository(pool)
+	ctx := context.Background()
+
+	if err := repository.Create(ctx, defectof(t, defectRecordID, defectProjectAID, defectStoryID, defectSprintID)); err != nil {
+		t.Fatalf("Create open defect: %v", err)
+	}
+	resolved := defectof(t, defectRecordID2, defectProjectAID, defectBacklogStoryID, defectSprintID)
+	resolved.Description = "Resolved defect"
+	resolved.Status = "resuelto"
+	resolved.ResolutionSprintID = defectSprintID
+	if err := repository.Create(ctx, resolved); err != nil {
+		t.Fatalf("Create resolved defect: %v", err)
+	}
+	if err := repository.Create(ctx, defectof(t, defectRecordID3, defectProjectBID, defectStoryBID, defectSprintBID)); err != nil {
+		t.Fatalf("Create other-project defect: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE defects SET status = 'resuelto', resolution_sprint_id = $2 WHERE id = $1`, defectRecordID2, defectSprintID); err != nil {
+		t.Fatalf("set resolution Sprint: %v", err)
+	}
+
+	got, err := repository.ListByProject(ctx, defectProjectAID)
+	if err != nil {
+		t.Fatalf("ListByProject: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("listed defects = %d, want 2 project A records: %+v", len(got), got)
+	}
+	if got[0].ID != defectRecordID || got[0].Status != "detectado" || got[0].ResolutionSprintID != "" {
+		t.Errorf("open defect = %+v, want original status and no resolution Sprint", got[0])
+	}
+	if got[1].ID != defectRecordID2 || got[1].Description != "Resolved defect" || got[1].Status != "resuelto" || got[1].ResolutionSprintID != defectSprintID {
+		t.Errorf("resolved defect = %+v, want resolution Sprint and stored fields", got[1])
+	}
+}
+
+func TestDefectRepositoryListsEmptyExistingProject(t *testing.T) {
+	pool := seededDefectDatabase(t)
+	applyDefectMigration(t, pool, defectResolutionMigrationVersion, "up")
+	got, err := defectpostgres.NewPostgresDefectRepository(pool).ListByProject(context.Background(), defectProjectAID)
+	if err != nil {
+		t.Fatalf("ListByProject: %v", err)
+	}
+	if got == nil || len(got) != 0 {
+		t.Errorf("listed defects = %#v, want non-nil empty slice", got)
+	}
+}
+
+func TestDefectRepositoryListsUnknownProjectAsNotFound(t *testing.T) {
+	pool := seededDefectDatabase(t)
+	applyDefectMigration(t, pool, defectResolutionMigrationVersion, "up")
+	_, err := defectpostgres.NewPostgresDefectRepository(pool).ListByProject(context.Background(), unknownProjectID)
+	if !errors.Is(err, application.ErrProjectNotFound) {
+		t.Fatalf("ListByProject error = %v, want ErrProjectNotFound", err)
+	}
+}
+
 func TestDefectRepositoryReferencePrecedence(t *testing.T) {
 	pool := seededDefectDatabase(t)
 	repository := defectpostgres.NewPostgresDefectRepository(pool)

@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/valerubio7/software-metrics-and-estimation/internal/defect/application"
@@ -44,6 +45,10 @@ const (
 	updateDefectQuery = `
 		UPDATE defects SET status = $3, resolution_sprint_id = $4
 		WHERE id = $1 AND project_id = $2
+	`
+	listDefectsByProjectQuery = `
+		SELECT id, project_id, story_id, sprint_id, description, severity, status, resolution_sprint_id
+		FROM defects WHERE project_id = $1 ORDER BY seq
 	`
 )
 
@@ -140,6 +145,44 @@ func (r *PostgresDefectRepository) Update(ctx context.Context, command applicati
 	return defect, nil
 }
 
+// ListByProject returns defects for an existing project in registration order. The empty
+// resolution Sprint is represented by a NULL database value and remains empty in the domain.
+func (r *PostgresDefectRepository) ListByProject(ctx context.Context, projectID string) ([]domain.Defect, error) {
+	var projectExists bool
+	if err := r.pool.QueryRow(ctx, projectExistsQuery, projectID).Scan(&projectExists); err != nil {
+		return nil, err
+	}
+	if !projectExists {
+		return nil, application.ErrProjectNotFound
+	}
+
+	rows, err := r.pool.Query(ctx, listDefectsByProjectQuery, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	defects := make([]domain.Defect, 0)
+	for rows.Next() {
+		var defect domain.Defect
+		var resolutionSprintID pgtype.Text
+		if err := rows.Scan(
+			&defect.ID, &defect.ProjectID, &defect.StoryID, &defect.SprintID,
+			&defect.Description, &defect.Severity, &defect.Status, &resolutionSprintID,
+		); err != nil {
+			return nil, err
+		}
+		if resolutionSprintID.Valid {
+			defect.ResolutionSprintID = resolutionSprintID.String
+		}
+		defects = append(defects, defect)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return defects, nil
+}
+
 // requireRow runs a single-row locking query and returns missing when it matches no row.
 func requireRow(ctx context.Context, tx pgx.Tx, missing error, query string, args ...any) error {
 	var row int
@@ -172,3 +215,4 @@ func MapConstraintError(err error) error {
 }
 
 var _ application.DefectRepository = (*PostgresDefectRepository)(nil)
+var _ application.DefectLister = (*PostgresDefectRepository)(nil)
