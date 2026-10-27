@@ -82,6 +82,7 @@ const (
 	sectionStepMembers
 	sectionStepTasks
 	sectionStepSprints
+	sectionStepMetricsScope
 	sectionStepNotice
 )
 
@@ -121,6 +122,12 @@ func (m Model) openSection(kind sectionKind) (Model, tea.Cmd) {
 	m.section.detail = selectorItem{}
 	m.section.notice = ""
 	m.section.selector = selector{}
+	if kind == sectionMetrics {
+		m.section.step = sectionStepMetricsScope
+		m.section.selector.setItems([]selectorItem{{ID: "project", Label: "Proyecto"}, {ID: "sprint", Label: "Sprint"}})
+		m.section.primary = m.section.selector
+		return m, func() tea.Msg { return nil }
+	}
 	m.section.selector.startLoading()
 	m.section.primary = m.section.selector
 	return m, m.loadSectionStepCmd()
@@ -255,6 +262,16 @@ func (m Model) chooseSectionItem() (Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if m.section.kind == sectionMetrics && m.section.step == sectionStepMetricsScope {
+		m.section.selected = item
+		if item.ID == "sprint" {
+			return m.beginSectionStep(sectionStepSprints)
+		}
+		m.section.noticeReturn = sectionStepMetricsScope
+		m.section.step = sectionStepNotice
+		m.section.notice = "Alcance: Proyecto\n\nLa recuperación de métricas está pendiente de la integración US-19.\nNo se guardó ningún dato."
+		return m, nil
+	}
 	if m.section.step == sectionStepPrimary {
 		m.section.selected = item
 		m.section.primary = m.section.selector
@@ -309,7 +326,7 @@ func sectionNotice(kind sectionKind, primary, detail selectorItem) string {
 	case sectionDefects:
 		return fmt.Sprintf("Historia: %s\nSprint de detección: %s\n\nEl alta de defectos estará disponible en TUI-09.\nNo se guardó ningún dato.", primary.Label, detail.Label)
 	case sectionMetrics:
-		return fmt.Sprintf("Sprint: %s\n\nLas métricas estarán disponibles en TUI-10.\nNo se guardó ningún dato.", primary.Label)
+		return fmt.Sprintf("Alcance: Sprint %s\n\nLa recuperación de métricas está pendiente de la integración US-19.\nNo se guardó ningún dato.", detail.Label)
 	case sectionDashboard:
 		return fmt.Sprintf("Sprint: %s\n\nEl Dashboard estará disponible en TUI-11.\nNo se guardó ningún dato.", primary.Label)
 	default:
@@ -319,6 +336,9 @@ func sectionNotice(kind sectionKind, primary, detail selectorItem) string {
 
 func (m Model) viewSection() string {
 	switch m.section.step {
+	case sectionStepMetricsScope:
+		return m.viewSelector(&m.section.selector, "Métricas · Alcance",
+			"Elegí el alcance de las métricas.", "No hay alcances disponibles.", "")
 	case sectionStepPrimary:
 		return m.viewSelector(&m.section.selector, m.section.kind.title(), m.section.kind.primaryHint(),
 			m.section.kind.primaryEmptyTitle(), m.section.kind.primaryEmptyHint())

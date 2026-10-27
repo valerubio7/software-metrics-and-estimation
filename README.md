@@ -66,13 +66,14 @@ abren directamente su pantalla principal y encadenan selectores según el flujo:
 | Planning Poker | historia → integrante                           | TUI-07       |
 | Esfuerzo       | historia → tarea                                | TUI-08       |
 | Defectos       | historia → Sprint                               | TUI-09       |
-| Métricas       | Sprint                                          | TUI-10       |
+| Métricas       | alcance (Proyecto o Sprint); Sprint abre el selector existente | TUI-10 |
 | Dashboard      | Sprint                                          | TUI-11       |
 
 Estas pantallas son *shells* de navegación de solo lectura: consultan la API con
 `GET`, muestran estados de carga, vacío y error, y terminan con un aviso de la
-historia que implementará el flujo de negocio. No crean, modifican ni eliminan
-datos. Si no hay proyecto activo, la sección abre primero el navegador de
+historia que implementará el flujo de negocio. Métricas permite elegir alcance
+Proyecto o Sprint, pero la recuperación de métricas para ambos queda pendiente
+de la integración US-19. No crean, modifican ni eliminan datos. Si no hay proyecto activo, la sección abre primero el navegador de
 proyectos; el atajo `p` permite cambiarlo sin salir de la sección.
 
 Lecturas nuevas usadas por los selectores:

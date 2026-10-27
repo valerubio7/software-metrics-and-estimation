@@ -199,13 +199,57 @@ func TestDefectsFlowChoosesStoryAndSprintThenShowsTheTUI09Notice(t *testing.T) {
 	}
 }
 
+func TestMetricsScopeSelection(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		keys []tea.KeyMsg
+		want []string
+	}{
+		{
+			name: "project",
+			keys: []tea.KeyMsg{{Type: tea.KeyEnter}},
+			want: []string{"Proyecto", "US-19", "pendiente"},
+		},
+		{
+			name: "sprint",
+			keys: []tea.KeyMsg{{Type: tea.KeyDown}, {Type: tea.KeyEnter}},
+			want: []string{"Sprint de métricas", "US-19", "pendiente"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := metricsServer(t)
+			m := openSectionWithProject(t, server.URL, "p1", menuMetrics)
+			view := stripANSI(m.View())
+			if !strings.Contains(view, "Proyecto") || !strings.Contains(view, "Sprint") {
+				t.Fatalf("metrics scope selector should offer project and Sprint: %q", view)
+			}
+			var cmd tea.Cmd
+			for _, key := range tc.keys {
+				m, cmd = apply(m, key)
+			}
+			if tc.name == "sprint" {
+				if cmd == nil {
+					t.Fatal("Sprint scope should load the existing Sprint selector")
+				}
+				m = run(t, m, cmd)
+				m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+			}
+			view = stripANSI(m.View())
+			for _, want := range tc.want {
+				if !strings.Contains(view, want) {
+					t.Errorf("view lacks %q: %q", want, view)
+				}
+			}
+		})
+	}
+}
+
 func TestMetricsAndDashboardShowTheirFutureNoticeAfterChoosingASprint(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		index int
 		issue string
 	}{
-		{"metrics", menuMetrics, "TUI-10"},
 		{"dashboard", menuDashboard, "TUI-11"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
