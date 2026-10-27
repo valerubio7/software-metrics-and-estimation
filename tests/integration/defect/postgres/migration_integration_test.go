@@ -37,8 +37,9 @@ const defectBacklogStoryID = "2b5b1f6c-4d90-4e3f-9a7c-8c3d4e5f6071"
 const unknownStoryID = "70a06eb1-92e5-4384-8fc1-d18293a4b5c6"
 
 const (
-	defectMigrationVersion = "000013"
-	lastPreDefectMigration = 12
+	defectMigrationVersion           = "000013"
+	defectResolutionMigrationVersion = "000014"
+	lastPreDefectMigration           = 12
 
 	defectStoryProjectFKey  = "defects_story_project_fkey"
 	defectSprintProjectFKey = "defects_sprint_project_fkey"
@@ -104,6 +105,28 @@ func TestDefectMigrationCanBeReapplied(t *testing.T) {
 	insertDefect(t, pool, defectRecordID, defectProjectAID, defectStoryID, defectSprintID)
 	if got := defectCount(t, pool); got != 1 {
 		t.Errorf("defects rows after reapplied up = %d, want 1", got)
+	}
+}
+
+func TestDefectResolutionMigrationAddsAndRemovesReference(t *testing.T) {
+	pool := defectDatabase(t)
+	seedDefectParents(t, pool)
+	insertDefect(t, pool, defectRecordID, defectProjectAID, defectStoryID, defectSprintID)
+
+	applyDefectMigration(t, pool, defectResolutionMigrationVersion, "up")
+	if !columnExists(t, pool, "defects", "resolution_sprint_id") {
+		t.Fatal("resolution_sprint_id column not found after migration 000014")
+	}
+	if got := defectCount(t, pool); got != 1 {
+		t.Fatalf("defects rows after migration up = %d, want existing row preserved", got)
+	}
+
+	applyDefectMigration(t, pool, defectResolutionMigrationVersion, "down")
+	if columnExists(t, pool, "defects", "resolution_sprint_id") {
+		t.Fatal("resolution_sprint_id column remains after migration down")
+	}
+	if got := defectCount(t, pool); got != 1 {
+		t.Errorf("defects rows after migration down = %d, want existing row preserved", got)
 	}
 }
 
@@ -387,6 +410,20 @@ func relationExists(t *testing.T, pool *pgxpool.Pool, name string) bool {
 	var exists bool
 	if err := pool.QueryRow(context.Background(), "SELECT to_regclass($1) IS NOT NULL", name).Scan(&exists); err != nil {
 		t.Fatalf("inspect relation %s: %v", name, err)
+	}
+	return exists
+}
+
+func columnExists(t *testing.T, pool *pgxpool.Pool, table, column string) bool {
+	t.Helper()
+	var exists bool
+	if err := pool.QueryRow(context.Background(), `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema = current_schema() AND table_name = $1 AND column_name = $2
+		)
+	`, table, column).Scan(&exists); err != nil {
+		t.Fatalf("check column %s.%s: %v", table, column, err)
 	}
 	return exists
 }

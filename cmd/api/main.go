@@ -127,11 +127,18 @@ func main() {
 		log.Printf("effort registration unavailable until migration 000012 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}
 	if readiness := api.ResolveMigrationReadiness(version, dirty, migrationErr); readiness.Defect {
+		defectRepository := defectpostgres.NewPostgresDefectRepository(pool)
 		dependencies.Defect = &api.DefectDependencies{
-			Repository: defectpostgres.NewPostgresDefectRepository(pool),
+			Repository: defectRepository,
 			GenerateID: api.NewProjectID,
 		}
 		log.Printf("defect registration available (schema version=%d)", version)
+		if readiness.DefectUpdate {
+			dependencies.Defect.Updater = defectRepository
+			log.Printf("defect status updates available (schema version=%d)", version)
+		} else {
+			log.Printf("defect status updates unavailable until migration 000014 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
+		}
 	} else {
 		log.Printf("defect registration unavailable until migration 000013 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}
