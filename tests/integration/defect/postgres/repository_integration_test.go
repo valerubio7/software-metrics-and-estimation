@@ -23,7 +23,7 @@ const (
 
 func seededDefectDatabase(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	pool := defectDatabase(t)
+	pool := defectDatabaseAtVersion(t, 14)
 	seedDefectParents(t, pool)
 	return pool
 }
@@ -48,6 +48,65 @@ func TestDefectRepositoryPersistsDefect(t *testing.T) {
 	}
 	if got := defectCount(t, pool); got != 1 {
 		t.Errorf("defects rows = %d, want 1", got)
+	}
+}
+
+func TestDefectRepositoryListsProjectDefectsWithResolutionSprint(t *testing.T) {
+	pool := seededDefectDatabase(t)
+	applyDefectMigration(t, pool, defectResolutionMigrationVersion, "up")
+	repository := defectpostgres.NewPostgresDefectRepository(pool)
+	ctx := context.Background()
+
+	if err := repository.Create(ctx, defectof(t, defectRecordID, defectProjectAID, defectStoryID, defectSprintID)); err != nil {
+		t.Fatalf("Create open defect: %v", err)
+	}
+	resolved := defectof(t, defectRecordID2, defectProjectAID, defectBacklogStoryID, defectSprintID)
+	resolved.Description = "Resolved defect"
+	resolved.Status = "resuelto"
+	resolved.ResolutionSprintID = defectSprintID
+	if err := repository.Create(ctx, resolved); err != nil {
+		t.Fatalf("Create resolved defect: %v", err)
+	}
+	if err := repository.Create(ctx, defectof(t, defectRecordID3, defectProjectBID, defectStoryBID, defectSprintBID)); err != nil {
+		t.Fatalf("Create other-project defect: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE defects SET status = 'resuelto', resolution_sprint_id = $2 WHERE id = $1`, defectRecordID2, defectSprintID); err != nil {
+		t.Fatalf("set resolution Sprint: %v", err)
+	}
+
+	got, err := repository.ListByProject(ctx, defectProjectAID)
+	if err != nil {
+		t.Fatalf("ListByProject: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("listed defects = %d, want 2 project A records: %+v", len(got), got)
+	}
+	if got[0].ID != defectRecordID || got[0].Status != "detectado" || got[0].ResolutionSprintID != "" {
+		t.Errorf("open defect = %+v, want original status and no resolution Sprint", got[0])
+	}
+	if got[1].ID != defectRecordID2 || got[1].Description != "Resolved defect" || got[1].Status != "resuelto" || got[1].ResolutionSprintID != defectSprintID {
+		t.Errorf("resolved defect = %+v, want resolution Sprint and stored fields", got[1])
+	}
+}
+
+func TestDefectRepositoryListsEmptyExistingProject(t *testing.T) {
+	pool := seededDefectDatabase(t)
+	applyDefectMigration(t, pool, defectResolutionMigrationVersion, "up")
+	got, err := defectpostgres.NewPostgresDefectRepository(pool).ListByProject(context.Background(), defectProjectAID)
+	if err != nil {
+		t.Fatalf("ListByProject: %v", err)
+	}
+	if got == nil || len(got) != 0 {
+		t.Errorf("listed defects = %#v, want non-nil empty slice", got)
+	}
+}
+
+func TestDefectRepositoryListsUnknownProjectAsNotFound(t *testing.T) {
+	pool := seededDefectDatabase(t)
+	applyDefectMigration(t, pool, defectResolutionMigrationVersion, "up")
+	_, err := defectpostgres.NewPostgresDefectRepository(pool).ListByProject(context.Background(), unknownProjectID)
+	if !errors.Is(err, application.ErrProjectNotFound) {
+		t.Fatalf("ListByProject error = %v, want ErrProjectNotFound", err)
 	}
 }
 
@@ -154,6 +213,78 @@ func TestDefectRepositoryUnexpectedStorageErrorPassesThrough(t *testing.T) {
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) || pgErr.Message != "simulated storage failure" {
 		t.Errorf("storage error = %v, want the raw trigger failure", err)
+	}
+}
+
+func TestDefectRepositoryUpdatesResolutionAtomically(t *testing.T) {
+	pool := seededDefectDatabase(t)
+	ctx := context.Background()
+	repository := defectpostgres.NewPostgresDefectRepository(pool)
+	insertDefect(t, pool, defectRecordID, defectProjectAID, defectStoryID, defectSprintID)
+	resolutionSprintID := "6f9f8a10-0a15-4be4-9470-a63811a12233"
+	insertSprint(t, pool, resolutionSprintID, defectProjectAID)
+
+	updated, err := repository.Update(ctx, application.UpdateDefectCommand{
+		ProjectID: defectProjectAID, DefectID: defectRecordID, Status: "resuelto", ResolutionSprintID: resolutionSprintID,
+	})
+	if err != nil {
+		t.Fatalf("Update resolved defect: %v", err)
+	}
+	if updated.Status != "resuelto" || updated.ResolutionSprintID != resolutionSprintID {
+		t.Fatalf("updated defect = %+v, want resolved in %s", updated, resolutionSprintID)
+	}
+
+	if _, err := repository.Update(ctx, application.UpdateDefectCommand{
+		ProjectID: defectProjectAID, DefectID: defectRecordID, Status: "resuelto", ResolutionSprintID: defectSprintBID,
+	}); !errors.Is(err, application.ErrResolutionSprintNotFound) {
+		t.Fatalf("cross-project resolution Sprint error = %v, want ErrResolutionSprintNotFound", err)
+	}
+	assertStoredDefectState(t, pool, defectRecordID, "resuelto", resolutionSprintID)
+
+	if _, err := repository.Update(ctx, application.UpdateDefectCommand{
+		ProjectID: defectProjectAID, DefectID: "70b06eb1-92e5-4384-8fc1-d18293a4b5c9", Status: "detectado",
+	}); !errors.Is(err, application.ErrDefectNotFound) {
+		t.Fatalf("missing defect error = %v, want ErrDefectNotFound", err)
+	}
+
+	if _, err := repository.Update(ctx, application.UpdateDefectCommand{
+		ProjectID: defectProjectAID, DefectID: defectRecordID, Status: "en_correccion",
+	}); err != nil {
+		t.Fatalf("reopen defect: %v", err)
+	}
+	assertStoredDefectState(t, pool, defectRecordID, "en_correccion", "")
+}
+
+func TestDefectRepositoryRejectsResolutionSprintBeforeDetection(t *testing.T) {
+	pool := seededDefectDatabase(t)
+	earlierSprintID := "6f9f8a10-0a15-4be4-9470-a63811a12234"
+	detectionSprintID := "6f9f8a10-0a15-4be4-9470-a63811a12235"
+	insertSprint(t, pool, earlierSprintID, defectProjectAID)
+	insertSprint(t, pool, detectionSprintID, defectProjectAID)
+	insertDefect(t, pool, defectRecordID, defectProjectAID, defectStoryID, detectionSprintID)
+	repository := defectpostgres.NewPostgresDefectRepository(pool)
+
+	if _, err := repository.Update(context.Background(), application.UpdateDefectCommand{
+		ProjectID: defectProjectAID, DefectID: defectRecordID, Status: "resuelto", ResolutionSprintID: earlierSprintID,
+	}); !errors.Is(err, application.ErrResolutionSprintBeforeDetection) {
+		t.Fatalf("earlier resolution Sprint error = %v, want ErrResolutionSprintBeforeDetection", err)
+	}
+	assertStoredDefectState(t, pool, defectRecordID, "detectado", "")
+}
+
+func assertStoredDefectState(t *testing.T, pool *pgxpool.Pool, id, wantStatus, wantResolutionSprint string) {
+	t.Helper()
+	var status string
+	var resolutionSprint *string
+	if err := pool.QueryRow(context.Background(), "SELECT status, resolution_sprint_id::text FROM defects WHERE id = $1", id).Scan(&status, &resolutionSprint); err != nil {
+		t.Fatalf("read defect state: %v", err)
+	}
+	gotResolutionSprint := ""
+	if resolutionSprint != nil {
+		gotResolutionSprint = *resolutionSprint
+	}
+	if status != wantStatus || gotResolutionSprint != wantResolutionSprint {
+		t.Errorf("stored state = (%q, %q), want (%q, %q)", status, gotResolutionSprint, wantStatus, wantResolutionSprint)
 	}
 }
 
