@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-10-30
+goal: Corregir las pruebas de integración del listado de defectos (US-18), que
+  aplican dos veces la migración 000014 y fallan en main.
+skip_specs: true

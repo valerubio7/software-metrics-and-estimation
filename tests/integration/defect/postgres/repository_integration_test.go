@@ -53,7 +53,6 @@ func TestDefectRepositoryPersistsDefect(t *testing.T) {
 
 func TestDefectRepositoryListsProjectDefectsWithResolutionSprint(t *testing.T) {
 	pool := seededDefectDatabase(t)
-	applyDefectMigration(t, pool, defectResolutionMigrationVersion, "up")
 	repository := defectpostgres.NewPostgresDefectRepository(pool)
 	ctx := context.Background()
 
@@ -91,7 +90,6 @@ func TestDefectRepositoryListsProjectDefectsWithResolutionSprint(t *testing.T) {
 
 func TestDefectRepositoryListsEmptyExistingProject(t *testing.T) {
 	pool := seededDefectDatabase(t)
-	applyDefectMigration(t, pool, defectResolutionMigrationVersion, "up")
 	got, err := defectpostgres.NewPostgresDefectRepository(pool).ListByProject(context.Background(), defectProjectAID)
 	if err != nil {
 		t.Fatalf("ListByProject: %v", err)
@@ -103,7 +101,6 @@ func TestDefectRepositoryListsEmptyExistingProject(t *testing.T) {
 
 func TestDefectRepositoryListsUnknownProjectAsNotFound(t *testing.T) {
 	pool := seededDefectDatabase(t)
-	applyDefectMigration(t, pool, defectResolutionMigrationVersion, "up")
 	_, err := defectpostgres.NewPostgresDefectRepository(pool).ListByProject(context.Background(), unknownProjectID)
 	if !errors.Is(err, application.ErrProjectNotFound) {
 		t.Fatalf("ListByProject error = %v, want ErrProjectNotFound", err)
