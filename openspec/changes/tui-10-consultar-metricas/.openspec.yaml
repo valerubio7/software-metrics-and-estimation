@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-10-29
+goal: Mostrar métricas de forma legible, read-only y con manejo de datos
+  faltantes y errores.

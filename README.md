@@ -66,22 +66,27 @@ abren directamente su pantalla principal y encadenan selectores según el flujo:
 | Planning Poker | historia → integrante                           | TUI-07       |
 | Esfuerzo       | historia → tarea                                | TUI-08       |
 | Defectos       | historia → Sprint                               | TUI-09       |
-| Métricas       | alcance (Proyecto o Sprint); Sprint abre el selector existente | TUI-10 |
+| Métricas       | alcance (Proyecto o Sprint); presenta métricas devueltas por la API | — |
 | Dashboard      | Sprint                                          | TUI-11       |
 
-Estas pantallas son *shells* de navegación de solo lectura: consultan la API con
-`GET`, muestran estados de carga, vacío y error, y terminan con un aviso de la
-historia que implementará el flujo de negocio. Métricas permite elegir alcance
-Proyecto o Sprint, pero la recuperación de métricas para ambos queda pendiente
-de la integración US-19. No crean, modifican ni eliminan datos. Si no hay proyecto activo, la sección abre primero el navegador de
-proyectos; el atajo `p` permite cambiarlo sin salir de la sección.
+Las secciones de Planning Poker, Esfuerzo, Defectos y Dashboard son *shells* de
+navegación de solo lectura: consultan la API con `GET`, muestran estados de
+carga, vacío y error, y terminan con un aviso de la historia que implementará el
+flujo de negocio. Métricas consulta y presenta los valores de la API para el
+proyecto o Sprint seleccionado; no recalcula fórmulas y muestra «sin datos»
+cuando la API devuelve `null`. `r` vuelve a consultar el ámbito actual. Estas
+pantallas no crean, modifican ni eliminan datos. Si no hay proyecto activo, la
+sección abre primero el navegador de proyectos; el atajo `p` permite cambiarlo
+sin salir de la sección.
 
-Lecturas nuevas usadas por los selectores:
+Lecturas nuevas usadas por los selectores y métricas:
 
 | Método | Ruta                                              | Uso                    |
 | ------ | ------------------------------------------------- | ---------------------- |
 | `GET`  | `/projects/{project_id}/members`                  | Integrantes            |
 | `GET`  | `/projects/{project_id}/stories/{story_id}/tasks` | Tareas de una historia |
+| `GET`  | `/projects/{project_id}/metrics`                  | Métricas del proyecto |
+| `GET`  | `/projects/{project_id}/sprints/{sprint_id}/metrics` | Métricas del Sprint |
 
 ## API de esfuerzo
 

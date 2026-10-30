@@ -80,6 +80,7 @@ type Model struct {
 	taskField         int
 	taskClient        *TaskClient
 	memberClient      *MemberClient
+	metricsClient     *MetricsClient
 	section           sectionState
 	openSprints       []Sprint
 	sprintHistory     SprintHistory
@@ -107,8 +108,9 @@ func NewModel(apiURL string) Model {
 
 		backlogClient:     NewBacklogClient(apiURL),
 		storyPointsClient: NewStoryPointsClient(apiURL), sprintClient: NewSprintClient(apiURL),
-		taskClient:   NewTaskClient(apiURL),
-		memberClient: NewMemberClient(apiURL),
+		taskClient:    NewTaskClient(apiURL),
+		memberClient:  NewMemberClient(apiURL),
+		metricsClient: NewMetricsClient(apiURL),
 	}
 }
 
@@ -747,6 +749,8 @@ func (m Model) crumbParts() []string {
 			parts = append(parts, "Tareas")
 		case sectionStepSprints:
 			parts = append(parts, "Sprint")
+		case sectionStepMetricsResult:
+			parts = append(parts, "Valores")
 		case sectionStepNotice:
 			parts = append(parts, "Próximamente")
 		}

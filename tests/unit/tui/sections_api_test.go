@@ -37,6 +37,27 @@ func TestTaskClientListByStoryUsesReadOnlyStoryTasksRoute(t *testing.T) {
 	}
 }
 
+func TestMetricsClientUsesProjectAndSprintGETRoutes(t *testing.T) {
+	server, rec := recordingServer(t, http.StatusOK, `{"story_points_planned":0}`)
+	client := tui.NewMetricsClient(server.URL)
+	if _, err := client.Project(t.Context(), "p/1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Sprint(t.Context(), "p 1", "s/1"); err != nil {
+		t.Fatal(err)
+	}
+	requests := rec.all()
+	if len(requests) != 2 {
+		t.Fatalf("requests = %d, want 2", len(requests))
+	}
+	want := []string{"/projects/p%2F1/metrics", "/projects/p%201/sprints/s%2F1/metrics"}
+	for i, request := range requests {
+		if request.Method != http.MethodGet || request.Path != want[i] || len(request.Body) != 0 {
+			t.Errorf("request[%d] = %+v, want GET %s without body", i, request, want[i])
+		}
+	}
+}
+
 func TestSectionClientsEscapePathSegments(t *testing.T) {
 	server, rec := recordingServer(t, http.StatusOK, `{}`)
 	if _, err := tui.NewMemberClient(server.URL).List(t.Context(), "p/1"); err != nil {

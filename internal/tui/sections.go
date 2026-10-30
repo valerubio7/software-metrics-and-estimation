@@ -83,6 +83,7 @@ const (
 	sectionStepTasks
 	sectionStepSprints
 	sectionStepMetricsScope
+	sectionStepMetricsResult
 	sectionStepNotice
 )
 
@@ -90,22 +91,26 @@ const (
 // selector is preserved while a secondary selector is displayed, so Esc can
 // restore the previous list without another request.
 type sectionState struct {
-	kind         sectionKind
-	step         sectionStep
-	selector     selector
-	primary      selector
-	selected     selectorItem
-	detail       selectorItem
-	notice       string
-	noticeReturn sectionStep
+	kind             sectionKind
+	step             sectionStep
+	selector         selector
+	primary          selector
+	selected         selectorItem
+	detail           selectorItem
+	notice           string
+	noticeReturn     sectionStep
+	metrics          *Metrics
+	metricsScope     selector
+	metricsRequestID uint64
 }
 
 // SectionResultMsg is the asynchronous result of a section API read.
 type SectionResultMsg struct {
-	Kind     sectionKind
-	Step     sectionStep
-	Response APIResponse
-	Err      error
+	Kind      sectionKind
+	Step      sectionStep
+	RequestID uint64
+	Response  APIResponse
+	Err       error
 }
 
 // openSection enters a section directly, or asks for a project first when the
@@ -126,6 +131,7 @@ func (m Model) openSection(kind sectionKind) (Model, tea.Cmd) {
 		m.section.step = sectionStepMetricsScope
 		m.section.selector.setItems([]selectorItem{{ID: "project", Label: "Proyecto"}, {ID: "sprint", Label: "Sprint"}})
 		m.section.primary = m.section.selector
+		m.section.metricsScope = m.section.selector
 		return m, func() tea.Msg { return nil }
 	}
 	m.section.selector.startLoading()
@@ -171,6 +177,19 @@ func (m Model) loadSectionStepCmd() tea.Cmd {
 			response, err := client.ListOpen(context.Background(), projectID)
 			return SectionResultMsg{Kind: kind, Step: step, Response: response, Err: err}
 		}
+	case sectionStepMetricsResult:
+		client, scope, sprintID := m.metricsClient, m.section.selected.ID, m.selectedSprintID
+		requestID := m.section.metricsRequestID
+		return func() tea.Msg {
+			var response APIResponse
+			var err error
+			if scope == "sprint" {
+				response, err = client.Sprint(context.Background(), projectID, sprintID)
+			} else {
+				response, err = client.Project(context.Background(), projectID)
+			}
+			return SectionResultMsg{Kind: kind, Step: step, RequestID: requestID, Response: response, Err: err}
+		}
 	}
 	return nil
 }
@@ -180,7 +199,8 @@ func (m Model) loadSectionStepCmd() tea.Cmd {
 // navigation change.
 func (m Model) applySectionResult(result SectionResultMsg) (Model, tea.Cmd) {
 	if m.Screen != "section" || m.section.kind != result.Kind ||
-		m.section.step != result.Step || !m.section.selector.loading {
+		m.section.step != result.Step || !m.section.selector.loading ||
+		(result.Step == sectionStepMetricsResult && result.RequestID != m.section.metricsRequestID) {
 		return m, nil
 	}
 
@@ -192,6 +212,16 @@ func (m Model) applySectionResult(result SectionResultMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if result.Step == sectionStepMetricsResult {
+		metrics, err := decodeMetrics(result.Response.Body)
+		if err != nil {
+			m.section.selector.fail("No se pudo interpretar la respuesta de la API: " + err.Error())
+			return m, nil
+		}
+		m.section.metrics = &metrics
+		m.section.selector.setItems(nil)
+		return m, nil
+	}
 	items, ok := sectionItems(result)
 	if !ok {
 		m.section.selector.fail("No se pudo interpretar la respuesta de la API.")
@@ -209,6 +239,25 @@ func (m Model) applySectionResult(result SectionResultMsg) (Model, tea.Cmd) {
 
 // updateSection drives the shared selector and the step transitions.
 func (m Model) updateSection(key tea.KeyMsg) (Model, tea.Cmd) {
+	if m.section.step == sectionStepMetricsResult {
+		if key.Type == tea.KeyEsc {
+			if m.section.selected.ID == "sprint" {
+				m.section.step = sectionStepSprints
+				m.section.selector = m.section.primary
+			} else {
+				m.section.step = sectionStepMetricsScope
+				m.section.selector = m.section.metricsScope
+			}
+			return m, nil
+		}
+		if key.Type == tea.KeyRunes && string(key.Runes) == "r" {
+			m.section.metricsRequestID++
+			m.section.selector.startLoading()
+			m.section.metrics = nil
+			return m, m.loadSectionStepCmd()
+		}
+		return m, nil
+	}
 	if m.section.step == sectionStepNotice {
 		if key.Type == tea.KeyEsc || key.Type == tea.KeyEnter {
 			// The selector still holds the list that produced the notice, so
@@ -236,6 +285,11 @@ func (m Model) updateSection(key tea.KeyMsg) (Model, tea.Cmd) {
 	action := m.section.selector.update(key)
 	switch action {
 	case selectorBack:
+		if m.section.kind == sectionMetrics && m.section.step == sectionStepSprints {
+			m.section.step = sectionStepMetricsScope
+			m.section.selector = m.section.metricsScope
+			return m, nil
+		}
 		if m.section.step == sectionStepPrimary {
 			m.Screen, m.Cursor = "menu", 0
 			return m, nil
@@ -265,12 +319,17 @@ func (m Model) chooseSectionItem() (Model, tea.Cmd) {
 	if m.section.kind == sectionMetrics && m.section.step == sectionStepMetricsScope {
 		m.section.selected = item
 		if item.ID == "sprint" {
+			m.section.metricsScope = m.section.selector
 			return m.beginSectionStep(sectionStepSprints)
 		}
-		m.section.noticeReturn = sectionStepMetricsScope
-		m.section.step = sectionStepNotice
-		m.section.notice = "Alcance: Proyecto\n\nLa recuperación de métricas está pendiente de la integración US-19.\nNo se guardó ningún dato."
-		return m, nil
+		m.section.primary = m.section.selector
+		return m.beginSectionStep(sectionStepMetricsResult)
+	}
+	if m.section.kind == sectionMetrics && m.section.step == sectionStepSprints {
+		m.section.primary = m.section.selector
+		m.selectedSprintID = item.ID
+		m.section.selected = selectorItem{ID: "sprint", Label: item.Label}
+		return m.beginSectionStep(sectionStepMetricsResult)
 	}
 	if m.section.step == sectionStepPrimary {
 		m.section.selected = item
@@ -310,6 +369,9 @@ func (m Model) chooseSectionItem() (Model, tea.Cmd) {
 
 func (m Model) beginSectionStep(step sectionStep) (Model, tea.Cmd) {
 	m.section.step = step
+	if step == sectionStepMetricsResult {
+		m.section.metricsRequestID++
+	}
 	m.section.selector = selector{}
 	m.section.selector.startLoading()
 	return m, m.loadSectionStepCmd()
@@ -339,6 +401,8 @@ func (m Model) viewSection() string {
 	case sectionStepMetricsScope:
 		return m.viewSelector(&m.section.selector, "Métricas · Alcance",
 			"Elegí el alcance de las métricas.", "No hay alcances disponibles.", "")
+	case sectionStepMetricsResult:
+		return m.viewMetrics()
 	case sectionStepPrimary:
 		return m.viewSelector(&m.section.selector, m.section.kind.title(), m.section.kind.primaryHint(),
 			m.section.kind.primaryEmptyTitle(), m.section.kind.primaryEmptyHint())
@@ -519,6 +583,9 @@ func sectionFailure(err error, response APIResponse) string {
 func (m Model) sectionFooter() string {
 	if m.section.step == sectionStepNotice {
 		return m.keyHints("Enter/Esc", "volver", "?", "ayuda", "q", "salir")
+	}
+	if m.section.step == sectionStepMetricsResult {
+		return m.keyHints("r", "refrescar", "Esc", "volver", "?", "ayuda", "q", "salir")
 	}
 	if m.section.selector.filtering {
 		return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
