@@ -60,6 +60,7 @@ type Model struct {
 	backlogClient        *BacklogClient
 	storyPointsClient    *StoryPointsClient
 	sprintClient         *SprintClient
+	metricsClient        *MetricsClient
 	sprintCursor         int
 	historyCursor        int
 	historyExpanded      string
@@ -107,8 +108,9 @@ func NewModel(apiURL string) Model {
 
 		backlogClient:     NewBacklogClient(apiURL),
 		storyPointsClient: NewStoryPointsClient(apiURL), sprintClient: NewSprintClient(apiURL),
-		taskClient:   NewTaskClient(apiURL),
-		memberClient: NewMemberClient(apiURL),
+		metricsClient: NewMetricsClient(apiURL),
+		taskClient:    NewTaskClient(apiURL),
+		memberClient:  NewMemberClient(apiURL),
 	}
 }
 
