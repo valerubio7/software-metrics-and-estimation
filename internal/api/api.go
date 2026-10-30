@@ -110,6 +110,7 @@ type DefectDependencies struct {
 	Repository defectapplication.DefectRepository
 	GenerateID defectapplication.IDGenerator
 	Updater    defectapplication.DefectUpdater // supplied only after migration 000014 is clean
+	Lister     defectapplication.DefectLister  // supplied only after migration 000014 is clean
 }
 
 // MetricsDependencies enables read-only project and Sprint metrics after migration 000014 is clean.
@@ -152,6 +153,8 @@ type MigrationReadiness struct {
 	Defect bool
 	// DefectUpdate is true for a clean schema at version 14 or later (resolution Sprint).
 	DefectUpdate bool
+	// DefectList is true for a clean schema at version 14 or later (nullable resolution Sprint).
+	DefectList bool
 	// Metrics is true for a clean schema at version 14 or later (resolution Sprint and defects).
 	Metrics bool
 }
@@ -174,6 +177,7 @@ func ResolveMigrationReadiness(version int, dirty bool, lookupErr error) Migrati
 	readiness.Effort = version >= 12
 	readiness.Defect = version >= 13
 	readiness.DefectUpdate = version >= 14
+	readiness.DefectList = version >= 14
 	readiness.Metrics = version >= 14
 	return readiness
 }
@@ -280,6 +284,10 @@ func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, ge
 		if dependencies.Defect.Updater != nil {
 			updateDefectUseCase := defectapplication.NewUpdateDefectUseCase(dependencies.Defect.Updater)
 			mux.Handle("PATCH /projects/{project_id}/defects/{defect_id}", defecthttp.NewUpdateDefectHandler(updateDefectUseCase))
+		}
+		if dependencies.Defect.Lister != nil {
+			listDefectsUseCase := defectapplication.NewListDefectsUseCase(dependencies.Defect.Lister)
+			mux.Handle("GET /projects/{project_id}/defects", defecthttp.NewListDefectsHandler(listDefectsUseCase))
 		}
 	}
 	if dependencies.Metrics != nil {

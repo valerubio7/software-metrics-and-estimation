@@ -29,12 +29,19 @@ func startSection(url string, index int) (tui.Model, tea.Cmd) {
 }
 
 // openSectionWithProject goes menu -> section -> picker -> pid -> Enter and
-// applies the primary collection response.
+// applies the primary collection response when opening one. Metrics starts at
+// its scope selector without issuing a request.
 func openSectionWithProject(t *testing.T, url, pid string, index int) tui.Model {
 	t.Helper()
 	m, load := startSection(url, index)
 	m, cmd := confirmProjectInPicker(t, m, load, pid)
-	m = run(t, m, cmd)
+	if cmd == nil {
+		if index != menuMetrics {
+			t.Fatal("expected a command to load the section")
+		}
+	} else {
+		m = run(t, m, cmd)
+	}
 	if m.Screen != "section" {
 		t.Fatalf("Screen = %q after opening section %d, want section", m.Screen, index)
 	}
@@ -103,12 +110,12 @@ func TestMenuRoutesToEachSprint3Section(t *testing.T) {
 		{"planning", menuPlanning, "Planning Poker", storiesBodyForSection(sectionStories()), "Primera historia"},
 		{"effort", menuEffort, "Esfuerzo", storiesBodyForSection(sectionStories()), "Primera historia"},
 		{"defects", menuDefects, "Defectos", storiesBodyForSection(sectionStories()), "Primera historia"},
-		{"metrics", menuMetrics, "Métricas", `{"project_id":"p1","sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Sprint base","is_closed":false}]}`, "Sprint base"},
+		{"metrics", menuMetrics, "Métricas", `{"ok":true}`, "Proyecto"},
 		{"dashboard", menuDashboard, "Dashboard", `{"project_id":"p1","sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Sprint base","is_closed":false}]}`, "Sprint base"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			path := "/projects/p1/stories"
-			if tc.index == menuMetrics || tc.index == menuDashboard {
+			if tc.index == menuDashboard {
 				path = "/projects/p1/sprints/open"
 			}
 			server := sectionServer(t, map[string]string{path: tc.body})

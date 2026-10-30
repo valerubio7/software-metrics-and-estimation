@@ -126,6 +126,32 @@ historia relacionada y el Sprint de detección:
 | Método | Ruta                                    | Uso                                         |
 | ------ | --------------------------------------- | ------------------------------------------- |
 | `POST` | `/projects/{project_id}/defects`        | Registrar un defecto de un proyecto          |
+| `GET`  | `/projects/{project_id}/defects`        | Consultar los defectos del proyecto          |
+
+La consulta responde `200` con el proyecto y una lista `defects`. Cada elemento incluye
+`id`, `description`, `severity`, `status`, `story_id`, `sprint_id` (Sprint de detección) y
+`resolution_sprint_id` (Sprint de resolución o `null` si sigue sin resolverse). Si el proyecto
+no tiene defectos, `defects` es un arreglo vacío:
+
+```json
+{
+  "project_id": "<uuid>",
+  "defects": [
+    {
+      "id": "<uuid>",
+      "description": "El login acepta contraseñas vacías",
+      "severity": "alta",
+      "status": "detectado",
+      "story_id": "<uuid>",
+      "sprint_id": "<uuid>",
+      "resolution_sprint_id": null
+    }
+  ]
+}
+```
+
+Un `project_id` con formato inválido responde `422 validation_failed`; un proyecto inexistente
+responde `404 project_not_found`. La lectura no modifica defectos.
 
 Cuerpo (JSON, solo estas claves):
 
@@ -151,10 +177,11 @@ Cuerpo (JSON, solo estas claves):
   asignado es válida, igual que un defecto detectado en un Sprint cerrado.
 - `500 internal_error`: fallo de almacenamiento, sin detalles internos; no se persiste nada.
 
-Se permiten defectos duplicados (mismos valores en los cinco campos). La ruta solo existe
-cuando el esquema está limpio en la versión 13 o superior (migración `000013`); con una
-versión menor, o en estado `dirty`, responde `404`. Esta capacidad solo registra: no lista,
-edita ni elimina defectos, y la resolución con Sprint de resolución es US-17.
+Se permiten defectos duplicados (mismos valores en los cinco campos). El registro solo está
+disponible cuando el esquema está limpio en la versión 13 o superior (migración `000013`); la
+consulta requiere la versión 14 o superior (migración `000014`) para incluir el Sprint de
+resolución. En una versión menor, o en estado `dirty`, la ruta correspondiente responde `404`.
+El registro y la consulta no eliminan defectos; la actualización de estado y resolución es US-17.
 
 ## API de métricas
 
