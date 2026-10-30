@@ -183,6 +183,121 @@ consulta requiere la versión 14 o superior (migración `000014`) para incluir e
 resolución. En una versión menor, o en estado `dirty`, la ruta correspondiente responde `404`.
 El registro y la consulta no eliminan defectos; la actualización de estado y resolución es US-17.
 
+## API de métricas
+
+Consulta métricas de solo lectura por proyecto o por Sprint:
+
+```http
+GET  /projects/{project_id}/metrics
+GET  /projects/{project_id}/sprints/{sprint_id}/metrics
+HEAD /projects/{project_id}/metrics
+HEAD /projects/{project_id}/sprints/{sprint_id}/metrics
+```
+
+`GET` responde `200` con las métricas en el nivel raíz (sin contenedor). `HEAD` ejecuta la
+misma consulta y devuelve el mismo estado y encabezados, sin cuerpo. La respuesta conserva
+`project_id`, `sprint_id`, `story_points_planned`, `story_points_completed`, `velocity`,
+`estimated_hours`, `actual_hours`, `deviation`, `completed_stories_percentage`,
+`defects_detected` y `defects_resolved`; agrega `deviation_percentage` y `coverage`.
+
+Ejemplo de proyecto:
+
+```json
+{
+  "project_id": "11111111-1111-4111-8111-111111111111",
+  "sprint_id": null,
+  "story_points_planned": 8,
+  "story_points_completed": 5,
+  "velocity": 4,
+  "estimated_hours": 9,
+  "actual_hours": 5,
+  "deviation": -4,
+  "deviation_percentage": -44.44444444444444,
+  "completed_stories_percentage": 50,
+  "defects_detected": 2,
+  "defects_resolved": 1,
+  "coverage": {
+    "story_points_planned": {"missing_observations": 0},
+    "story_points_completed": {"missing_observations": 0},
+    "velocity": {"missing_observations": 0},
+    "estimated_hours": {"missing_observations": 0},
+    "actual_hours": {
+      "stories_without_records": 1,
+      "unattributed_story_level_records": 0
+    }
+  }
+}
+```
+
+Ejemplo de Sprint:
+
+```json
+{
+  "project_id": "11111111-1111-4111-8111-111111111111",
+  "sprint_id": "22222222-2222-4222-8222-222222222222",
+  "story_points_planned": 5,
+  "story_points_completed": 5,
+  "velocity": 5,
+  "estimated_hours": 2,
+  "actual_hours": 3,
+  "deviation": 1,
+  "deviation_percentage": 50,
+  "completed_stories_percentage": 100,
+  "defects_detected": 1,
+  "defects_resolved": 0,
+  "coverage": {
+    "story_points_planned": {"missing_observations": 0},
+    "story_points_completed": {"missing_observations": 0},
+    "velocity": {"missing_observations": 0},
+    "estimated_hours": {"missing_observations": 0},
+    "actual_hours": {
+      "stories_without_records": 0,
+      "unattributed_story_level_records": 1
+    }
+  }
+}
+```
+
+### Ámbito y fórmulas
+
+- Proyecto cuenta cada historia del proyecto una sola vez, incluidas las que no pertenecen a
+  un Sprint. Sprint cuenta únicamente las historias asignadas a ese Sprint.
+- La finalización usa `sprint_stories.completed_at`, nunca `stories.status`. Una historia del
+  proyecto cuenta completada una sola vez si completó en al menos un Sprint.
+- Los Story Points planificados suman todas las historias del ámbito; los completados solo
+  las completadas. La velocidad de Sprint es su suma de puntos completados; la velocidad de
+  proyecto promedia los puntos completados de todos los Sprints cerrados, incluidos los de
+  cero puntos.
+- Para horas estimadas, las tareas reemplazan la estimación de su historia: proyecto usa
+  todas sus tareas y Sprint solo las del Sprint consultado. Si no hay tareas seleccionadas,
+  se usa la estimación de la historia. Una estimación relevante faltante hace que el agregado
+  sea `null` y aumenta `coverage.estimated_hours.missing_observations`.
+- Proyecto suma una vez cada registro de esfuerzo. Sprint solo atribuye registros ligados a
+  tareas de ese Sprint; los registros directos a historia se excluyen e incrementan
+  `coverage.actual_hours.unattributed_story_level_records`. Los registros parciales se suman
+  y las historias sin esfuerzo atribuible se cuentan en `stories_without_records`.
+- `deviation` es horas reales menos estimadas. `deviation_percentage` divide esa diferencia
+  por las horas estimadas y multiplica por 100; es `null` si falta un operando o la estimación
+  es cero. Los defectos detectados se filtran por `sprint_id`; los resueltos por
+  `resolution_sprint_id`, sin inferir resolución desde `status`.
+- Un agregado de puntos o velocidad de Sprint sin observaciones vale `0`. Porcentajes sin
+  denominador, horas sin observaciones y velocidad de proyecto sin Sprints cerrados valen
+  `null`. Los puntos/estimaciones relevantes faltantes producen `null` con su contador de
+  cobertura; la cobertura no reemplaza el valor métrico.
+
+### Errores y disponibilidad
+
+- `422 validation_failed`: `fields` indica `project_id`, `sprint_id` o ambos inválidos; no se
+  consulta el almacenamiento.
+- `404 project_not_found` o `404 sprint_not_found`: el proyecto no existe o el Sprint no
+  existe/no pertenece al proyecto.
+- `405`: método distinto de `GET` o `HEAD`. `500 internal_error`: fallo inesperado, sin
+  detalles internos ni métricas parciales.
+- Las rutas solo se registran con el esquema PostgreSQL limpio en versión 14 o superior
+  (migración `000014`, que incorpora el Sprint de resolución del defecto). Con versión menor,
+  estado `dirty` o error al leer `schema_migrations`, las rutas no están disponibles y
+  responden `404`. Las migraciones se aplican externamente; la API no las ejecuta.
+
 ## Pruebas
 
 ```sh
