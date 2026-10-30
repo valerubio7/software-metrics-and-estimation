@@ -250,34 +250,34 @@ func TestDashboardKeepsFutureNoticeAfterChoosingASprint(t *testing.T) {
 			t.Errorf("notice lacks %q: %q", want, view)
 		}
 	}
+}
 
-	func TestMetricsShowsAPIErrorWithoutClosingTheScreen(t *testing.T) {
-		server := sectionServer(t, map[string]string{
-			"/projects/p1/sprints/open": `{"project_id":"p1","sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Sprint de métricas","is_closed":false}]}`,
-		})
-		server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/projects" {
-				_, _ = w.Write([]byte(projectsBody(t, sampleProjects())))
-				return
-			}
-			if r.URL.Path == "/projects/p1/metrics" {
-				http.Error(w, `{"error":"service_unavailable","message":"metrics down"}`, http.StatusServiceUnavailable)
-				return
-			}
-			if r.URL.Path == "/projects/p1/sprints/open" {
-				_, _ = w.Write([]byte(`{"project_id":"p1","sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Sprint de métricas","is_closed":false}]}`))
-				return
-			}
-			_, _ = w.Write([]byte(`{}`))
-		})
-
-		m := openSectionWithProject(t, server.URL, "p1", menuMetrics)
-		m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // Proyecto
-		m = run(t, m, cmd)
-		view := stripANSI(m.View())
-		if m.Screen != "section" || !strings.Contains(view, "503") || !strings.Contains(view, "metrics down") {
-			t.Fatalf("metrics error view = %q (screen %q)", view, m.Screen)
+func TestMetricsShowsAPIErrorWithoutClosingTheScreen(t *testing.T) {
+	server := sectionServer(t, map[string]string{
+		"/projects/p1/sprints/open": `{"project_id":"p1","sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Sprint de métricas","is_closed":false}]}`,
+	})
+	server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/projects" {
+			_, _ = w.Write([]byte(projectsBody(t, sampleProjects())))
+			return
 		}
+		if r.URL.Path == "/projects/p1/metrics" {
+			http.Error(w, `{"error":"service_unavailable","message":"metrics down"}`, http.StatusServiceUnavailable)
+			return
+		}
+		if r.URL.Path == "/projects/p1/sprints/open" {
+			_, _ = w.Write([]byte(`{"project_id":"p1","sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Sprint de métricas","is_closed":false}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{}`))
+	})
+
+	m := openSectionWithProject(t, server.URL, "p1", menuMetrics)
+	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // Proyecto
+	m = run(t, m, cmd)
+	view := stripANSI(m.View())
+	if m.Screen != "section" || !strings.Contains(view, "503") || !strings.Contains(view, "metrics down") {
+		t.Fatalf("metrics error view = %q (screen %q)", view, m.Screen)
 	}
 }
 
