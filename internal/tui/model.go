@@ -95,8 +95,9 @@ type Model struct {
 	pokerMessage      string
 	pokerStory        Story
 
-	effort effortState
-	now    func() time.Time
+	effortClient *EffortClient
+	effort       effortState
+	now          func() time.Time
 }
 
 // WithClock returns a copy of the model that reads the current time from now.
@@ -131,6 +132,7 @@ func NewModel(apiURL string) Model {
 		metricsClient: NewMetricsClient(apiURL),
 		taskClient:    NewTaskClient(apiURL),
 		memberClient:  NewMemberClient(apiURL),
+		effortClient:  NewEffortClient(apiURL),
 	}
 }
 
@@ -160,6 +162,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if result, ok := msg.(pokerSaveResult); ok {
 		return m.applyPokerSave(result)
+	}
+	if result, ok := msg.(effortSaveResult); ok {
+		return m.applyEffortSave(result)
 	}
 	key, isKey := msg.(tea.KeyMsg)
 	if !isKey {
@@ -589,6 +594,8 @@ func (m Model) viewBody() string {
 		return m.viewPlanningPoker()
 	case "effort-form":
 		return m.viewEffortForm()
+	case "effort-result":
+		return m.viewEffortResult()
 	default:
 		return screenTitleStyle.Render(m.Choices[m.Cursor])
 	}

@@ -28,6 +28,7 @@ type effortFlowOptions struct {
 	membersFailures int // leading GETs of the members answered with 500
 	postStatus      int // status of the effort POST (default 201)
 	postBody        string
+	postFailures    int      // leading POSTs answered with postStatus; 0 means all of them
 	metricsStatus   int      // status of GET /metrics (default 200)
 	metricsBodies   []string // served in order; the last one repeats
 }
@@ -39,7 +40,7 @@ func effortFlowServer(t *testing.T, opts effortFlowOptions) (*httptest.Server, *
 	t.Helper()
 	rec := &recorder{}
 	var mu sync.Mutex
-	var tasksCalls, membersCalls, metricsCalls int
+	var tasksCalls, membersCalls, metricsCalls, postCalls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		rec.mu.Lock()
@@ -74,8 +75,9 @@ func effortFlowServer(t *testing.T, opts effortFlowOptions) (*httptest.Server, *
 				status, body = http.StatusInternalServerError, `{"error":"internal_error","message":"members down"}`
 			}
 		case "POST /projects/p1/stories/s1/effort-records", "POST /projects/p1/stories/s2/effort-records":
+			postCalls++
 			status, body = http.StatusCreated, effortRecordBody
-			if opts.postStatus != 0 {
+			if opts.postStatus != 0 && (opts.postFailures == 0 || postCalls <= opts.postFailures) {
 				status, body = opts.postStatus, opts.postBody
 			}
 		case "GET /projects/p1/metrics":
@@ -488,17 +490,33 @@ func TestEffortFlowReachesFormWithoutTUI08Notice(t *testing.T) {
 	}
 }
 
-// [caracterización] born green: nothing in the flow writes yet. It guards the
-// requirement that navigating and editing never mutate before a submit.
+// stepRunning applies msg and executes the command it returns, so a request a
+// key press emits is really sent and recorded.
+func stepRunning(t *testing.T, m tui.Model, msg tea.Msg) tui.Model {
+	t.Helper()
+	m, cmd := apply(m, msg)
+	if cmd != nil {
+		m = run(t, m, cmd)
+	}
+	return m
+}
+
+// [caracterización] born green: the flow was already read-only when the test was
+// written. Its commands are executed, so a key that sent a write would be
+// recorded; the effort POST of the submit gives it a distinctive mutant (Esc
+// emitting the registration).
 func TestEffortNavigationEmitsOnlyGetUntilExplicitSubmit(t *testing.T) {
 	server, rec := effortFlowServer(t, effortFlowOptions{})
 	m := openEffortFormFor(t, server.URL, 0, 1, 0)
-	m = press(m, tea.KeyTab)
+	enter := tea.KeyMsg{Type: tea.KeyEnter}
+	m = stepRunning(t, m, enter) // Fecha -> Actividad
 	m = typeText(m, "Revisión")
-	m = press(m, tea.KeyTab)
+	m = stepRunning(t, m, enter) // Actividad -> Horas
 	m = typeText(m, "2.5")
+	m = stepRunning(t, m, tea.KeyMsg{Type: tea.KeyShiftTab})
+	m = stepRunning(t, m, tea.KeyMsg{Type: tea.KeyTab})
 	for i := 0; i < 4; i++ {
-		m = press(m, tea.KeyEsc)
+		m = stepRunning(t, m, tea.KeyMsg{Type: tea.KeyEsc})
 	}
 
 	requests := rec.all()
@@ -509,5 +527,35 @@ func TestEffortNavigationEmitsOnlyGetUntilExplicitSubmit(t *testing.T) {
 		if request.Method != http.MethodGet || strings.Contains(request.Path, "effort-records") {
 			t.Errorf("navigating and editing emitted %s %s, want only GETs outside the effort-records route", request.Method, request.Path)
 		}
+	}
+}
+
+// [caracterización] born green once the submit of 4.2 existed: it guards that the
+// whole flow writes exactly once, with a POST, and only on the explicit Enter.
+func TestEffortOnlyExplicitSubmitEmitsThePost(t *testing.T) {
+	server, rec := effortFlowServer(t, effortFlowOptions{})
+	m := openEffortFormFor(t, server.URL, 0, 1, 0)
+	m = fillEffortForm(m, [3]string{"2026", "10", "05"}, "Implementar login", "3.5")
+	if posts := effortPosts(rec); len(posts) != 0 {
+		t.Fatalf("filling the form sent %+v before the confirmation", posts)
+	}
+
+	m = stepRunning(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.Screen != "effort-result" {
+		t.Fatalf("Screen = %q, want effort-result after the confirmation", m.Screen)
+	}
+	var posts int
+	for _, request := range rec.all() {
+		switch {
+		case request.Method == http.MethodPost && request.Path == "/projects/p1/stories/s1/effort-records":
+			posts++
+		case request.Method != http.MethodGet:
+			t.Errorf("unexpected %s %s: only GETs and the one effort POST are allowed", request.Method, request.Path)
+		case strings.Contains(request.Path, "effort-records"):
+			t.Errorf("the TUI must not read effort records: GET %s", request.Path)
+		}
+	}
+	if posts != 1 {
+		t.Errorf("effort POSTs = %d, want exactly 1", posts)
 	}
 }
