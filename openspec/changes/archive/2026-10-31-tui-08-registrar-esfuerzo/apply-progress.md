@@ -366,3 +366,49 @@ Cierre del lote 1, con ambas UT ya confirmadas en commit:
 - `go test ./... -p 1` (secuencial, con Docker): **exit 0**, 37 paquetes `ok`, ninguno en fallo. Los paquetes de integración figuran `(cached)` (entradas sin cambios y sin dependencia de `internal/tui`, como en los lotes 2 y 3); `internal/tui` y `tests/unit/tui` se ejecutaron con el código del commit. No hubo fallos previos ni propios.
 - `git diff --stat -- tests/unit/tui/project_form_test.go tests/unit/tui/sections_flows_test.go` vacío; `TestMenuRoutesToEachSprint3Section` y `TestSectionNavigationOnlyEmitsGetRequests` sin editar y en verde.
 - `gofmt` con `tr -d '\r'` sin salida en los archivos tocados (`effort_form.go` y `effort_result_test.go` están en LF y pasan `gofmt -l` directo).
+
+## Fase 7: verificación final y cierre
+
+> **Estado al cierre**: la fila «7 | 7.1 a 7.5» de «Estado de tareas» y la línea del «Lote 5» describen el momento en que se escribieron. Esta sección registra el estado final de la fase, con los hechos observados por `sdd-verify` (Engram `sdd/tui-08-registrar-esfuerzo/verify-report`, observación #63) y lo ejecutado durante el archivado.
+
+### Hechos observados por sdd-verify
+
+- `go build ./...` y `go vet ./...`: exit 0.
+- `go test ./... -p 1 -count=1`: exit 0; 37 paquetes `ok`, ninguno en fallo ni en caché. Docker disponible: los paquetes de integración corrieron contra contenedores reales (`defect` 147 s, `effort` 153 s, `metrics` 5,5 s, `migrations` 0,9 s, `project` 18 s, `projectmember` 31 s, `sprint` 106 s, `story` 371 s, `task` 76 s; `internal/tui` 2,5 s; `tests/unit/tui` 2,8 s).
+- `go test ./...` en paralelo: exit 0 y 37 `ok`, pero 36 resultados vinieron de caché. La inestabilidad de Testcontainers (`unexpected EOF`) vista una vez durante apply no se reprodujo ni se descartó; la referencia fiable es `-p 1`.
+- Pruebas focalizadas (`-count=1`, `Effort|DateField|DateRow|AlignedTextRow|Today|OpenSectionResets`): 77 pruebas de nivel superior y 77 subpruebas en verde. Cobertura unitaria de `effort.go` y `effort_form.go`: 100 %.
+- Pruebas de red de seguridad: sin cambios respecto de `main` y en verde (`project_form_test.go`, `planning_poker_test.go`, `sections_api_test.go`, `footer_test.go`, `ux_test.go`, `selector_test.go`).
+- Criterios: 9 de cierre y 11 de `proposal.md`, cumplidos. Escenarios: 78 (75 de `tui` y 3 de `esfuerzo`) en 10 requisitos, todos con al menos una prueba que los cubre.
+- Discrepancias D1–D16: confirmadas; en cada caso el código sigue a la spec.
+
+### 7.1 Build, vet, pruebas y gofmt
+
+- Estado: **parcial**. La casilla queda sin marcar.
+- `go build`, `go vet` y `go test -p 1 ./...`: en verde, con la evidencia anterior.
+- `gofmt -l internal tests cmd` no está vacío por dos causas. (1) El árbol de trabajo está en CRLF (`core.autocrlf=true`) y gofmt reporta casi todo el repositorio. (2) Sobre el contenido del índice, dos archivos ya estaban sin formato en `main` y no se corrigen aquí: `tests/unit/tui/sections_flows_test.go` (tocado por este cambio, con el mapa `metricsServer` sin alinear) e `internal/tui/metrics.go` (sin cambios en este cambio). Comprobado con `git show main:<ruta> | gofmt -l`.
+- Si el usuario acepta esa excepción, la casilla puede marcarse.
+
+### 7.2 Criterios y discrepancias
+
+- Cumplida. Evidencia: pruebas nombradas en la observación #63, por ejemplo `TestEffortSubmitSendsExactBodyForTask`, `TestEffortOnlyExplicitSubmitEmitsThePost`, `TestEffortFormShowsAPIErrorsKeepingData` y `TestEffortResultMetricsFailureKeepsRegistrationSuccess`.
+- Discrepancias D1–D16: confirmadas (tabla «Discrepancias entre diseño y spec» de `tasks.md`).
+
+### 7.3 Recorrido manual: no ejecutado
+
+- Motivo: requiere una TUI interactiva contra API y PostgreSQL en vivo, que no se levantaron en esta fase.
+- Evidencia parcial a nivel API: `internal/api/api.go:177` (`readiness.Effort`, versión >= 12) y `:181` (`readiness.Metrics`, versión >= 14), con `TestMigrationReadinessResolvesEffortByVersion` y `TestMetricsReadinessGatesRoutesWithoutChangingExistingReadiness` en verde.
+- No ejercido: render real en terminal; aviso de métricas no disponibles contra una API en esquema 12–13; `r` actualizando «Horas reales» de extremo a extremo.
+
+### 7.4 Corrección: no requerida
+
+- No se agregó ningún commit `fix(tui)`. La verificación no exigió corrección; sus advertencias quedan registradas como decisiones del usuario en el reporte de archivo.
+
+### 7.5 Archivo
+
+- Ejecutado por `sdd-archive`: merge de `tui` (27 → 33 requisitos) y de `esfuerzo` (17 → 18) con `gentle-ai sdd-archive-compose`; edición manual del Propósito de `esfuerzo`; movimiento con `git mv` a `openspec/changes/archive/2026-10-31-tui-08-registrar-esfuerzo/`; commit local `docs(sdd): archivar tui-08-registrar-esfuerzo`.
+- No se empujó ni se abrió PR, por instrucción del usuario.
+
+### Notas de proceso
+
+- La UT 3 se dividió en dos commits. La prueba de solo `GET` de la Fase 3 (3.12) se reescribió en la UT 4, porque su helper `press` descartaba el comando devuelto.
+- Un `404` de métricas con cuerpo JSON se interpretó como carga válida con todos los valores nulos hasta comprobar antes el estado HTTP (UT 5).
