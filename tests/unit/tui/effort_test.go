@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/valerubio7/software-metrics-and-estimation/internal/tui"
@@ -334,5 +335,179 @@ func TestEffortEscFromMembersRestoresTasksSnapshotWithoutRequests(t *testing.T) 
 	}
 	if after := len(rec.all()); after != before {
 		t.Fatalf("walking back emitted %d new requests, want none", after-before)
+	}
+}
+
+// fixedClock is 2026-10-31 23:30 at UTC-3, which is already 2026-11-01 in UTC.
+func fixedClock() time.Time {
+	return time.Date(2026, 10, 31, 23, 30, 0, 0, time.FixedZone("UTC-3", -3*3600))
+}
+
+// openEffortFormFor walks the whole flow with the fixed clock and presses Enter
+// on the member at memberIndex, which opens the form.
+func openEffortFormFor(t *testing.T, url string, storyIndex, taskIndex, memberIndex int) tui.Model {
+	t.Helper()
+	m := openEffortMembers(t, url, storyIndex, taskIndex).WithClock(fixedClock)
+	for i := 0; i < memberIndex; i++ {
+		m = press(m, tea.KeyDown)
+	}
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	return m
+}
+
+func TestEffortEscWalksBackThroughThreeLevels(t *testing.T) {
+	server, rec := effortFlowServer(t, effortFlowOptions{})
+	m := openEffortFormFor(t, server.URL, 0, 1, 0)
+	before := len(rec.all())
+
+	levels := []struct{ name, want string }{
+		{"members", "Esfuerzo · Integrante"},
+		{"tasks", "Tarea de Primera historia o la historia completa."},
+		{"stories", "Elegí una historia para registrar su esfuerzo."},
+	}
+	for _, level := range levels {
+		var cmd tea.Cmd
+		m, cmd = apply(m, tea.KeyMsg{Type: tea.KeyEsc})
+		if cmd != nil {
+			t.Fatalf("Esc towards %s must not emit a command", level.name)
+		}
+		if view := stripANSI(m.View()); m.Screen != "section" || !strings.Contains(view, level.want) {
+			t.Fatalf("Esc should reach the %s selector (screen %q): %q", level.name, m.Screen, view)
+		}
+	}
+	if after := len(rec.all()); after != before {
+		t.Fatalf("walking back emitted %d requests, want none", after-before)
+	}
+	if m = press(m, tea.KeyEsc); m.Screen != "menu" {
+		t.Fatalf("the fourth Esc should reach the menu, got screen %q", m.Screen)
+	}
+}
+
+func TestEffortTaskFilterIsKeptWhenWalkingBackFromForm(t *testing.T) {
+	server, rec := effortFlowServer(t, effortFlowOptions{})
+	m := openEffortTasks(t, server.URL, 0)
+	m = typeText(m, "dis")
+	m = press(m, tea.KeyEnter) // keep the filter, stop typing
+	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = run(t, m, cmd)
+	m, _ = apply(m.WithClock(fixedClock), tea.KeyMsg{Type: tea.KeyEnter}) // first member opens the form
+	before := len(rec.all())
+
+	m = press(m, tea.KeyEsc) // members
+	m = press(m, tea.KeyEsc) // tasks
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "Buscar: dis") || strings.Contains(view, "Probar") || !strings.Contains(focusedLine(view), "Diseñar") {
+		t.Fatalf("the task filter and cursor should survive the walk back: %q", view)
+	}
+	m = press(m, tea.KeyEsc) // clears the filter only
+	if view := stripANSI(m.View()); !strings.Contains(view, "Probar") || !strings.Contains(view, "Tarea de Primera historia") {
+		t.Fatalf("the next Esc should only clear the filter: %q", view)
+	}
+	m = press(m, tea.KeyEsc)
+	if view := stripANSI(m.View()); !strings.Contains(view, "Segunda historia") {
+		t.Fatalf("the following Esc should reach the stories: %q", view)
+	}
+	if after := len(rec.all()); after != before {
+		t.Fatalf("walking back emitted %d requests, want none", after-before)
+	}
+}
+
+func TestEffortEscFromFormDiscardsTypedData(t *testing.T) {
+	server, _ := effortFlowServer(t, effortFlowOptions{})
+	m := openEffortFormFor(t, server.URL, 0, 1, 0)
+	m = press(m, tea.KeyTab)
+	m = typeText(m, "Revisión")
+	m = press(m, tea.KeyTab)
+	m = typeText(m, "2.5")
+	m = press(m, tea.KeyEsc)
+
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // choose the same member again
+	view := stripANSI(m.View())
+	if date := effortDate(t, view); m.Screen != "effort-form" || date != [3]string{"2026", "11", "01"} {
+		t.Fatalf("the reopened form should start from today (screen %q, date %v): %q", m.Screen, date, view)
+	}
+	for _, label := range []string{"Actividad", "Horas"} {
+		if value := fieldValue(t, view, label); value != "" {
+			t.Errorf("%s should be empty after discarding, got %q", label, value)
+		}
+	}
+	assertFocus(t, m, "Fecha")
+}
+
+// [caracterización] born green: the step guard of applySectionResult already
+// dropped these responses before TUI-08.
+func TestEffortLateMembersResponseAfterEscIsDropped(t *testing.T) {
+	server, _ := effortFlowServer(t, effortFlowOptions{})
+	m := openEffortTasks(t, server.URL, 0)
+	m = press(m, tea.KeyDown)
+	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // members query stays pending
+	if cmd == nil {
+		t.Fatal("choosing a task should start loading the members")
+	}
+	m = press(m, tea.KeyEsc)
+	want := stripANSI(m.View())
+
+	m = run(t, m, cmd) // the late response
+	if got := stripANSI(m.View()); got != want || !strings.Contains(got, "Probar") {
+		t.Fatalf("a late member response must not change the task selector:\nwant %q\ngot  %q", want, got)
+	}
+}
+
+// [caracterización] born green, same reason as the members case.
+func TestEffortLateTasksResponseAfterEscIsDropped(t *testing.T) {
+	server, _ := effortFlowServer(t, effortFlowOptions{})
+	m := openSectionWithProject(t, server.URL, "p1", menuEffort)
+	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // tasks query stays pending
+	if cmd == nil {
+		t.Fatal("choosing a story should start loading the tasks")
+	}
+	m = press(m, tea.KeyEsc)
+	want := stripANSI(m.View())
+
+	m = run(t, m, cmd)
+	if got := stripANSI(m.View()); got != want || !strings.Contains(got, "Primera historia") {
+		t.Fatalf("a late task response must not change the story selector:\nwant %q\ngot  %q", want, got)
+	}
+}
+
+// [caracterización] born green: openEffortForm (GREEN 3.7) already replaced the
+// notice. Its real RED was observed in 3.6, when the flow still ended in the
+// TUI-08 notice instead of the form.
+func TestEffortFlowReachesFormWithoutTUI08Notice(t *testing.T) {
+	server, _ := effortFlowServer(t, effortFlowOptions{})
+	m := openEffortFormFor(t, server.URL, 0, 1, 0)
+
+	view := stripANSI(m.View())
+	if m.Screen != "effort-form" {
+		t.Fatalf("Screen = %q, want effort-form", m.Screen)
+	}
+	for _, banned := range []string{"TUI-08", "No se guardó ningún dato", "Próximamente"} {
+		if strings.Contains(view, banned) {
+			t.Errorf("the flow must not end in the notice, found %q: %q", banned, view)
+		}
+	}
+}
+
+// [caracterización] born green: nothing in the flow writes yet. It guards the
+// requirement that navigating and editing never mutate before a submit.
+func TestEffortNavigationEmitsOnlyGetUntilExplicitSubmit(t *testing.T) {
+	server, rec := effortFlowServer(t, effortFlowOptions{})
+	m := openEffortFormFor(t, server.URL, 0, 1, 0)
+	m = press(m, tea.KeyTab)
+	m = typeText(m, "Revisión")
+	m = press(m, tea.KeyTab)
+	m = typeText(m, "2.5")
+	for i := 0; i < 4; i++ {
+		m = press(m, tea.KeyEsc)
+	}
+
+	requests := rec.all()
+	if len(requests) == 0 {
+		t.Fatal("the flow emitted no requests")
+	}
+	for _, request := range requests {
+		if request.Method != http.MethodGet || strings.Contains(request.Path, "effort-records") {
+			t.Errorf("navigating and editing emitted %s %s, want only GETs outside the effort-records route", request.Method, request.Path)
+		}
 	}
 }

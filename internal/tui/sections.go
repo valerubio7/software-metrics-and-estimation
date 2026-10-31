@@ -377,6 +377,10 @@ func (m Model) chooseSectionItem() (Model, tea.Cmd) {
 		return m.beginSectionStep(sectionStepMembers)
 	}
 
+	if m.section.kind == sectionEffort && m.section.step == sectionStepMembers {
+		return m.openEffortForm(item), nil
+	}
+
 	if m.section.kind == sectionPlanningPoker && m.section.step == sectionStepMembers {
 		m.pokerParticipants = []selectorItem{item}
 		for _, member := range m.section.selector.items {
@@ -412,8 +416,6 @@ func sectionNotice(kind sectionKind, primary, detail selectorItem) string {
 	switch kind {
 	case sectionPlanningPoker:
 		return fmt.Sprintf("Historia: %s\nParticipante: %s\n\nLa votación de Planning Poker estará disponible en TUI-07.\nNo se guardó ningún dato.", primary.Label, detail.Label)
-	case sectionEffort:
-		return fmt.Sprintf("Historia: %s\nTarea: %s\n\nEl registro de esfuerzo estará disponible en TUI-08.\nNo se guardó ningún dato.", primary.Label, detail.Label)
 	case sectionDefects:
 		return fmt.Sprintf("Historia: %s\nSprint de detección: %s\n\nEl alta de defectos estará disponible en TUI-09.\nNo se guardó ningún dato.", primary.Label, detail.Label)
 	case sectionMetrics:

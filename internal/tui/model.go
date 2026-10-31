@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -93,6 +94,25 @@ type Model struct {
 	pokerEstimate     int
 	pokerMessage      string
 	pokerStory        Story
+
+	effort effortState
+	now    func() time.Time
+}
+
+// WithClock returns a copy of the model that reads the current time from now.
+// It is the test seam for the default date of the effort form.
+func (m Model) WithClock(now func() time.Time) Model {
+	m.now = now
+	return m
+}
+
+// today returns the current UTC date as YYYY-MM-DD.
+func (m Model) today() string {
+	now := m.now
+	if now == nil {
+		now = time.Now
+	}
+	return now().UTC().Format("2006-01-02")
 }
 
 // NewModel creates the base navigation model.
@@ -209,6 +229,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateSection(key)
 	case "planning-poker":
 		return m.updatePlanningPoker(key)
+	case "effort-form":
+		return m.updateEffortForm(key)
 	default:
 		if key.Type == tea.KeyEsc {
 			m.Screen = "menu"
@@ -222,7 +244,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // plain character rather than the help shortcut.
 func entersText(screen string) bool {
 	switch screen {
-	case "create-project", "edit-project", "backlog-form", "sprint-goal", "sprint-task-form":
+	case "create-project", "edit-project", "backlog-form", "sprint-goal", "sprint-task-form", "effort-form":
 		return true
 	}
 	return false
@@ -565,6 +587,8 @@ func (m Model) viewBody() string {
 		return m.viewSection()
 	case "planning-poker":
 		return m.viewPlanningPoker()
+	case "effort-form":
+		return m.viewEffortForm()
 	default:
 		return screenTitleStyle.Render(m.Choices[m.Cursor])
 	}
@@ -735,6 +759,8 @@ func (m Model) crumbParts() []string {
 		case sectionStepNotice:
 			parts = append(parts, "Próximamente")
 		}
+	case "effort-form":
+		parts = append(parts, sectionEffort.title(), "Registrar")
 	default:
 		parts = append(parts, "")
 	}
@@ -811,6 +837,8 @@ func (m Model) footer() string {
 		return m.sectionFooter()
 	case "planning-poker":
 		return m.planningPokerFooter()
+	case "effort-form":
+		return m.effortFormFooter()
 	default:
 		return m.keyHints("Esc", "volver", "?", "ayuda", "q", "salir")
 	}
