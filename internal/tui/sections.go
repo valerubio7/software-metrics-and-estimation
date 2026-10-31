@@ -74,6 +74,10 @@ func (k sectionKind) primaryEmptyHint() string {
 	return "Creá un Sprint desde Sprints y volvé a intentar."
 }
 
+// wholeStoryLabel is the synthetic task row that registers effort over the
+// whole story; its empty ID means "no task".
+const wholeStoryLabel = "Toda la historia (sin tarea)"
+
 // sectionStep is the selector currently active inside a section.
 type sectionStep int
 
@@ -104,6 +108,7 @@ type sectionState struct {
 	metrics      metricsPayload
 	selector     selector
 	primary      selector
+	tasks        selector // task list kept while Esfuerzo shows its members
 	selected     selectorItem
 	detail       selectorItem
 	notice       string
@@ -134,6 +139,7 @@ func (m Model) openSection(kind sectionKind) (Model, tea.Cmd) {
 	m.section.detail = selectorItem{}
 	m.section.notice = ""
 	m.section.selector = selector{}
+	m.section.tasks = selector{}
 	if kind == sectionMetrics {
 		m.section.step = sectionStepScope
 		m.section.selector.setItems(sectionMetricsScopeItems())
@@ -302,6 +308,11 @@ func (m Model) updateSection(key tea.KeyMsg) (Model, tea.Cmd) {
 			m.Screen, m.Cursor = "menu", 0
 			return m, nil
 		}
+		if m.section.kind == sectionEffort && m.section.step == sectionStepMembers {
+			m.section.step = sectionStepTasks
+			m.section.selector = m.section.tasks
+			return m, nil
+		}
 		m.section.step = sectionStepPrimary
 		m.section.selector = m.section.primary
 	case selectorRefresh:
@@ -356,6 +367,14 @@ func (m Model) chooseSectionItem() (Model, tea.Cmd) {
 			m.section.notice = sectionNotice(m.section.kind, item, selectorItem{})
 			return m, nil
 		}
+	}
+
+	if m.section.kind == sectionEffort && m.section.step == sectionStepTasks {
+		// Keep the task list as it is (rows, filter, cursor) so Esc from the
+		// members can restore it without another request.
+		m.section.detail = item
+		m.section.tasks = m.section.selector
+		return m.beginSectionStep(sectionStepMembers)
 	}
 
 	if m.section.kind == sectionPlanningPoker && m.section.step == sectionStepMembers {
@@ -431,11 +450,25 @@ func (m Model) viewSection() string {
 		}
 		return m.viewSelector(&m.section.selector, title, hint, emptyTitle, emptyHint)
 	case sectionStepMembers:
-		return m.viewPokerParticipants()
+		if m.section.kind == sectionPlanningPoker {
+			return m.viewPokerParticipants()
+		}
+		return m.viewSelector(&m.section.selector, m.section.kind.title()+" · Integrante",
+			"Integrante que realizó el trabajo.", "El proyecto no tiene integrantes registrados.",
+			"Los integrantes se dan de alta mediante la API; r vuelve a consultar.")
 	case sectionStepTasks:
-		return m.viewSelector(&m.section.selector, m.section.kind.title()+" · Tareas",
-			"Elegí una tarea de "+m.section.selected.Label+".", "La historia no tiene tareas.",
-			"Creá tareas desde Sprints.")
+		hint := "Elegí una tarea de " + m.section.selected.Label + "."
+		if m.section.kind == sectionEffort {
+			hint = "Tarea de " + m.section.selected.Label + " o la historia completa."
+		}
+		view := m.viewSelector(&m.section.selector, m.section.kind.title()+" · Tareas",
+			hint, "La historia no tiene tareas.", "Creá tareas desde Sprints.")
+		if items := m.section.selector.items; m.section.kind == sectionEffort &&
+			!m.section.selector.loading && m.section.selector.err == "" &&
+			len(items) == 1 && items[0].ID == "" {
+			view += "\n\n" + hintStyle.Render("La historia no tiene tareas.")
+		}
+		return view
 	case sectionStepSprints:
 		return m.viewSelector(&m.section.selector, m.section.kind.title()+" · Sprint",
 			"Elegí el Sprint relacionado.", "No hay Sprints abiertos.",
@@ -589,7 +622,12 @@ func sectionItems(result SectionResultMsg) ([]selectorItem, bool) {
 		if err := json.Unmarshal(result.Response.Body, &listing); err != nil {
 			return nil, false
 		}
-		items := make([]selectorItem, 0, len(listing.Tasks))
+		items := make([]selectorItem, 0, len(listing.Tasks)+1)
+		if result.Kind == sectionEffort {
+			// Effort can be registered over the whole story, so the choice is
+			// always available, even when the story has no tasks.
+			items = append(items, selectorItem{Label: wholeStoryLabel, Meta: "esfuerzo sobre la historia"})
+		}
 		for _, task := range listing.Tasks {
 			meta := "sin estimar"
 			if task.EstimatedHours != nil {

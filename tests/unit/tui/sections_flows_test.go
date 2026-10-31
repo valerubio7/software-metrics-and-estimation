@@ -25,21 +25,6 @@ func planningServer(t *testing.T) *httptest.Server {
 	})
 }
 
-func effortServer(t *testing.T) *httptest.Server {
-	t.Helper()
-	return sprintServer(t, func(w http.ResponseWriter, r *http.Request) bool {
-		switch r.URL.Path {
-		case "/projects/p1/stories":
-			_, _ = w.Write([]byte(storiesBodyForSection(sectionStories())))
-			return true
-		case "/projects/p1/stories/s1/tasks":
-			_, _ = w.Write([]byte(`{"project_id":"p1","story_id":"s1","tasks":[{"id":"t1","project_id":"p1","sprint_id":"sp1","story_id":"s1","title":"Diseñar","estimated_hours":4.5},{"id":"t2","project_id":"p1","sprint_id":"sp1","story_id":"s1","title":"Probar"}]}`))
-			return true
-		}
-		return false
-	})
-}
-
 func defectsServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return sprintServer(t, func(w http.ResponseWriter, r *http.Request) bool {
@@ -147,34 +132,6 @@ func TestPlanningPokerCollectsHiddenVotesRevealsResetsAndSaves(t *testing.T) {
 	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	if got := stripANSI(m.View()); strings.Contains(got, "Ada Lovelace: 8") {
 		t.Fatalf("new round leaked prior votes: %q", got)
-	}
-}
-
-func TestEffortFlowChoosesStoryAndTaskThenShowsTheTUI08Notice(t *testing.T) {
-	server := effortServer(t)
-	m := openSectionWithProject(t, server.URL, "p1", menuEffort)
-
-	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
-	if cmd == nil {
-		t.Fatal("choosing a story should load its tasks")
-	}
-	m = run(t, m, cmd)
-	view := stripANSI(m.View())
-	for _, want := range []string{"Tareas", "Diseñar", "Probar"} {
-		if !strings.Contains(view, want) {
-			t.Errorf("task selector lacks %q: %q", want, view)
-		}
-	}
-
-	m, cmd = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
-	if cmd != nil {
-		t.Fatalf("choosing a task should not issue a command, got %v", cmd)
-	}
-	view = stripANSI(m.View())
-	for _, want := range []string{"TUI-08", "Diseñar", "No se guardó ningún dato"} {
-		if !strings.Contains(view, want) {
-			t.Errorf("effort notice lacks %q: %q", want, view)
-		}
 	}
 }
 

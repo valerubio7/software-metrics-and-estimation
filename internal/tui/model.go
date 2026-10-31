@@ -723,7 +723,11 @@ func (m Model) crumbParts() []string {
 		parts = append(parts, m.section.kind.title())
 		switch m.section.step {
 		case sectionStepMembers:
-			parts = append(parts, "Participantes")
+			if m.section.kind == sectionEffort {
+				parts = append(parts, "Integrante")
+			} else {
+				parts = append(parts, "Participantes")
+			}
 		case sectionStepTasks:
 			parts = append(parts, "Tareas")
 		case sectionStepSprints:
