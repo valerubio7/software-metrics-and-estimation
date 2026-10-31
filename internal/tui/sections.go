@@ -140,6 +140,7 @@ func (m Model) openSection(kind sectionKind) (Model, tea.Cmd) {
 	m.section.notice = ""
 	m.section.selector = selector{}
 	m.section.tasks = selector{}
+	m.effort = effortState{seq: m.effort.seq}
 	if kind == sectionMetrics {
 		m.section.step = sectionStepScope
 		m.section.selector.setItems(sectionMetricsScopeItems())

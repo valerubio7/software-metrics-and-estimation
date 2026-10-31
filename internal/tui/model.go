@@ -166,6 +166,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if result, ok := msg.(effortSaveResult); ok {
 		return m.applyEffortSave(result)
 	}
+	if result, ok := msg.(effortMetricsResult); ok {
+		return m.applyEffortMetrics(result)
+	}
 	key, isKey := msg.(tea.KeyMsg)
 	if !isKey {
 		return m, nil
@@ -236,6 +239,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updatePlanningPoker(key)
 	case "effort-form":
 		return m.updateEffortForm(key)
+	case "effort-result":
+		return m.updateEffortResult(key)
 	default:
 		if key.Type == tea.KeyEsc {
 			m.Screen = "menu"
@@ -259,7 +264,7 @@ func entersText(screen string) bool {
 // listed, so q is a plain character there; Ctrl+C always quits.
 func quitsOnQ(screen string) bool {
 	switch screen {
-	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "planning-poker":
+	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "planning-poker", "effort-result":
 		return true
 	}
 	return false
@@ -768,6 +773,8 @@ func (m Model) crumbParts() []string {
 		}
 	case "effort-form":
 		parts = append(parts, sectionEffort.title(), "Registrar")
+	case "effort-result":
+		parts = append(parts, sectionEffort.title(), "Resultado")
 	default:
 		parts = append(parts, "")
 	}
@@ -846,6 +853,8 @@ func (m Model) footer() string {
 		return m.planningPokerFooter()
 	case "effort-form":
 		return m.effortFormFooter()
+	case "effort-result":
+		return m.effortResultFooter()
 	default:
 		return m.keyHints("Esc", "volver", "?", "ayuda", "q", "salir")
 	}
@@ -870,6 +879,9 @@ func (m Model) helpRows() [][2]string {
 	}
 	if m.Screen == "section" {
 		return m.sectionHelpRows()
+	}
+	if m.Screen == "effort-result" {
+		return effortResultHelpRows()
 	}
 	return [][2]string{
 		{"↑ / ↓", "Mover la selección"},

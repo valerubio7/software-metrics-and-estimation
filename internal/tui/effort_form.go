@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
@@ -25,8 +26,20 @@ const (
 // label ("Actividad") plus its colon.
 const effortLabelWidth = len("Actividad:")
 
-// effortState groups the data of the effort form. A task with an empty ID means
-// the effort is registered over the whole story.
+// effortMetricsStatus is the state of the project metrics query shown on the
+// result screen.
+type effortMetricsStatus int
+
+const (
+	effortMetricsIdle effortMetricsStatus = iota
+	effortMetricsLoading
+	effortMetricsReady
+	effortMetricsUnavailable
+)
+
+// effortState groups the data of the effort flow. A task with an empty ID means
+// the effort is registered over the whole story. seq numbers every request of the
+// flow (the save and each metrics query) so only the latest answer is applied.
 type effortState struct {
 	story, task, member selectorItem
 	date                dateField
@@ -36,6 +49,12 @@ type effortState struct {
 	seq                 int
 	saving              bool
 	err                 string
+
+	record        *EffortRecord // the 201 body, nil when it could not be read
+	rawBody       string        // the 201 body as received when record is nil
+	metricsStatus effortMetricsStatus
+	metrics       metricsPayload
+	metricsErr    string // why the metrics are unavailable
 }
 
 // openEffortForm starts a blank form for the story and task already chosen in
@@ -174,6 +193,10 @@ const (
 	effortHoursNotNumberMessage   = "Las horas deben ser un número mayor que 0 (el separador decimal es el punto)."
 	effortHoursNotPositiveMessage = "Las horas deben ser mayores que 0."
 
+	// effortMetricsUnreadableMessage is the reason shown when the metrics answer
+	// is not a JSON object.
+	effortMetricsUnreadableMessage = "No se pudo interpretar la respuesta de la API."
+
 	// effortTransportMessage takes the transport error. The API is not
 	// idempotent, so the user must check before sending the record again.
 	effortTransportMessage = "No se pudo confirmar el registro: error de conexión (%v). Es posible que el esfuerzo se haya guardado; verificar las horas reales en Métricas antes de reintentar."
@@ -234,11 +257,132 @@ func (m Model) applyEffortSave(result effortSaveResult) (Model, tea.Cmd) {
 		m.effort.err = describeBacklogFailure(result.response)
 	default:
 		m.Screen = "effort-result"
+		var record EffortRecord
+		if err := json.Unmarshal(result.response.Body, &record); err != nil {
+			m.effort.rawBody = string(result.response.Body)
+		} else {
+			m.effort.record = &record
+		}
+		return m.startEffortMetrics()
 	}
 	return m, nil
 }
 
-// viewEffortResult is a minimal marker until the result screen shows the record.
+// effortMetricsResult is the asynchronous result of a project metrics query,
+// tagged with the sequence number of the query that produced it.
+type effortMetricsResult struct {
+	seq      int
+	response APIResponse
+	err      error
+}
+
+// startEffortMetrics marks a new metrics query as the one in flight and sends it.
+func (m Model) startEffortMetrics() (Model, tea.Cmd) {
+	m.effort.metricsStatus = effortMetricsLoading
+	m.effort.seq++
+	client, projectID, seq := m.metricsClient, m.activeProjectID, m.effort.seq
+	return m, func() tea.Msg {
+		response, err := client.Project(context.Background(), projectID)
+		return effortMetricsResult{seq: seq, response: response, err: err}
+	}
+}
+
+// applyEffortMetrics stores the answer of the latest metrics query. It does not
+// look at the screen: the answer may arrive while the project picker, opened with
+// p from the result, is covering it. Leaving the result clears metricsStatus, so
+// an answer for a screen the user has left is still dropped.
+func (m Model) applyEffortMetrics(result effortMetricsResult) (Model, tea.Cmd) {
+	if m.effort.metricsStatus != effortMetricsLoading || result.seq != m.effort.seq {
+		return m, nil // an answer nobody is waiting for
+	}
+	// A failed query never touches the registration: the effort is already saved.
+	metrics, readable := parseMetricsPayload(result.response.Body)
+	switch failure := sectionFailure(result.err, result.response); {
+	case failure != "":
+		m.effort.metricsStatus, m.effort.metricsErr = effortMetricsUnavailable, failure
+	case !readable:
+		m.effort.metricsStatus, m.effort.metricsErr = effortMetricsUnavailable, effortMetricsUnreadableMessage
+	default:
+		m.effort.metrics, m.effort.metricsStatus = metrics, effortMetricsReady
+	}
+	return m, nil
+}
+
+// updateEffortResult handles the keys of the result screen. Enter is not bound:
+// leaving is Esc, so a stray Enter after the confirmation cannot skip the result.
+func (m Model) updateEffortResult(key tea.KeyMsg) (Model, tea.Cmd) {
+	switch {
+	case key.Type == tea.KeyEsc:
+		return m.leaveEffortResult(), nil
+	case key.Type == tea.KeyRunes && string(key.Runes) == "r" && m.effort.metricsStatus != effortMetricsLoading:
+		return m.startEffortMetrics()
+	}
+	return m, nil
+}
+
+// leaveEffortResult returns to the task selector of the same story, restored from
+// the snapshot taken when the task was chosen, to register another effort. The
+// flow data is dropped; seq survives so answers still in flight stay stale.
+func (m Model) leaveEffortResult() Model {
+	m.Screen = "section"
+	m.section.step = sectionStepTasks
+	m.section.selector = m.section.tasks
+	m.effort = effortState{seq: m.effort.seq}
+	return m
+}
+
+// effortResultFooter lists the keys that act on the result screen.
+func (m Model) effortResultFooter() string {
+	return m.keyHints("r", "refrescar métricas", "Esc", "volver", "p", "proyecto", "?", "ayuda", "q", "salir")
+}
+
+// effortResultHelpRows lists the same keys for the help overlay.
+func effortResultHelpRows() [][2]string {
+	return [][2]string{
+		{"r", "Refrescar las métricas del proyecto"},
+		{"Esc", "Volver a las tareas de la historia"},
+		{"p", "Cambiar el proyecto activo"},
+		{"?", "Mostrar u ocultar esta ayuda"},
+		{"q", "Salir"},
+	}
+}
+
+// viewEffortResult shows the record the API returned, the user's selection and
+// the project metrics.
 func (m Model) viewEffortResult() string {
-	return m.okBlock("Esfuerzo registrado.")
+	var b strings.Builder
+	b.WriteString(screenTitleStyle.Render("Resultado"))
+	b.WriteString("\n\n")
+	b.WriteString(m.okBlock("Esfuerzo registrado."))
+	b.WriteString("\n\n")
+	if record := m.effort.record; record != nil {
+		b.WriteString("Fecha: " + record.WorkDate + "\n")
+		b.WriteString("Horas: " + formatMetric(&record.Hours, " h") + "\n")
+		b.WriteString("Actividad: " + record.Description + "\n")
+	} else {
+		b.WriteString("Respuesta de la API: " + m.effort.rawBody + "\n")
+	}
+	b.WriteString("Historia: " + m.effort.story.Label + "\n")
+	b.WriteString("Tarea: " + m.effort.task.Label + "\n")
+	b.WriteString("Integrante: " + m.effort.member.Label + "\n\n")
+	b.WriteString(panelTitleStyle.Render("Métricas del proyecto"))
+	b.WriteString("\n")
+	b.WriteString(m.viewEffortMetrics())
+	return b.String()
+}
+
+// viewEffortMetrics renders the metrics block. Hours and deviation are printed
+// exactly as the API returned them (nil reads "sin datos"); the TUI computes
+// nothing. A failed query is a notice, never an error block, because the effort
+// was registered.
+func (m Model) viewEffortMetrics() string {
+	switch m.effort.metricsStatus {
+	case effortMetricsLoading:
+		return statusMutedStyle.Render("Cargando métricas…")
+	case effortMetricsUnavailable:
+		return statusWarnStyle.Render("El esfuerzo quedó registrado; las métricas del proyecto no están disponibles.") +
+			"\n" + m.effort.metricsErr + "\n" + hintStyle.Render("r para reintentar.")
+	}
+	return "Horas reales: " + formatMetric(m.effort.metrics.ActualHours, " h") + "\n" +
+		"Desviación: " + formatMetric(m.effort.metrics.Deviation, "")
 }

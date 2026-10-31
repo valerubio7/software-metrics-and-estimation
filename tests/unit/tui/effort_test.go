@@ -29,9 +29,14 @@ type effortFlowOptions struct {
 	postStatus      int // status of the effort POST (default 201)
 	postBody        string
 	postFailures    int      // leading POSTs answered with postStatus; 0 means all of them
-	metricsStatus   int      // status of GET /metrics (default 200)
+	metricsStatus   int      // status of the failing GET /metrics answers (default 200)
 	metricsBodies   []string // served in order; the last one repeats
+	metricsDrop     bool     // the failing GET /metrics answers cut the connection instead
+	metricsFailures int      // leading GET /metrics answered as failures; 0 means all of them
 }
+
+// metricsErrorBody is the API error served with metricsStatus.
+const metricsErrorBody = `{"error":"metrics_unavailable","message":"the schema does not expose metrics"}`
 
 // effortFlowServer records every request and declares each route the effort flow
 // can reach. Anything undeclared answers 404, unlike sprintServer, whose
@@ -63,6 +68,10 @@ func effortFlowServer(t *testing.T, opts effortFlowOptions) (*httptest.Server, *
 			if tasksCalls <= opts.tasksFailures {
 				status, body = http.StatusInternalServerError, `{"error":"internal_error","message":"tasks down"}`
 			}
+		case "GET /projects/p2/stories/s9/tasks":
+			body = `{"project_id":"p2","story_id":"s9","tasks":[]}`
+		case "GET /projects/p2/members":
+			body = effortMembersBody
 		case "GET /projects/p1/stories/s2/tasks":
 			body = `{"project_id":"p1","story_id":"s2","tasks":[]}`
 		case "GET /projects/p1/members":
@@ -81,14 +90,22 @@ func effortFlowServer(t *testing.T, opts effortFlowOptions) (*httptest.Server, *
 				status, body = opts.postStatus, opts.postBody
 			}
 		case "GET /projects/p1/metrics":
-			status, body = http.StatusOK, effortMetricsBody
-			if opts.metricsStatus != 0 {
-				status = opts.metricsStatus
-			}
-			if len(opts.metricsBodies) > 0 {
-				body = opts.metricsBodies[min(metricsCalls, len(opts.metricsBodies)-1)]
-			}
+			call := metricsCalls
 			metricsCalls++
+			failing := opts.metricsFailures == 0 || call < opts.metricsFailures
+			if failing && opts.metricsDrop {
+				if conn, _, err := w.(http.Hijacker).Hijack(); err == nil {
+					_ = conn.Close()
+				}
+				return
+			}
+			status, body = http.StatusOK, effortMetricsBody
+			if len(opts.metricsBodies) > 0 {
+				body = opts.metricsBodies[min(call, len(opts.metricsBodies)-1)]
+			}
+			if failing && opts.metricsStatus != 0 {
+				status, body = opts.metricsStatus, metricsErrorBody
+			}
 		default:
 			status, body = http.StatusNotFound, `{"error":"not_found"}`
 		}
