@@ -393,34 +393,13 @@ func (m Model) updateProjectDate(key tea.KeyMsg) (Model, tea.Cmd) {
 	if m.formField == 1 {
 		date = m.formStart
 	}
-	switch key.Type {
-	case tea.KeyLeft:
-		if m.formSegment > 0 {
-			m.formSegment--
-		}
-	case tea.KeyRight:
-		if m.formSegment < numDateSegments-1 {
-			m.formSegment++
-		}
-	case tea.KeyBackspace:
-		date, m.formSegment = date.backspace(m.formSegment)
-		m.formErr = ""
-	case tea.KeyRunes:
-		for _, r := range key.Runes {
-			switch {
-			case r >= '0' && r <= '9':
-				date, m.formSegment = date.typeDigit(m.formSegment, string(r))
-			case r == '-' || r == '/':
-				// A separator only moves on from a segment that already has a
-				// value, so both "2026-10-01" and "2026-1-5" fill correctly.
-				if date.segment(m.formSegment) != "" && m.formSegment < numDateSegments-1 {
-					m.formSegment++
-				}
-			}
-		}
-		m.formErr = ""
-	default:
+	date, segment, handled := date.applyKey(m.formSegment, key)
+	if !handled {
 		return m.navigateProjectForm(key)
+	}
+	m.formSegment = segment
+	if key.Type == tea.KeyBackspace || key.Type == tea.KeyRunes {
+		m.formErr = ""
 	}
 	if m.formField == 1 {
 		m.formStart = date
