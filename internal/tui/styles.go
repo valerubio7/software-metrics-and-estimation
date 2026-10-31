@@ -134,6 +134,9 @@ var (
 	statusMutedStyle = lipgloss.NewStyle().
 				Foreground(muted)
 
+	statusWarnStyle = lipgloss.NewStyle().
+			Foreground(warn)
+
 	errorHintStyle = lipgloss.NewStyle().
 			Foreground(muted)
 

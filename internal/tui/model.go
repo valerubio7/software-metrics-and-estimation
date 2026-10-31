@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -93,6 +94,26 @@ type Model struct {
 	pokerEstimate     int
 	pokerMessage      string
 	pokerStory        Story
+
+	effortClient *EffortClient
+	effort       effortState
+	now          func() time.Time
+}
+
+// WithClock returns a copy of the model that reads the current time from now.
+// It is the test seam for the default date of the effort form.
+func (m Model) WithClock(now func() time.Time) Model {
+	m.now = now
+	return m
+}
+
+// today returns the current UTC date as YYYY-MM-DD.
+func (m Model) today() string {
+	now := m.now
+	if now == nil {
+		now = time.Now
+	}
+	return now().UTC().Format("2006-01-02")
 }
 
 // NewModel creates the base navigation model.
@@ -111,6 +132,7 @@ func NewModel(apiURL string) Model {
 		metricsClient: NewMetricsClient(apiURL),
 		taskClient:    NewTaskClient(apiURL),
 		memberClient:  NewMemberClient(apiURL),
+		effortClient:  NewEffortClient(apiURL),
 	}
 }
 
@@ -140,6 +162,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if result, ok := msg.(pokerSaveResult); ok {
 		return m.applyPokerSave(result)
+	}
+	if result, ok := msg.(effortSaveResult); ok {
+		return m.applyEffortSave(result)
+	}
+	if result, ok := msg.(effortMetricsResult); ok {
+		return m.applyEffortMetrics(result)
 	}
 	key, isKey := msg.(tea.KeyMsg)
 	if !isKey {
@@ -209,6 +237,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateSection(key)
 	case "planning-poker":
 		return m.updatePlanningPoker(key)
+	case "effort-form":
+		return m.updateEffortForm(key)
+	case "effort-result":
+		return m.updateEffortResult(key)
 	default:
 		if key.Type == tea.KeyEsc {
 			m.Screen = "menu"
@@ -222,7 +254,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // plain character rather than the help shortcut.
 func entersText(screen string) bool {
 	switch screen {
-	case "create-project", "edit-project", "backlog-form", "sprint-goal", "sprint-task-form":
+	case "create-project", "edit-project", "backlog-form", "sprint-goal", "sprint-task-form", "effort-form":
 		return true
 	}
 	return false
@@ -232,7 +264,7 @@ func entersText(screen string) bool {
 // listed, so q is a plain character there; Ctrl+C always quits.
 func quitsOnQ(screen string) bool {
 	switch screen {
-	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "planning-poker":
+	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "planning-poker", "effort-result":
 		return true
 	}
 	return false
@@ -393,34 +425,13 @@ func (m Model) updateProjectDate(key tea.KeyMsg) (Model, tea.Cmd) {
 	if m.formField == 1 {
 		date = m.formStart
 	}
-	switch key.Type {
-	case tea.KeyLeft:
-		if m.formSegment > 0 {
-			m.formSegment--
-		}
-	case tea.KeyRight:
-		if m.formSegment < numDateSegments-1 {
-			m.formSegment++
-		}
-	case tea.KeyBackspace:
-		date, m.formSegment = date.backspace(m.formSegment)
-		m.formErr = ""
-	case tea.KeyRunes:
-		for _, r := range key.Runes {
-			switch {
-			case r >= '0' && r <= '9':
-				date, m.formSegment = date.typeDigit(m.formSegment, string(r))
-			case r == '-' || r == '/':
-				// A separator only moves on from a segment that already has a
-				// value, so both "2026-10-01" and "2026-1-5" fill correctly.
-				if date.segment(m.formSegment) != "" && m.formSegment < numDateSegments-1 {
-					m.formSegment++
-				}
-			}
-		}
-		m.formErr = ""
-	default:
+	date, segment, handled := date.applyKey(m.formSegment, key)
+	if !handled {
 		return m.navigateProjectForm(key)
+	}
+	m.formSegment = segment
+	if key.Type == tea.KeyBackspace || key.Type == tea.KeyRunes {
+		m.formErr = ""
 	}
 	if m.formField == 1 {
 		m.formStart = date
@@ -586,6 +597,10 @@ func (m Model) viewBody() string {
 		return m.viewSection()
 	case "planning-poker":
 		return m.viewPlanningPoker()
+	case "effort-form":
+		return m.viewEffortForm()
+	case "effort-result":
+		return m.viewEffortResult()
 	default:
 		return screenTitleStyle.Render(m.Choices[m.Cursor])
 	}
@@ -744,7 +759,11 @@ func (m Model) crumbParts() []string {
 		parts = append(parts, m.section.kind.title())
 		switch m.section.step {
 		case sectionStepMembers:
-			parts = append(parts, "Participantes")
+			if m.section.kind == sectionEffort {
+				parts = append(parts, "Integrante")
+			} else {
+				parts = append(parts, "Participantes")
+			}
 		case sectionStepTasks:
 			parts = append(parts, "Tareas")
 		case sectionStepSprints:
@@ -752,6 +771,10 @@ func (m Model) crumbParts() []string {
 		case sectionStepNotice:
 			parts = append(parts, "Próximamente")
 		}
+	case "effort-form":
+		parts = append(parts, sectionEffort.title(), "Registrar")
+	case "effort-result":
+		parts = append(parts, sectionEffort.title(), "Resultado")
 	default:
 		parts = append(parts, "")
 	}
@@ -828,6 +851,10 @@ func (m Model) footer() string {
 		return m.sectionFooter()
 	case "planning-poker":
 		return m.planningPokerFooter()
+	case "effort-form":
+		return m.effortFormFooter()
+	case "effort-result":
+		return m.effortResultFooter()
 	default:
 		return m.keyHints("Esc", "volver", "?", "ayuda", "q", "salir")
 	}
@@ -852,6 +879,9 @@ func (m Model) helpRows() [][2]string {
 	}
 	if m.Screen == "section" {
 		return m.sectionHelpRows()
+	}
+	if m.Screen == "effort-result" {
+		return effortResultHelpRows()
 	}
 	return [][2]string{
 		{"↑ / ↓", "Mover la selección"},

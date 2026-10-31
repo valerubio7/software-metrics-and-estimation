@@ -173,6 +173,10 @@ func (m Model) selectProject(project ProjectSummary) (Model, tea.Cmd) {
 		return m.openSection(sectionKind(strings.TrimPrefix(purpose, "section:")))
 	case returnTo == "section" && m.section.kind != "":
 		return m.openSection(m.section.kind)
+	case returnTo == "effort-result":
+		// The result belongs to the project that was just left: drop the flow and
+		// start Esfuerzo again on the stories of the new one.
+		return m.openSection(sectionEffort)
 	default:
 		m.Screen = returnTo
 		if m.Screen == "" {

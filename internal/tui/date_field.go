@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -140,6 +141,78 @@ func (d dateField) backspace(seg int) (dateField, int) {
 	return d, seg
 }
 
+// applyKey applies an editing key to the focused segment. It reports false for
+// keys the caller must handle (Tab, arrows up/down, Enter, Esc...).
+func (d dateField) applyKey(seg int, key tea.KeyMsg) (dateField, int, bool) {
+	switch key.Type {
+	case tea.KeyLeft:
+		if seg > 0 {
+			seg--
+		}
+	case tea.KeyRight:
+		if seg < numDateSegments-1 {
+			seg++
+		}
+	case tea.KeyBackspace:
+		d, seg = d.backspace(seg)
+	case tea.KeyRunes:
+		for _, r := range key.Runes {
+			switch {
+			case r >= '0' && r <= '9':
+				d, seg = d.typeDigit(seg, string(r))
+			case r == '-' || r == '/':
+				// A separator only moves on from a segment that already has a
+				// value, so both "2026-10-01" and "2026-1-5" fill correctly.
+				if d.segment(seg) != "" && seg < numDateSegments-1 {
+					seg++
+				}
+			}
+		}
+	default:
+		return d, seg, false
+	}
+	return d, seg, true
+}
+
+// dateRow renders the segmented year/month/day editor with a label padded to
+// labelWidth. The focused row paints the whole width as a bar and inverts the
+// segment at seg, so the three sub-fields are always visible and no format has
+// to be remembered.
+func (m Model) dateRow(label string, d dateField, focused bool, seg, labelWidth int) string {
+	cell := padRight(label+":", labelWidth)
+	var segments []string
+	for i := 0; i < numDateSegments; i++ {
+		raw := d.segment(i)
+		empty := raw == ""
+		text := zeroPad(raw, dateSegmentWidths[i])
+		if empty {
+			text = dateSegmentHints[i]
+		}
+		text = padRight(text, dateSegmentWidths[i])
+		segments = append(segments, renderDateSegment(text, empty, focused && seg == i, focused))
+	}
+	if !focused {
+		return "  " + cell + " " + strings.Join(segments, " ")
+	}
+	line := selectedBarStyle.Render("▸ "+cell+" ") + strings.Join(segments, selectedBarStyle.Render(" "))
+	if pad := m.innerWidth() - lipgloss.Width(line); pad > 0 {
+		line += selectedBarStyle.Render(strings.Repeat(" ", pad))
+	}
+	return line
+}
+
+// alignedTextRow renders a labelled text field padded to labelWidth so its value
+// column lines up with the date rows. The focused row is a full-width selection
+// bar; the value carries a trailing cursor.
+func (m Model) alignedTextRow(label, value string, focused bool, labelWidth int) string {
+	cell := padRight(label+":", labelWidth)
+	text := cell + " " + value
+	if focused {
+		return selectedBarStyle.Render(padToWidth("▸ "+text+"_", m.innerWidth()))
+	}
+	return rowStyle.Render("  " + text)
+}
+
 // projectFieldWidth is the label column of the project form: the full cell when
 // there is room and a compact one on narrow terminals, so the segmented dates
 // stay visible instead of being clipped.
@@ -154,40 +227,13 @@ func (m Model) projectFieldWidth() int {
 // the value column lines up with the date rows. The focused row is a full-width
 // selection bar; the name carries a trailing cursor.
 func (m Model) projectTextRow(field int, label, value string) string {
-	cell := padRight(label+":", m.projectFieldWidth())
-	text := cell + " " + value
-	if m.formField == field {
-		return selectedBarStyle.Render(padToWidth("▸ "+text+"_", m.innerWidth()))
-	}
-	return rowStyle.Render("  " + text)
+	return m.alignedTextRow(label, value, m.formField == field, m.projectFieldWidth())
 }
 
-// projectDateRow renders the segmented year/month/day editor for a date field.
-// The focused row paints the whole width as a bar and inverts the active
-// segment, so the three sub-fields are always visible and no format has to be
-// remembered.
+// projectDateRow renders the segmented year/month/day editor for a date field of
+// the project form.
 func (m Model) projectDateRow(field int, label string, d dateField) string {
-	cell := padRight(label+":", m.projectFieldWidth())
-	focused := m.formField == field
-	var segments []string
-	for i := 0; i < numDateSegments; i++ {
-		raw := d.segment(i)
-		empty := raw == ""
-		text := zeroPad(raw, dateSegmentWidths[i])
-		if empty {
-			text = dateSegmentHints[i]
-		}
-		text = padRight(text, dateSegmentWidths[i])
-		segments = append(segments, renderDateSegment(text, empty, focused && m.formSegment == i, focused))
-	}
-	if !focused {
-		return "  " + cell + " " + strings.Join(segments, " ")
-	}
-	line := selectedBarStyle.Render("▸ "+cell+" ") + strings.Join(segments, selectedBarStyle.Render(" "))
-	if pad := m.innerWidth() - lipgloss.Width(line); pad > 0 {
-		line += selectedBarStyle.Render(strings.Repeat(" ", pad))
-	}
-	return line
+	return m.dateRow(label, d, m.formField == field, m.formSegment, m.projectFieldWidth())
 }
 
 func renderDateSegment(text string, empty, active, focused bool) string {
