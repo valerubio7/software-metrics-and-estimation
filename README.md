@@ -64,7 +64,7 @@ abren directamente su pantalla principal y encadenan selectores según el flujo:
 | Sección        | Navegación                                      | Flujo futuro |
 | -------------- | ----------------------------------------------- | ------------ |
 | Planning Poker | historia → integrante                           | TUI-07       |
-| Esfuerzo       | historia → tarea                                | TUI-08       |
+| Esfuerzo       | historia → tarea o historia completa → integrante → registro | disponible (TUI-08) |
 | Defectos       | historia → Sprint                               | TUI-09       |
 | Métricas       | Sprint                                          | TUI-10       |
 | Dashboard      | Sprint                                          | TUI-11       |
@@ -74,6 +74,9 @@ Estas pantallas son *shells* de navegación de solo lectura: consultan la API co
 historia que implementará el flujo de negocio. No crean, modifican ni eliminan
 datos. Si no hay proyecto activo, la sección abre primero el navegador de
 proyectos; el atajo `p` permite cambiarlo sin salir de la sección.
+
+Esfuerzo es la excepción: registra el esfuerzo mediante `POST` y muestra las
+métricas del proyecto devueltas por la API, sin calcular horas ni desvíos.
 
 Lecturas nuevas usadas por los selectores:
 
