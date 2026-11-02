@@ -51,6 +51,19 @@ func (c *DefectClient) Create(ctx context.Context, projectID string, input Defec
 	return c.api.do(ctx, http.MethodPost, path, input)
 }
 
+// UpdateStatus updates a defect after explicit confirmation in the TUI.
+func (c *DefectClient) UpdateStatus(ctx context.Context, projectID, defectID, status, resolutionSprintID string) (APIResponse, error) {
+	input := struct {
+		Status             string  `json:"status"`
+		ResolutionSprintID *string `json:"resolution_sprint_id,omitempty"`
+	}{Status: status}
+	if status == "resuelto" {
+		input.ResolutionSprintID = &resolutionSprintID
+	}
+	path := "/projects/" + url.PathEscape(projectID) + "/defects/" + url.PathEscape(defectID)
+	return c.api.do(ctx, http.MethodPatch, path, input)
+}
+
 // DefectResultMsg is the asynchronous result of a project defect list request.
 type DefectResultMsg struct {
 	ProjectID string
@@ -151,6 +164,12 @@ func (m Model) updateDefects(key tea.KeyMsg) (Model, tea.Cmd) {
 		switch string(key.Runes) {
 		case "n":
 			return m.beginDefectCreation()
+		case "u":
+			visible := m.visibleDefects()
+			if m.defectCursor >= 0 && m.defectCursor < len(visible) {
+				m.defectDetail = visible[m.defectCursor]
+				return m.beginDefectStatusUpdate()
+			}
 		case "/":
 			m.defectFiltering = true
 		case "r":
@@ -196,6 +215,9 @@ func (m Model) viewDefects() string {
 	b.WriteString(screenTitleStyle.Render("Defectos del proyecto " + m.projectLabel()))
 	b.WriteString("\n")
 	b.WriteString(hintStyle.Render("Listado de solo lectura · Enter muestra detalle."))
+	if m.defectStatusMessage != "" {
+		b.WriteString("\n\n" + m.resultBlock(m.defectStatusMessage, m.defectStatusOK))
+	}
 	b.WriteString("\n\n")
 	if m.defectFiltering || m.defectFilter != "" {
 		b.WriteString(searchLine(m.defectFilter, m.defectFiltering) + "\n\n")
@@ -250,6 +272,6 @@ func (m Model) viewDefectDetail() string {
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString(hintStyle.Render("Solo lectura."))
+	b.WriteString(hintStyle.Render("u cambia el estado · Esc vuelve al listado."))
 	return strings.TrimRight(b.String(), "\n")
 }
