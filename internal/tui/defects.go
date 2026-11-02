@@ -22,8 +22,17 @@ type Defect struct {
 	ResolutionSprintID *string `json:"resolution_sprint_id"`
 }
 
-// DefectClient reads defects for a project without exposing mutation methods.
+// DefectClient reads the project-scoped defect collection.
 type DefectClient struct{ api apiClient }
+
+// DefectCreateInput contains the exact fields accepted by defect registration.
+type DefectCreateInput struct {
+	StoryID     string `json:"story_id"`
+	SprintID    string `json:"sprint_id"`
+	Description string `json:"description"`
+	Severity    string `json:"severity"`
+	Status      string `json:"status"`
+}
 
 // NewDefectClient creates a read-only defect API client.
 func NewDefectClient(baseURL string) *DefectClient {
@@ -34,6 +43,12 @@ func NewDefectClient(baseURL string) *DefectClient {
 func (c *DefectClient) List(ctx context.Context, projectID string) (APIResponse, error) {
 	path := "/projects/" + url.PathEscape(projectID) + "/defects"
 	return c.api.do(ctx, http.MethodGet, path, nil)
+}
+
+// Create registers a defect after explicit confirmation in the TUI.
+func (c *DefectClient) Create(ctx context.Context, projectID string, input DefectCreateInput) (APIResponse, error) {
+	path := "/projects/" + url.PathEscape(projectID) + "/defects"
+	return c.api.do(ctx, http.MethodPost, path, input)
 }
 
 // DefectResultMsg is the asynchronous result of a project defect list request.
@@ -134,6 +149,8 @@ func (m Model) updateDefects(key tea.KeyMsg) (Model, tea.Cmd) {
 		}
 	case tea.KeyRunes:
 		switch string(key.Runes) {
+		case "n":
+			return m.beginDefectCreation()
 		case "/":
 			m.defectFiltering = true
 		case "r":
