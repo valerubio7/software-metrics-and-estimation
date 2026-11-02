@@ -872,12 +872,27 @@ func (m Model) crumbParts() []string {
 		parts = append(parts, sectionEffort.title(), "Registrar")
 	case "effort-result":
 		parts = append(parts, sectionEffort.title(), "Resultado")
-	case "defects", "defect-detail", "defect-create-form", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-create-result":
+	case "defects", "defect-detail", "defect-create-form", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-create-result", "defect-status-select", "defect-resolution-select", "defect-status-result":
 		parts = append(parts, sectionDefects.title())
-		if m.Screen == "defect-detail" {
+		switch m.Screen {
+		case "defect-detail":
 			parts = append(parts, "Detalle")
-		} else if strings.HasPrefix(m.Screen, "defect-") && m.Screen != "defects" {
-			parts = append(parts, strings.TrimPrefix(m.Screen, "defect-"))
+		case "defect-create-form":
+			parts = append(parts, "Registrar defecto")
+		case "defect-story-select":
+			parts = append(parts, "Elegir historia")
+		case "defect-sprint-select":
+			parts = append(parts, "Elegir Sprint de detección")
+		case "defect-create-confirm":
+			parts = append(parts, "Confirmar registro")
+		case "defect-create-result":
+			parts = append(parts, "Resultado del registro")
+		case "defect-status-select":
+			parts = append(parts, "Cambiar estado")
+		case "defect-resolution-select":
+			parts = append(parts, "Elegir Sprint de resolución")
+		case "defect-status-result":
+			parts = append(parts, "Resultado del estado")
 		}
 	default:
 		parts = append(parts, "")
@@ -961,23 +976,59 @@ func (m Model) footer() string {
 		return m.effortResultFooter()
 	case "defects":
 		if m.defectFiltering {
-			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
+			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar", "Ctrl+C", "salir")
 		}
-		return m.keyHints("↑/↓", "mover", "Enter", "detalle", "n", "nuevo defecto", "r", "refrescar", "/", "buscar", "p", "proyecto", "Esc", "menú", "q", "salir")
+		pairs := []string{"↑/↓", "mover"}
+		if len(m.visibleDefects()) > 0 {
+			pairs = append(pairs, "Enter", "detalle", "u", "actualizar estado")
+		}
+		pairs = append(pairs, "n", "nuevo defecto", "r", "refrescar", "/", "buscar", "?", "ayuda", "p", "proyecto", "Esc", "menú", "q", "salir", "Ctrl+C", "salir")
+		return m.keyHints(pairs...)
 	case "defect-detail":
-		return m.keyHints("Esc", "volver al listado", "p", "proyecto", "q", "salir")
+		return m.keyHints("u", "cambiar estado", "Esc", "volver al listado", "?", "ayuda", "p", "proyecto", "q", "salir", "Ctrl+C", "salir")
+	case "defect-story-select":
+		return m.defectSelectorFooter(&m.defectStorySelector, "historia")
+	case "defect-sprint-select":
+		return m.defectSelectorFooter(&m.defectSprintSelector, "Sprint")
+	case "defect-resolution-select":
+		return m.defectSelectorFooter(&m.defectResolutionSelector, "Sprint")
+	case "defect-status-select":
+		return m.keyHints("↑/↓", "elegir estado", "Enter", "confirmar estado", "Esc", "cancelar", "?", "ayuda", "p", "proyecto", "q", "salir", "Ctrl+C", "salir")
+	case "defect-status-result":
+		if m.defectStatusLoading {
+			return m.keyHints("?", "ayuda", "Ctrl+C", "salir")
+		}
+		return m.keyHints("Enter/Esc", "volver", "?", "ayuda", "p", "proyecto", "q", "salir", "Ctrl+C", "salir")
 	case "defect-create-form":
-		return m.keyHints("Tab/↑/↓", "campo", "←/→", "opción", "Enter", "continuar", "Esc", "cancelar")
+		return m.keyHints("Tab/↑/↓", "campo", "←/→", "opción", "Enter", "continuar", "Esc", "cancelar", "Ctrl+C", "salir")
 	case "defect-create-confirm":
-		return m.keyHints("s", "confirmar registro", "n", "cancelar", "Esc", "volver", "p", "proyecto", "q", "salir")
+		return m.keyHints("s", "confirmar registro", "n", "cancelar", "Esc", "volver", "?", "ayuda", "p", "proyecto", "q", "salir", "Ctrl+C", "salir")
 	case "defect-create-result":
 		if m.defectCreateLoading {
-			return m.keyHints("Ctrl+C", "salir")
+			return m.keyHints("?", "ayuda", "Ctrl+C", "salir")
 		}
-		return m.keyHints("Enter/Esc", "volver", "q", "salir")
+		return m.keyHints("Enter/Esc", "volver", "?", "ayuda", "p", "proyecto", "q", "salir", "Ctrl+C", "salir")
 	default:
 		return m.keyHints("Esc", "volver", "?", "ayuda", "q", "salir")
 	}
+}
+
+func (m Model) defectSelectorFooter(s *selector, noun string) string {
+	if m.filtering() {
+		return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar", "Ctrl+C", "salir")
+	}
+	if s.loading || m.defectStatusOptionsLoading && m.Screen == "defect-resolution-select" {
+		return m.keyHints("Esc", "cancelar", "p", "proyecto", "q", "salir", "?", "ayuda", "Ctrl+C", "salir")
+	}
+	if s.err != "" {
+		return m.keyHints("r", "reintentar", "Esc", "volver", "p", "proyecto", "q", "salir", "?", "ayuda", "Ctrl+C", "salir")
+	}
+	pairs := []string{"↑/↓", "mover"}
+	if len(s.visible()) > 0 {
+		pairs = append(pairs, "Enter", "elegir "+noun)
+	}
+	pairs = append(pairs, "r", "refrescar", "/", "buscar", "Esc", "volver", "p", "proyecto", "q", "salir", "?", "ayuda", "Ctrl+C", "salir")
+	return m.keyHints(pairs...)
 }
 
 func (m Model) viewHelp() string {
@@ -994,6 +1045,9 @@ func (m Model) viewHelp() string {
 // Sections get their own list so the overlay never advertises actions that do
 // not exist there.
 func (m Model) helpRows() [][2]string {
+	if strings.HasPrefix(m.Screen, "defect-") || m.Screen == "defects" {
+		return m.defectHelpRows()
+	}
 	if m.Screen == "planning-poker" && m.pokerPhase == "vote" {
 		return [][2]string{{"0–100 / ?", "Registrar el voto privado"}, {"Enter", "Confirmar voto y pasar al siguiente participante"}, {"Esc", "Volver"}, {"Ctrl+C", "Salir desde cualquier pantalla"}}
 	}
@@ -1020,6 +1074,61 @@ func (m Model) helpRows() [][2]string {
 		{"q", "Salir (no dentro de un campo de texto)"},
 		{"Ctrl+C", "Salir desde cualquier pantalla"},
 	}
+}
+
+func (m Model) defectHelpRows() [][2]string {
+	rows := [][2]string{}
+	switch m.Screen {
+	case "defects":
+		rows = append(rows, [2]string{"↑ / ↓", "Mover la selección"})
+		if len(m.visibleDefects()) > 0 {
+			rows = append(rows, [2]string{"Enter", "Ver el detalle del defecto"}, [2]string{"u", "Actualizar el estado del defecto resaltado"})
+		}
+		rows = append(rows, [2]string{"n", "Crear un defecto"}, [2]string{"/", "Buscar o filtrar defectos"}, [2]string{"r", "Refrescar el listado"})
+	case "defect-detail":
+		rows = append(rows, [2]string{"u", "Cambiar el estado del defecto"}, [2]string{"Esc", "Volver al listado"})
+	case "defect-create-form":
+		rows = append(rows, [2]string{"Tab / ↑ / ↓", "Cambiar de campo"}, [2]string{"← / →", "Cambiar severidad o estado"}, [2]string{"Enter", "Continuar al selector o confirmar"}, [2]string{"Esc", "Cancelar el borrador"})
+	case "defect-story-select", "defect-sprint-select", "defect-resolution-select":
+		var options *selector
+		switch m.Screen {
+		case "defect-story-select":
+			options = &m.defectStorySelector
+		case "defect-sprint-select":
+			options = &m.defectSprintSelector
+		default:
+			options = &m.defectResolutionSelector
+		}
+		rows = append(rows, [2]string{"↑ / ↓", "Mover la selección"})
+		if options.filtering {
+			rows = append(rows, [2]string{"Enter", "Dejar de filtrar"}, [2]string{"Esc", "Borrar el filtro"})
+			break
+		}
+		if !options.loading && options.err == "" && len(options.visible()) > 0 {
+			rows = append(rows, [2]string{"Enter", "Elegir la opción resaltada"})
+		}
+		rows = append(rows, [2]string{"/", "Buscar o filtrar"}, [2]string{"r", "Refrescar las opciones"}, [2]string{"Esc", "Limpiar filtro o volver"})
+	case "defect-create-confirm":
+		rows = append(rows, [2]string{"s", "Confirmar y registrar el defecto"}, [2]string{"n", "Cancelar el registro"}, [2]string{"Esc", "Volver al borrador"})
+	case "defect-create-result":
+		if !m.defectCreateLoading {
+			rows = append(rows, [2]string{"Enter / Esc", "Volver al listado"})
+		}
+	case "defect-status-select":
+		rows = append(rows, [2]string{"↑ / ↓", "Elegir un estado"}, [2]string{"Enter", "Confirmar el estado elegido"}, [2]string{"Esc", "Cancelar sin cambios"})
+	case "defect-status-result":
+		if !m.defectStatusLoading {
+			rows = append(rows, [2]string{"Enter / Esc", "Volver al detalle"})
+		}
+	}
+	if m.Screen != "defect-create-form" && !m.filtering() && !m.defectSubmissionInFlight() {
+		rows = append(rows, [2]string{"p", "Cambiar el proyecto activo"}, [2]string{"q / Q", "Salir"})
+	}
+	if !m.filtering() {
+		rows = append(rows, [2]string{"?", "Mostrar u ocultar esta ayuda"})
+	}
+	rows = append(rows, [2]string{"Ctrl+C", "Salir desde cualquier pantalla"})
+	return rows
 }
 
 func padRight(s string, width int) string {
