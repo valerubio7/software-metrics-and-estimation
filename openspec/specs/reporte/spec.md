@@ -146,3 +146,22 @@ El sistema MUST validar los UUID antes de leer y responder `422 validation_faile
 #### Scenario: Esquema incompatible
 - **WHEN** el esquema no está limpio o su versión es menor que 14
 - **THEN** las rutas no se registran y responden `404`
+
+### Requirement: Descargar reportes desde la TUI
+La TUI MUST permitir descargar el reporte PDF del proyecto activo desde Dashboard y el del Sprint resaltado desde la lista de Sprints. La descarga MUST usar `GET` sin cuerpo, MUST guardar el archivo en el directorio actual como `reporte-proyecto-{project_id}.pdf` o `reporte-sprint-{sprint_id}.pdf`, y MUST NOT mutar datos. Ante un error HTTP, de red o una respuesta que no empiece con `%PDF-`, MUST mostrar el error y MUST NOT escribir el archivo.
+
+#### Scenario: Descarga de proyecto desde Dashboard
+- **WHEN** el usuario presiona `d` en Dashboard con un proyecto activo
+- **THEN** la TUI descarga el PDF del proyecto y muestra la ruta guardada
+
+#### Scenario: Descarga de Sprint desde Sprints
+- **WHEN** el usuario presiona `d` sobre un Sprint resaltado en la lista de Sprints
+- **THEN** la TUI descarga el PDF de ese Sprint y muestra la ruta guardada
+
+#### Scenario: Respuesta inválida o error
+- **WHEN** la API responde un error o un cuerpo que no es PDF
+- **THEN** la TUI muestra el error y no deja un archivo parcial
+
+#### Scenario: Descarga de solo lectura
+- **WHEN** la TUI descarga un reporte de proyecto o Sprint
+- **THEN** solo emite `GET` y no crea, modifica ni elimina datos del proyecto

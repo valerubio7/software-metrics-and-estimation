@@ -48,6 +48,7 @@ selectores de las secciones del Sprint 3) comparten el mismo patrón navegable:
 | `Space`       | Marcar historias en la multiselección                         |
 | `/`           | Buscar; cualquier otro carácter también inicia la búsqueda    |
 | `r`           | Refrescar la lista                                            |
+| `d`           | Descargar el reporte PDF (Dashboard y Sprints)                |
 | `x`           | Cerrar el Sprint resaltado (pide confirmación `s/n`)          |
 | `h`           | Ver los Sprints cerrados                                      |
 | `p`           | Cambiar el proyecto activo                                    |
@@ -97,7 +98,20 @@ Unicode (`█` lleno, `░` vacío) para Story Points, horas, historias completa
 defectos. Una métrica `null` se presenta como «sin datos», nunca como cero. La
 pantalla es de solo lectura, se mantiene legible en terminales de 80 y 44
 columnas y no depende del color: cada fila conserva su etiqueta y sus valores.
-`r` refresca, `p` cambia el proyecto y `Esc` vuelve al menú.
+`r` refresca, `p` cambia el proyecto y `Esc` vuelve al menú. `d` descarga el
+reporte PDF del proyecto en el directorio actual.
+
+### Reportes en PDF desde la TUI
+
+La TUI usa las mismas rutas de reporte de solo lectura que la API y guarda el
+archivo en el directorio desde donde se ejecuta:
+
+- `d` en Dashboard guarda `reporte-proyecto-{project_id}.pdf` del proyecto activo.
+- `d` en Sprints guarda `reporte-sprint-{sprint_id}.pdf` del Sprint resaltado.
+
+La descarga solo emite `GET`, valida que la respuesta empiece con la firma
+`%PDF-` y muestra en pantalla la ruta guardada o el error de la API. Si el archivo
+ya existe en el directorio actual, se reemplaza.
 
 ## API de esfuerzo
 
