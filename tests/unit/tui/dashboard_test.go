@@ -1,6 +1,8 @@
 package tui_test
 
 import (
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -177,3 +179,172 @@ func TestDashboardBarsStayInsideThePanel(t *testing.T) {
 		t.Fatalf("bar lines = %d, want at least the four charted metrics: %q", barLines, view)
 	}
 }
+
+func TestDashboardShowsMetricErrorsWithoutClosingTheScreen(t *testing.T) {
+	rec := &recorder{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		rec.mu.Lock()
+		rec.requests = append(rec.requests, recordedRequest{Method: r.Method, Path: r.URL.EscapedPath(), Body: raw})
+		rec.mu.Unlock()
+		switch r.URL.Path {
+		case "/projects":
+			_, _ = w.Write([]byte(projectsBody(t, sampleProjects())))
+		case "/projects/p1":
+			_, _ = w.Write([]byte(`{"id":"p1","name":"Alpha","status":"active"}`))
+		case "/projects/p1/metrics":
+			http.Error(w, `{"error":"service_unavailable","message":"metrics down"}`, http.StatusServiceUnavailable)
+		default:
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	m := startDashboard(t, server.URL, "p1")
+	view := stripANSI(m.View())
+	if m.Screen != "dashboard" || !strings.Contains(view, "503") || !strings.Contains(view, "metrics down") {
+		t.Fatalf("metrics error view = %q (screen %q)", view, m.Screen)
+	}
+	if !strings.Contains(strings.ToLower(view), "en curso") {
+		t.Errorf("project status should stay visible when metrics fail: %q", view)
+	}
+
+	m, cmd := apply(m, keyMsg("r"))
+	if cmd == nil {
+		t.Fatal("r should retry the dashboard reads")
+	}
+	m = run(t, m, cmd)
+	if m.Screen != "dashboard" || !strings.Contains(stripANSI(m.View()), "503") {
+		t.Fatalf("retry should keep the dashboard open with the error: screen=%q view=%q", m.Screen, stripANSI(m.View()))
+	}
+	if got := len(rec.all()); got != 5 {
+		t.Fatalf("requests = %d, want the picker plus the initial and retried project/metrics reads", got)
+	}
+}
+
+func TestDashboardShowsProjectStatusErrorsAndKeepsMetrics(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/projects":
+			_, _ = w.Write([]byte(projectsBody(t, sampleProjects())))
+		case "/projects/p1":
+			http.Error(w, `{"error":"internal_error","message":"status down"}`, http.StatusInternalServerError)
+		case "/projects/p1/metrics":
+			_, _ = w.Write([]byte(dashboardMetricsBody))
+		default:
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	m := startDashboard(t, server.URL, "p1")
+	view := stripANSI(m.View())
+	if m.Screen != "dashboard" || !strings.Contains(view, "500") || !strings.Contains(view, "status down") {
+		t.Fatalf("status error view = %q (screen %q)", view, m.Screen)
+	}
+	if !strings.Contains(view, "sin datos") || !strings.Contains(view, "13 / 21") {
+		t.Errorf("metrics should stay visible when the status fails: %q", view)
+	}
+}
+
+func TestDashboardEscapeReturnsToTheMenu(t *testing.T) {
+	server := dashboardServer(t)
+	m := startDashboard(t, server.URL, "p1")
+	m = press(m, tea.KeyEsc)
+	if m.Screen != "menu" {
+		t.Fatalf("Screen = %q after Esc, want menu", m.Screen)
+	}
+}
+
+func TestDashboardSwitchesProjectWithP(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/projects":
+			_, _ = w.Write([]byte(projectsBody(t, sampleProjects())))
+		case "/projects/p1":
+			_, _ = w.Write([]byte(`{"id":"p1","name":"Alpha","status":"active"}`))
+		case "/projects/p1/metrics":
+			_, _ = w.Write([]byte(dashboardMetricsBody))
+		case "/projects/p2":
+			_, _ = w.Write([]byte(`{"id":"p2","name":"Beta","status":"planned"}`))
+		case "/projects/p2/metrics":
+			_, _ = w.Write([]byte(`{"project_id":"p2","story_points_planned":5,"story_points_completed":2,"velocity":2,"estimated_hours":8,"actual_hours":8,"deviation":0,"completed_stories_percentage":40,"defects_detected":0,"defects_resolved":0}`))
+		default:
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	m := startDashboard(t, server.URL, "p1")
+	m, cmd := apply(m, keyMsg("p"))
+	if m.Screen != "project-picker" {
+		t.Fatalf("Screen = %q after p, want project-picker", m.Screen)
+	}
+	m, cmd = confirmProjectInPicker(t, m, cmd, "p2")
+	m = run(t, m, cmd)
+	view := stripANSI(m.View())
+	if m.Screen != "dashboard" || !strings.Contains(view, "Beta") || !strings.Contains(view, "2 / 5") {
+		t.Fatalf("dashboard after switching project = %q (screen %q)", view, m.Screen)
+	}
+	if !strings.Contains(strings.ToLower(view), "planificado") {
+		t.Errorf("dashboard lacks the new project status: %q", view)
+	}
+}
+
+func TestDashboardOnlyEmitsGETRequests(t *testing.T) {
+	rec := &recorder{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		rec.mu.Lock()
+		rec.requests = append(rec.requests, recordedRequest{Method: r.Method, Path: r.URL.EscapedPath(), Body: raw})
+		rec.mu.Unlock()
+		switch r.URL.Path {
+		case "/projects":
+			_, _ = w.Write([]byte(projectsBody(t, sampleProjects())))
+		case "/projects/p1":
+			_, _ = w.Write([]byte(`{"id":"p1","name":"Alpha","status":"active"}`))
+		case "/projects/p1/metrics":
+			_, _ = w.Write([]byte(dashboardMetricsBody))
+		default:
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	m := startDashboard(t, server.URL, "p1")
+	m, cmd := apply(m, keyMsg("r"))
+	m = run(t, m, cmd)
+	for _, request := range rec.all() {
+		if request.Method != http.MethodGet {
+			t.Errorf("dashboard emitted %s %s, want only GET", request.Method, request.Path)
+		}
+	}
+	if len(rec.all()) == 0 {
+		t.Fatal("dashboard emitted no requests")
+	}
+}
+
+func TestDashboardFooterAndHelpOnlyShowValidKeys(t *testing.T) {
+	server := dashboardServer(t)
+	m := startDashboard(t, server.URL, "p1")
+	view := stripANSI(m.View())
+	for _, want := range []string{"r  refrescar", "p  proyecto", "Esc  menú", "?  ayuda", "q  salir"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("dashboard footer lacks %q: %q", want, view)
+		}
+	}
+
+	m, _ = apply(m, keyMsg("?"))
+	help := stripANSI(m.View())
+	for _, want := range []string{"Refrescar el estado y las métricas", "Cambiar el proyecto activo", "Volver al menú", "Salir"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("dashboard help lacks %q: %q", want, help)
+		}
+	}
+	for _, unwanted := range []string{"Crear un elemento nuevo", "Editar el elemento resaltado", "Cerrar el Sprint resaltado", "Ver los Sprints cerrados"} {
+		if strings.Contains(help, unwanted) {
+			t.Errorf("dashboard help shows unavailable action %q: %q", unwanted, help)
+		}
+	}
+}
+

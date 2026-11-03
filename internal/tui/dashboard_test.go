@@ -42,3 +42,27 @@ func TestDashboardBarWidthFitsThePanel(t *testing.T) {
 		t.Errorf("61.9%% bar has %d filled cells, want 17", got)
 	}
 }
+
+func TestDashboardDiscardsStaleAndForeignResults(t *testing.T) {
+	m := NewModel("http://localhost")
+	m.activeProjectID = "p1"
+	m.Screen = "dashboard"
+	m.dashboard = dashboardState{seq: 2, loading: true, status: "old"}
+
+	m, _ = m.applyDashboardResult(dashboardResultMsg{seq: 1, status: "stale", metricsOK: true})
+	if m.dashboard.status != "old" || !m.dashboard.loading {
+		t.Fatalf("stale result changed the dashboard: %+v", m.dashboard)
+	}
+
+	m.Screen = "menu"
+	m, _ = m.applyDashboardResult(dashboardResultMsg{seq: 2, status: "foreign", metricsOK: true})
+	if m.dashboard.status != "old" || !m.dashboard.loading {
+		t.Fatalf("result applied outside the dashboard: %+v", m.dashboard)
+	}
+
+	m.Screen = "dashboard"
+	m, _ = m.applyDashboardResult(dashboardResultMsg{seq: 2, status: "active", metricsOK: true})
+	if m.dashboard.status != "active" || m.dashboard.loading {
+		t.Fatalf("current result not applied: %+v", m.dashboard)
+	}
+}
