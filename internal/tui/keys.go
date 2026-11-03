@@ -254,10 +254,6 @@ func (m Model) selectorBindings(l *keyList, s *selector, choose, chooseHelp, esc
 }
 
 func (m Model) sectionBindings(l *keyList) {
-	if m.section.step == sectionStepNotice {
-		l.add(keyNav, true, "Enter/Esc", "volver", "Volver a la lista de la sección")
-		return
-	}
 	l.add(keyNav, true, "↑/↓", "mover", "Mover la selección")
 	if m.section.kind == sectionPlanningPoker && m.section.step == sectionStepMembers {
 		l.add(keyAction, true, "Space", "seleccionar", "Marcar o desmarcar el participante resaltado")

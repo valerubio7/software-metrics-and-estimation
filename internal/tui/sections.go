@@ -41,7 +41,8 @@ func (k sectionKind) primaryUsesStories() bool {
 	return false
 }
 
-// storyNextStep is the selector that follows choosing a story.
+// storyNextStep is the selector that follows choosing a story; an unknown
+// kind keeps the primary step, so choosing a story is a no-op.
 func (k sectionKind) storyNextStep() sectionStep {
 	switch k {
 	case sectionPlanningPoker:
@@ -51,7 +52,7 @@ func (k sectionKind) storyNextStep() sectionStep {
 	case sectionDefects:
 		return sectionStepSprints
 	}
-	return sectionStepNotice
+	return sectionStepPrimary
 }
 
 func (k sectionKind) primaryHint() string {
@@ -93,22 +94,19 @@ const (
 	sectionStepMembers
 	sectionStepTasks
 	sectionStepSprints
-	sectionStepNotice
 )
 
 // sectionState is the navigation state of a Sprint 3 section. The primary
 // selector is preserved while a secondary selector is displayed, so Esc can
 // restore the previous list without another request.
 type sectionState struct {
-	kind         sectionKind
-	step         sectionStep
-	selector     selector
-	primary      selector
-	tasks        selector // task list kept while Esfuerzo shows its members
-	selected     selectorItem
-	detail       selectorItem
-	notice       string
-	noticeReturn sectionStep
+	kind     sectionKind
+	step     sectionStep
+	selector selector
+	primary  selector
+	tasks    selector // task list kept while Esfuerzo shows its members
+	selected selectorItem
+	detail   selectorItem
 	// preselected marks a section opened from the backlog with P/E: the story
 	// came chosen, so Esc on its first selector returns to the backlog.
 	preselected bool
@@ -134,7 +132,6 @@ func (m Model) openSection(kind sectionKind) (Model, tea.Cmd) {
 	m.section.step = sectionStepPrimary
 	m.section.selected = selectorItem{}
 	m.section.detail = selectorItem{}
-	m.section.notice = ""
 	m.section.preselected = false
 	m.section.selector = selector{}
 	m.section.tasks = selector{}
@@ -219,15 +216,6 @@ func (m Model) applySectionResult(result SectionResultMsg) (Model, tea.Cmd) {
 
 // updateSection drives the shared selector and the step transitions.
 func (m Model) updateSection(key tea.KeyMsg) (Model, tea.Cmd) {
-	if m.section.step == sectionStepNotice {
-		if key.Type == tea.KeyEsc || key.Type == tea.KeyEnter {
-			// The selector still holds the list that produced the notice, so
-			// returning restores the previous step without another request.
-			m.section.step = m.section.noticeReturn
-			m.section.notice = ""
-		}
-		return m, nil
-	}
 	if m.section.kind == sectionPlanningPoker && m.section.step == sectionStepMembers && key.Type == tea.KeySpace {
 		item, ok := m.section.selector.selected()
 		if ok {
@@ -270,8 +258,8 @@ func (m Model) updateSection(key tea.KeyMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// chooseSectionItem advances to the secondary selector or finishes the
-// navigation shell with the future-issue notice.
+// chooseSectionItem advances to the next selector or opens the section flow;
+// a step without a next one keeps the current list.
 func (m Model) chooseSectionItem() (Model, tea.Cmd) {
 	item, ok := m.section.selector.selected()
 	if !ok {
@@ -280,15 +268,10 @@ func (m Model) chooseSectionItem() (Model, tea.Cmd) {
 	if m.section.step == sectionStepPrimary {
 		m.section.selected = item
 		m.section.primary = m.section.selector
-		switch m.section.kind {
-		case sectionPlanningPoker, sectionEffort, sectionDefects:
-			return m.beginSectionStep(m.section.kind.storyNextStep())
-		default:
-			m.section.noticeReturn = sectionStepPrimary
-			m.section.step = sectionStepNotice
-			m.section.notice = sectionNotice(m.section.kind, item, selectorItem{})
-			return m, nil
+		if next := m.section.kind.storyNextStep(); next != sectionStepPrimary {
+			return m.beginSectionStep(next)
 		}
+		return m, nil
 	}
 
 	if m.section.kind == sectionEffort && m.section.step == sectionStepTasks {
@@ -314,10 +297,6 @@ func (m Model) chooseSectionItem() (Model, tea.Cmd) {
 		m.pokerPhase, m.pokerCursor, m.Screen = "vote", 0, "planning-poker"
 		return m, nil
 	}
-	m.section.detail = item
-	m.section.noticeReturn = m.section.step
-	m.section.step = sectionStepNotice
-	m.section.notice = sectionNotice(m.section.kind, m.section.selected, item)
 	return m, nil
 }
 
@@ -326,19 +305,6 @@ func (m Model) beginSectionStep(step sectionStep) (Model, tea.Cmd) {
 	m.section.selector = selector{}
 	m.section.selector.startLoading()
 	return m, m.loadSectionStepCmd()
-}
-
-// sectionNotice explains the limit of the navigation shell and names the
-// future issue that will implement the business flow.
-func sectionNotice(kind sectionKind, primary, detail selectorItem) string {
-	switch kind {
-	case sectionPlanningPoker:
-		return fmt.Sprintf("Historia: %s\nParticipante: %s\n\nLa votación de Planning Poker estará disponible en TUI-07.\nNo se guardó ningún dato.", primary.Label, detail.Label)
-	case sectionDefects:
-		return fmt.Sprintf("Historia: %s\nSprint de detección: %s\n\nEl alta de defectos estará disponible en TUI-09.\nNo se guardó ningún dato.", primary.Label, detail.Label)
-	default:
-		return "El flujo de negocio todavía no está disponible.\nNo se guardó ningún dato."
-	}
 }
 
 func (m Model) viewSection() string {
@@ -372,8 +338,6 @@ func (m Model) viewSection() string {
 		return m.viewSelector(&m.section.selector, m.section.kind.title()+" · Sprint",
 			"Elegí el Sprint relacionado.", "No hay Sprints abiertos.",
 			"Creá un Sprint desde Sprints.")
-	case sectionStepNotice:
-		return m.viewSectionNotice()
 	default:
 		return ""
 	}
@@ -421,16 +385,6 @@ func (m Model) viewSelector(s *selector, title, hint, emptyTitle, emptyHint stri
 		b.WriteString(m.row(i == s.cursor, text))
 		b.WriteString("\n")
 	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
-func (m Model) viewSectionNotice() string {
-	var b strings.Builder
-	b.WriteString(screenTitleStyle.Render(m.section.kind.title() + " · Próximamente"))
-	b.WriteString("\n")
-	b.WriteString(hintStyle.Render("Este flujo todavía no está implementado; la navegación ya está disponible."))
-	b.WriteString("\n\n")
-	b.WriteString(m.section.notice)
 	return strings.TrimRight(b.String(), "\n")
 }
 

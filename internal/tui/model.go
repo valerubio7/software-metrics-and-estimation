@@ -770,8 +770,6 @@ func (m Model) crumbParts() []string {
 			parts = append(parts, "Tareas")
 		case sectionStepSprints:
 			parts = append(parts, "Sprint")
-		case sectionStepNotice:
-			parts = append(parts, "Próximamente")
 		}
 	case "effort-form":
 		parts = append(parts, sectionEffort.title(), "Registrar")
