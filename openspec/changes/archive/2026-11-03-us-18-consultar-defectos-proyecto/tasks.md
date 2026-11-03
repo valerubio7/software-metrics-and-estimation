@@ -17,7 +17,7 @@ Cambio de especificación posterior a la implementación: el listado ya está en
 ## 3. Validación y entrega
 
 - [x] 3.1 Ejecutar `openspec validate us-18-consultar-defectos-proyecto --strict` y verificar `go build ./...`, `go vet ./...` y las suites de pruebas del listado antes de escribir 3.2. Resultados: validación estricta PASS; `go build ./...` y `go vet ./...` OK; `go test ./tests/unit/... -count=1` PASS (27 paquetes, incluidos los de `defect`, `cmd/api` y `tui`); `go test ./tests/integration/defect/... -count=1` PASS con PostgreSQL real (64,4 s).
-- [x] 3.2 Commit único `docs(defecto)` con los cuatro artefactos y crear un PR a `main` con `Closes #46`; no fusionar: la aprobación y el merge son decisión del usuario, y el archivado del cambio se ejecuta después de fusionar.
+- [x] 3.2 Commit único `docs(defecto)` con los cuatro artefactos y crear un PR a `main` con `Closes #46`; no fusionar: la aprobación y el merge son decisión del usuario. A pedido del usuario, el archivado del cambio y la consolidación manual del spec de `defecto` se ejecutan en este mismo PR (commit `docs(defecto): archivar la US-18 y consolidar el spec de defectos`).
 
 ## Seguimiento
 
