@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -159,40 +160,105 @@ func (m Model) dashboardProjectName() string {
 	return "sin datos"
 }
 
-// viewDashboardMetrics renders one line per metric. The chart rows arrive with
-// TUI-11's graphics unit; text values already satisfy the consistency rule.
+// viewDashboardMetrics renders one line per metric plus a Unicode bar for each
+// relation available. Values are never calculated here; formatMetric keeps nil
+// as «sin datos».
 func (m Model) viewDashboardMetrics() string {
-	rows := [][2]string{
-		{"Story Points", dashboardRatio(m.dashboard.metrics.StoryPointsCompleted, m.dashboard.metrics.StoryPointsPlanned, "")},
-		{"Horas", dashboardRatio(m.dashboard.metrics.ActualHours, m.dashboard.metrics.EstimatedHours, "h")},
-		{"Historias completadas", formatMetric(m.dashboard.metrics.CompletedStoriesPercentage, "%")},
-		{"Defectos", dashboardRatio(m.dashboard.metrics.DefectsResolved, m.dashboard.metrics.DefectsDetected, "")},
-		{"Velocidad", formatMetric(m.dashboard.metrics.Velocity, "")},
-		{"Desviación", formatMetric(m.dashboard.metrics.Deviation, "")},
-	}
-	var b strings.Builder
+	rows := dashboardMetricRows(m.dashboard.metrics)
 	width := m.innerWidth()
+	barWidth := dashboardBarWidth(width)
+	var b strings.Builder
 	for _, row := range rows {
-		line := row[0] + ": " + row[1]
+		line := row.label + ": " + row.value
 		for _, wrapped := range wrapPlain(line, width) {
 			b.WriteString(wrapped)
+			b.WriteString("\n")
+		}
+		if row.fraction != nil {
+			b.WriteString(dashboardBar(*row.fraction, barWidth))
 			b.WriteString("\n")
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// dashboardRatio displays a pair of API values without calculating a new
-// business metric. It is the textual base of the Dashboard chart rows.
-func dashboardRatio(value, total *float64, unit string) string {
+// dashboardRow is one metric line. fraction is nil when the API cannot express
+// a relation (missing value or zero denominator), so no bar is drawn.
+type dashboardRow struct {
+	label    string
+	value    string
+	fraction *float64
+}
+
+func dashboardMetricRows(metrics metricsPayload) []dashboardRow {
+	storyPoints, storyPointsFraction := dashboardPair(metrics.StoryPointsCompleted, metrics.StoryPointsPlanned, "")
+	hours, hoursFraction := dashboardPair(metrics.ActualHours, metrics.EstimatedHours, "h")
+	stories, storiesFraction := dashboardPercentage(metrics.CompletedStoriesPercentage)
+	defects, defectsFraction := dashboardPair(metrics.DefectsResolved, metrics.DefectsDetected, "")
+	return []dashboardRow{
+		{"Story Points", storyPoints, storyPointsFraction},
+		{"Horas", hours, hoursFraction},
+		{"Historias completadas", stories, storiesFraction},
+		{"Defectos", defects, defectsFraction},
+		{"Velocidad", formatMetric(metrics.Velocity, ""), nil},
+		{"Desviación", formatMetric(metrics.Deviation, ""), nil},
+	}
+}
+
+// dashboardPair displays both API values and returns the relation used by the
+// bar. A missing value or a non-positive denominator yields no bar.
+func dashboardPair(value, total *float64, unit string) (string, *float64) {
 	if value == nil || total == nil {
-		return "sin datos"
+		return "sin datos", nil
 	}
 	text := formatMetric(value, "") + " / " + formatMetric(total, "")
 	if unit != "" {
 		text += " " + unit
 	}
-	return text
+	if *total <= 0 {
+		return text, nil
+	}
+	fraction := *value / *total
+	return text, &fraction
+}
+
+// dashboardPercentage uses the percentage returned by US-19; it only divides by
+// 100 to size the bar, never to recalculate the metric.
+func dashboardPercentage(value *float64) (string, *float64) {
+	if value == nil {
+		return "sin datos", nil
+	}
+	fraction := *value / 100
+	return formatMetric(value, "%"), &fraction
+}
+
+// dashboardBarWidth keeps the bar inside the panel at 44 columns and leaves it
+// at a readable size on wider terminals.
+func dashboardBarWidth(inner int) int {
+	width := inner - 6
+	if width < 4 {
+		width = 4
+	}
+	if width > 28 {
+		width = 28
+	}
+	return width
+}
+
+// dashboardBar draws a Unicode bar. Fractions outside [0,1] are clamped so an
+// overrun still fits; zero is a real value and renders an empty bar.
+func dashboardBar(fraction float64, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if fraction < 0 {
+		fraction = 0
+	}
+	if fraction > 1 {
+		fraction = 1
+	}
+	filled := int(math.Round(fraction * float64(width)))
+	return strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
 }
 
 func (m Model) dashboardFooter() string {
