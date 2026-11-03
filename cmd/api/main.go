@@ -15,6 +15,8 @@ import (
 	metricspostgres "github.com/valerubio7/software-metrics-and-estimation/internal/metrics/infrastructure/postgres"
 	projectpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/project/infrastructure/postgres"
 	memberpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/projectmember/infrastructure/postgres"
+	reportpdf "github.com/valerubio7/software-metrics-and-estimation/internal/report/infrastructure/pdf"
+	reportpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/report/infrastructure/postgres"
 	sprintpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/sprint/infrastructure/postgres"
 	storypostgres "github.com/valerubio7/software-metrics-and-estimation/internal/story/infrastructure/postgres"
 	taskpostgres "github.com/valerubio7/software-metrics-and-estimation/internal/task/infrastructure/postgres"
@@ -42,9 +44,9 @@ func main() {
 	// schema version 9 and story completion schema version 10; the closed sprint history needs
 	// schema version 11 (migration 000011, sprints.seq); effort registration needs schema version 12
 	// (migration 000012, effort_records); defect registration schema version 13 (migration 000013,
-	// defects); and defect lifecycle updates/listing require schema version 14 (migration 000014,
-	// resolution_sprint_id), as do project/Sprint metrics. All schema-backed routes require a clean
-	// externally managed migration state.
+	// defects); defect lifecycle updates/listing require schema version 14 (migration 000014,
+	// resolution_sprint_id), as do project/Sprint metrics and PDF reports. All schema-backed routes
+	// require a clean externally managed migration state.
 	var version int
 	var dirty bool
 	migrationErr := pool.QueryRow(ctx, "SELECT version, dirty FROM schema_migrations").Scan(&version, &dirty)
@@ -156,6 +158,15 @@ func main() {
 		log.Printf("project and Sprint metrics available (schema version=%d)", version)
 	} else {
 		log.Printf("project and Sprint metrics unavailable until migration 000014 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
+	}
+	if readiness := api.ResolveMigrationReadiness(version, dirty, migrationErr); readiness.Report {
+		dependencies.Report = &api.ReportDependencies{
+			Reader:   reportpostgres.NewPostgresReportReader(pool),
+			Renderer: reportpdf.NewRenderer(),
+		}
+		log.Printf("project and Sprint PDF reports available (schema version=%d)", version)
+	} else {
+		log.Printf("project and Sprint PDF reports unavailable until migration 000014 is clean (version=%d, dirty=%t, lookup error=%v)", version, dirty, migrationErr)
 	}
 	handler := api.NewHTTPHandlerWithDependencies(projects, api.NewProjectID, dependencies)
 	server := &http.Server{Addr: config.Address, Handler: handler}

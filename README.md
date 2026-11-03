@@ -315,6 +315,42 @@ Ejemplo de Sprint:
   estado `dirty` o error al leer `schema_migrations`, las rutas no están disponibles y
   responden `404`. Las migraciones se aplican externamente; la API no las ejecuta.
 
+## API de reportes
+
+Genera un PDF de solo lectura para un proyecto o un Sprint:
+
+```http
+GET  /projects/{project_id}/report.pdf
+GET  /projects/{project_id}/sprints/{sprint_id}/report.pdf
+HEAD /projects/{project_id}/report.pdf
+HEAD /projects/{project_id}/sprints/{sprint_id}/report.pdf
+```
+
+`GET` responde `200` con `Content-Type: application/pdf`, `Content-Disposition: attachment`
+y `Content-Length`. El nombre descargado es `reporte-proyecto-{project_id}.pdf` o
+`reporte-sprint-{sprint_id}.pdf`. `HEAD` ejecuta la misma consulta y devuelve los mismos
+encabezados sin cuerpo.
+
+El PDF identifica el proyecto y, en ámbito Sprint, el Sprint con su objetivo y estado. Incluye
+las métricas del ámbito, las historias planificadas y completadas, las tareas con sus
+estimaciones, el esfuerzo registrado y los defectos relacionados. Los valores faltantes se
+muestran como `No disponible` y la cobertura de las métricas acompaña cada agregado.
+
+- Proyecto incluye todas las historias, tareas, registros de esfuerzo y defectos del proyecto;
+  la velocidad promedia los Sprints cerrados. Sprint incluye las historias asignadas, las
+  tareas del Sprint, el esfuerzo atribuible a sus tareas y los defectos detectados o resueltos
+  en él.
+- Las métricas se derivan con las mismas fórmulas de US-19 desde una única transacción
+  `RepeatableRead`/`ReadOnly`, por lo que coinciden con `GET .../metrics` para el mismo ámbito.
+  La tabla de esfuerzo de un Sprint excluye registros directos a historia y esfuerzo de tareas
+  de otros Sprints; esos registros siguen contabilizados en la cobertura como no atribuibles.
+- La generación no crea ni modifica datos. `422 validation_failed` indica UUID inválidos sin
+  consultar el almacenamiento; `404 project_not_found` o `404 sprint_not_found` indican que el
+  ámbito no existe o no pertenece al proyecto; `405` corresponde a métodos distintos de `GET`
+  o `HEAD`; `500 internal_error` no expone detalles internos.
+- Las rutas solo se registran con el esquema limpio en versión 14 o superior. Con versión
+  menor, estado `dirty` o error al leer `schema_migrations`, responden `404`.
+
 ## Pruebas
 
 ```sh

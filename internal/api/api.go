@@ -17,6 +17,8 @@ import (
 	transporthttp "github.com/valerubio7/software-metrics-and-estimation/internal/project/transport/http"
 	memberapplication "github.com/valerubio7/software-metrics-and-estimation/internal/projectmember/application"
 	memberhttp "github.com/valerubio7/software-metrics-and-estimation/internal/projectmember/transport/http"
+	reportapplication "github.com/valerubio7/software-metrics-and-estimation/internal/report/application"
+	reporthttp "github.com/valerubio7/software-metrics-and-estimation/internal/report/transport/http"
 	sprintapplication "github.com/valerubio7/software-metrics-and-estimation/internal/sprint/application"
 	sprinthttp "github.com/valerubio7/software-metrics-and-estimation/internal/sprint/transport/http"
 	storyapplication "github.com/valerubio7/software-metrics-and-estimation/internal/story/application"
@@ -118,6 +120,14 @@ type MetricsDependencies struct {
 	Reader metricsapplication.MetricsReader
 }
 
+// ReportDependencies enables read-only project and Sprint PDF reports after migration 000014 is clean.
+// Now is optional: when nil the report uses the current UTC time.
+type ReportDependencies struct {
+	Reader   reportapplication.SnapshotReader
+	Renderer reportapplication.ReportRenderer
+	Now      reportapplication.Clock
+}
+
 // HTTPDependencies contains optional migration-backed API modules.
 type HTTPDependencies struct {
 	Stories *StoryDependencies
@@ -132,6 +142,8 @@ type HTTPDependencies struct {
 	Defect *DefectDependencies
 	// Metrics nil: both metrics routes are not registered (the mux answers 404).
 	Metrics *MetricsDependencies
+	// Report nil: both PDF report routes are not registered (the mux answers 404).
+	Report *ReportDependencies
 }
 
 // MigrationReadiness describes which handlers are safe to compose for a schema state.
@@ -157,6 +169,8 @@ type MigrationReadiness struct {
 	DefectList bool
 	// Metrics is true for a clean schema at version 14 or later (resolution Sprint and defects).
 	Metrics bool
+	// Report is true for a clean schema at version 14 or later (metrics and defect resolution data).
+	Report bool
 }
 
 // ResolveMigrationReadiness keeps project creation available while gating schema-backed routes.
@@ -179,6 +193,7 @@ func ResolveMigrationReadiness(version int, dirty bool, lookupErr error) Migrati
 	readiness.DefectUpdate = version >= 14
 	readiness.DefectList = version >= 14
 	readiness.Metrics = version >= 14
+	readiness.Report = version >= 14
 	return readiness
 }
 
@@ -295,6 +310,14 @@ func NewHTTPHandlerWithDependencies(repository application.ProjectRepository, ge
 		metricsHandler := metricshttp.NewMetricsHandler(readMetricsUseCase)
 		mux.Handle("GET /projects/{project_id}/metrics", metricsHandler)
 		mux.Handle("GET /projects/{project_id}/sprints/{sprint_id}/metrics", metricsHandler)
+	}
+	if dependencies.Report != nil {
+		generateReportUseCase := reportapplication.NewGenerateReportUseCase(
+			dependencies.Report.Reader, dependencies.Report.Renderer, dependencies.Report.Now,
+		)
+		reportHandler := reporthttp.NewReportHandler(generateReportUseCase)
+		mux.Handle("GET /projects/{project_id}/report.pdf", reportHandler)
+		mux.Handle("GET /projects/{project_id}/sprints/{sprint_id}/report.pdf", reportHandler)
 	}
 	return mux
 }
