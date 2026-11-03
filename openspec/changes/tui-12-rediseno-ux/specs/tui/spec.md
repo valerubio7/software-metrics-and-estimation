@@ -84,7 +84,7 @@ La pestaña Dashboard DEBERÁ integrar la consulta de métricas: muestra el esta
 - **THEN** la TUI descarga el reporte PDF de ese Sprint
 
 ### Requirement: Avisos efímeros en lugar de pantallas de resultado
-Cuando una operación de escritura termina con éxito (crear o modificar un proyecto, crear o modificar una historia, crear un Sprint, asignar historias, completar una historia, crear una tarea, cerrar un Sprint, registrar esfuerzo, registrar un defecto o cambiar su estado), la TUI DEBERÁ volver a la pantalla desde la que se inició el flujo, recargar su colección y mostrar un aviso de éxito con el prefijo `✓` en el panel. El aviso DEBERÁ desaparecer con la siguiente tecla. Cuando la API rechaza la operación, la TUI DEBERÁ permanecer en el formulario o la pantalla de confirmación, conservar los valores escritos y mostrar el motivo informado por la API. La TUI MUST NOT mostrar pantallas de resultado que exijan una tecla adicional para continuar.
+Cuando una operación de escritura termina con éxito (crear o modificar un proyecto, crear o modificar una historia, crear un Sprint, asignar historias, completar una historia, crear una tarea, cerrar un Sprint, registrar esfuerzo, registrar un defecto o cambiar su estado), la TUI DEBERÁ volver a la pantalla desde la que se inició el flujo, recargar su colección y mostrar un aviso de éxito con el prefijo `✓` al inicio del panel. Los destinos son: el navegador de proyectos (recargando `GET /projects`, sin abrir automáticamente un proyecto único) para los proyectos; la lista del backlog para las historias; la lista de Sprints abiertos para crear un Sprint, asignar historias y cerrar un Sprint; las historias del Sprint para completar una historia y crear una tarea; el selector de historias de la pestaña Esfuerzo para el registro de esfuerzo, con un aviso que resume horas, fecha, historia, tarea e integrante; la lista de defectos para registrar un defecto; y el detalle del defecto, actualizado con la respuesta de la API, para el cambio de estado. El aviso DEBERÁ desaparecer con la siguiente tecla, que conserva su efecto normal; no se usan temporizadores. Mientras una escritura está en curso, la pantalla DEBERÁ mostrar un indicador de envío e ignorar las repeticiones del envío. Cuando la API rechaza la operación, la TUI DEBERÁ permanecer en el formulario o la pantalla de confirmación, conservar los valores escritos y mostrar el motivo informado por la API. Una respuesta de escritura que llega sin un envío en curso DEBERÁ descartarse sin cambiar de pantalla. La TUI MUST NOT mostrar pantallas de resultado que exijan una tecla adicional para continuar.
 
 #### Scenario: Crear una historia vuelve al backlog con un aviso
 - **GIVEN** que el formulario de una historia nueva está completo
@@ -97,6 +97,23 @@ Cuando una operación de escritura termina con éxito (crear o modificar un proy
 - **WHEN** la API rechaza la operación con un error
 - **THEN** la TUI permanece en el formulario con los valores escritos
 - **AND** muestra el motivo informado por la API
+
+#### Scenario: Registrar esfuerzo vuelve a la pestaña Esfuerzo
+- **GIVEN** que el formulario de esfuerzo de «Ada Lovelace» sobre la tarea «Diseñar» de la historia «Login» está completo
+- **WHEN** la API responde HTTP 201 con `hours` 3.5 y `work_date` 2026-10-05
+- **THEN** la TUI vuelve al selector de historias de la pestaña Esfuerzo y lo recarga
+- **AND** muestra el aviso «✓ Esfuerzo registrado: 3.5 h el 2026-10-05 · Login · Diseñar · Ada Lovelace»
+- **AND** no consulta las métricas del proyecto
+
+#### Scenario: Cambiar el estado de un defecto vuelve a su detalle
+- **GIVEN** que el usuario eligió un nuevo estado para un defecto
+- **WHEN** la API responde con éxito
+- **THEN** la TUI muestra el detalle de ese defecto con el estado devuelto por la API y un aviso que empieza con `✓`
+
+#### Scenario: El envío en curso ignora repeticiones
+- **GIVEN** que el usuario confirmó la creación de un Sprint
+- **WHEN** presiona `Enter` de nuevo antes de que responda la API
+- **THEN** la TUI no emite otra request y muestra «Guardando…»
 
 ### Requirement: Pie de teclas acotado y ayuda agrupada
 El pie DEBERÁ mostrar como máximo cinco atajos, los principales de la pantalla y el paso activos, y agregar `? más` cuando la pantalla tenga más atajos disponibles. La ayuda abierta con `?` DEBERÁ listar todos los atajos válidos de la pantalla activa agrupados en «Navegación», «Acciones» y «General», omitiendo los grupos vacíos. Las teclas de cambio de pestaña DEBERÁN figurar en la ayuda de las pantallas raíz del espacio de trabajo.
@@ -232,7 +249,247 @@ Las pantallas que muestran colecciones (proyectos, historias y Sprints) DEBERÁN
 - **WHEN** el usuario opera cualquier colección
 - **THEN** la TUI nunca solicita que se escriba un identificador
 
+### Requirement: Crear historias mediante la TUI
+La TUI DEBERÁ permitir crear una historia con título, descripción, prioridad y criterios de aceptación, y enviarla al endpoint HTTP de creación del proyecto del espacio de trabajo. La prioridad se ingresa como texto libre y la TUI NO validará sus valores permitidos. Los criterios de aceptación se ingresan en una sola línea separada por `;`; la TUI DEBERÁ recortar los espacios de cada elemento, descartar los elementos vacíos y enviarlos como lista. El cuerpo enviado DEBERÁ contener solo las claves `title`, `description`, `priority` y `acceptance_criteria`. El éxito y el rechazo se resuelven según Requirement: Avisos efímeros en lugar de pantallas de resultado.
+(Previously: el resultado de la API se presentaba en una pantalla de resultado.)
+
+#### Scenario: Crear una historia
+- **GIVEN** que el usuario completa título, descripción, prioridad y criterios de aceptación
+- **WHEN** confirma la creación
+- **THEN** la TUI envía `POST /projects/{pid}/stories` con `title`, `description`, `priority` y `acceptance_criteria`
+- **AND** ante el éxito vuelve a la lista del backlog recargada con un aviso «✓ Historia creada» seguido del título devuelto por la API
+
+#### Scenario: Criterios de aceptación separados por `;`
+- **GIVEN** que el usuario escribe en la línea de criterios el texto `  Inicia sesión ; Cierra sesión ;; `
+- **WHEN** confirma la creación
+- **THEN** el cuerpo enviado contiene `acceptance_criteria` igual a la lista `["Inicia sesión", "Cierra sesión"]`
+
+#### Scenario: Criterios de aceptación vacíos
+- **GIVEN** que el usuario deja vacía la línea de criterios
+- **WHEN** confirma la creación
+- **THEN** el cuerpo enviado contiene `acceptance_criteria` como lista vacía (no nula ni omitida)
+
+#### Scenario: La prioridad no se valida localmente
+- **GIVEN** que el usuario escribe en prioridad un valor que el backend no admite
+- **WHEN** confirma la creación
+- **THEN** la TUI envía el valor tal como fue escrito
+- **AND** el rechazo, si corresponde, proviene de la API
+
+#### Scenario: Los campos aceptan espacios
+- **GIVEN** que el usuario está escribiendo el título «Como usuario quiero ingresar»
+- **WHEN** teclea los espacios entre palabras
+- **THEN** el campo refleja los espacios y el cuerpo enviado contiene el título completo con ellos
+
+### Requirement: Presentar los errores de la API del backlog
+La TUI DEBERÁ presentar el resultado de cada operación del backlog sin cerrarse. Los errores de creación y modificación se muestran en el formulario, que conserva los valores escritos; los errores de la consulta de la lista se muestran en la lista del backlog. Ante HTTP 422 DEBERÁ mostrar el detalle de `fields` como una lista formateada. Ante HTTP 404 DEBERÁ mostrar un mensaje genérico de recurso inexistente más el detalle informado por la API. Las respuestas de error que no sean JSON (por ejemplo, HTTP 404 o 405 del enrutador cuando las rutas de historias no están registradas) DEBERÁN presentarse como error de la API con el código de estado, sin cerrar la TUI. Los errores de transporte DEBERÁN informar el problema de conexión sin cerrar la TUI. Nunca se comunicará éxito ante un error.
+(Previously: los errores y los éxitos se mostraban en una pantalla de resultado desde la que se volvía al formulario, a la lista o al selector de proyectos.)
+
+#### Scenario: HTTP 422 con campos inválidos
+- **GIVEN** que la API responde HTTP 422 con un `fields` que detalla al menos dos campos inválidos
+- **WHEN** la TUI presenta el resultado
+- **THEN** el formulario muestra cada campo y su motivo como un elemento de lista formateada
+- **AND** no comunica éxito
+
+#### Scenario: HTTP 404 proyecto o historia inexistente
+- **GIVEN** que la API responde HTTP 404 con un detalle (por ejemplo `project_not_found` o `story_not_found`)
+- **WHEN** la TUI presenta el resultado
+- **THEN** muestra un mensaje genérico de que el recurso no existe
+- **AND** muestra también el detalle informado por la API
+
+#### Scenario: HTTP 404 o 405 sin cuerpo JSON
+- **GIVEN** que la API responde HTTP 404 o HTTP 405 con un cuerpo que no es JSON
+- **WHEN** la TUI procesa la respuesta
+- **THEN** presenta un error de la API que incluye el código de estado recibido
+- **AND** no falla al interpretar el cuerpo ni se cierra
+
+#### Scenario: HTTP 422 al consultar la lista del proyecto
+- **GIVEN** que la API rechaza la consulta del backlog con HTTP 422
+- **WHEN** la TUI presenta el resultado de la consulta
+- **THEN** la lista del backlog muestra el detalle de `fields` como lista formateada
+- **AND** `Esc` vuelve al navegador de proyectos
+
+#### Scenario: Error de transporte
+- **GIVEN** que no se puede establecer conexión con la API
+- **WHEN** falla una operación del backlog (consulta, creación o modificación)
+- **THEN** la TUI informa el problema de conexión sin cerrarse abruptamente
+
+#### Scenario: Resultado exitoso de creación o modificación
+- **GIVEN** que la API responde HTTP 201 (creación) o HTTP 200 (modificación) con la historia
+- **WHEN** la TUI procesa la respuesta
+- **THEN** vuelve a la lista del backlog, la recarga y muestra un aviso que empieza con `✓` y nombra la historia informada por la API
+
+### Requirement: Operar los Sprints mediante la TUI
+La TUI DEBERÁ permitir operar los Sprints del proyecto del espacio de trabajo desde la pestaña Sprints, que muestra el navegador de Sprints abiertos. Desde el navegador el usuario abre las historias de un Sprint (`Enter`), asigna historias del backlog al Sprint resaltado (`a`), cierra el Sprint resaltado (`x`, con confirmación), crea un Sprint (`n`) y consulta los Sprints cerrados con `h`. Las pantallas de asignación (multiselección con `Space`) y de historias del Sprint reutilizan el patrón navegable (Requirement: Listas navegables con teclas uniformes) y consumen la API existente sin incorporar reglas de negocio. El éxito y el rechazo de cada escritura se resuelven según Requirement: Avisos efímeros en lugar de pantallas de resultado; los errores de las consultas se muestran en la pantalla que las pidió.
+(Previously: los Sprints se abrían desde la opción «Sprints» del menú, pedían un proyecto si no había uno activo y cada operación terminaba en una pantalla de resultado.)
+
+#### Scenario: La pestaña Sprints abre el navegador
+- **GIVEN** que el espacio de trabajo de un proyecto está abierto
+- **WHEN** el usuario abre la pestaña Sprints
+- **THEN** la TUI emite `GET /projects/{pid}/sprints/open` y presenta el navegador de Sprints abiertos
+- **AND** no pide ningún identificador a mano
+
+#### Scenario: Crear un Sprint vuelve a la lista con un aviso
+- **GIVEN** que el usuario escribió el objetivo «Meta» en el formulario de un Sprint nuevo
+- **WHEN** confirma y la API responde con éxito
+- **THEN** la TUI vuelve a la lista de Sprints abiertos, la recarga y muestra «✓ Sprint creado: Meta»
+
+#### Scenario: Asignar historias al Sprint resaltado
+- **GIVEN** que el navegador de Sprints muestra un Sprint abierto resaltado
+- **WHEN** el usuario presiona `a`, marca historias con `Space` y confirma con `Enter`
+- **THEN** la TUI envía `POST /projects/{pid}/sprints/{sid}/stories` con los identificadores marcados
+- **AND** ante el éxito vuelve a la lista de Sprints recargada con un aviso que empieza con `✓`
+
+#### Scenario: Cerrar un Sprint pide confirmación
+- **GIVEN** que el navegador de Sprints muestra un Sprint abierto resaltado
+- **WHEN** el usuario presiona `x`
+- **THEN** la TUI pide confirmación antes de emitir `POST /projects/{pid}/sprints/{sid}/closure`
+- **AND** si el usuario cancela no se emite ningún request
+- **AND** si la API rechaza el cierre la confirmación permanece con el motivo informado
+
+#### Scenario: Crear tareas y completar historias desde el Sprint
+- **GIVEN** que el usuario abrió las historias de un Sprint abierto
+- **WHEN** resalta una historia y presiona `Enter` o `c`
+- **THEN** `Enter` abre el formulario de tareas de esa historia
+- **AND** `c` envía `POST /projects/{pid}/sprints/{sid}/stories/{story_id}/completion`
+- **AND** ante el éxito de cualquiera de las dos la TUI vuelve a las historias del Sprint recargadas con un aviso que empieza con `✓`
+
+#### Scenario: Consultar los Sprints cerrados
+- **GIVEN** que el navegador de Sprints está activo
+- **WHEN** el usuario presiona `h`
+- **THEN** la TUI emite `GET /projects/{pid}/sprints` y presenta los Sprints cerrados con su progreso
+- **AND** `Enter` despliega las historias del Sprint resaltado sin emitir requests
+
+#### Scenario: Backlog vacío en la asignación
+- **GIVEN** que el proyecto no tiene historias en el backlog
+- **WHEN** el usuario intenta asignar historias a un Sprint
+- **THEN** la TUI lo informa y no emite ningún request de asignación
+
+### Requirement: Enviar el registro de esfuerzo y presentar los errores de la API
+Al confirmar con datos válidos, la TUI DEBERÁ emitir exactamente una request `POST /projects/{pid}/stories/{sid}/effort-records`, con el proyecto del espacio de trabajo y la historia elegida, y un cuerpo JSON cuyas claves son `member_id`, `work_date` (normalizada como `YYYY-MM-DD`), `description` (tal como fue escrita, sin recortar ni validar), `hours` (número JSON) y `task_id` únicamente cuando se eligió una tarea; al elegir «Toda la historia (sin tarea)» la clave `task_id` DEBERÁ omitirse por completo, no enviarse como `null`. Mientras el `POST` está en curso la TUI DEBERÁ indicar que está guardando e ignorar `Enter` y `Esc`, de modo que no se emita una segunda request ni se abandone el formulario antes de conocer el resultado. Solo la respuesta HTTP 201 comunica éxito: la TUI vuelve al selector de historias de la pestaña Esfuerzo, lo recarga y muestra un aviso con las horas y la fecha devueltas por la API (o las enviadas si el cuerpo no se puede interpretar), la historia, la tarea («toda la historia» si no se eligió una) y el integrante (Requirement: Avisos efímeros en lugar de pantallas de resultado). Ante cualquier otra respuesta de error o ante un error de transporte, la TUI DEBERÁ permanecer en el formulario con todos los valores escritos, dejar de indicar el guardado, mostrar el motivo y NO comunicar éxito. Los errores de la API (HTTP 400, 404, 422 con `fields`, 500 y cualquier otro código no exitoso, incluido 409 si alguna vez se devolviera) DEBERÁN presentarse con las reglas del Requirement: Presentar los errores de la API del backlog. Un error de transporte DEBERÁ informar el problema de conexión y que no se pudo confirmar el registro, y aconsejar verificar antes de reintentar, porque la API no es idempotente. Tras un error el usuario puede corregir y confirmar de nuevo, lo que emite una nueva request.
+(Previously: el HTTP 201 abría una pantalla de resultado con el registro y las métricas del proyecto.)
+
+#### Scenario: Registrar esfuerzo sobre una tarea
+- **GIVEN** el formulario del integrante «Ana Pérez» (`member_id` `m-1`) para la tarea `t-1` de la historia `s-1` del proyecto `p-1`, con fecha 2026-10-05, «Actividad» «Implementar login» y «Horas» `3.5`
+- **WHEN** el usuario confirma desde «Horas»
+- **THEN** la TUI emite una única request `POST /projects/p-1/stories/s-1/effort-records`
+- **AND** el cuerpo contiene exactamente `member_id` `m-1`, `task_id` `t-1`, `work_date` `2026-10-05`, `description` `Implementar login` y `hours` igual al número 3.5
+
+#### Scenario: Registrar esfuerzo sobre la historia completa omite `task_id`
+- **GIVEN** que el usuario eligió la fila «Toda la historia (sin tarea)» y completó el formulario con datos válidos
+- **WHEN** confirma
+- **THEN** el cuerpo enviado contiene `member_id`, `work_date`, `description` y `hours`
+- **AND** el cuerpo no contiene la clave `task_id`
+
+#### Scenario: La actividad se envía sin recortar
+- **GIVEN** el formulario con «Actividad» igual a `  Implementar login  ` y datos válidos
+- **WHEN** el usuario confirma
+- **THEN** el cuerpo enviado contiene `description` igual a `  Implementar login  `
+
+#### Scenario: El doble `Enter` emite una sola request
+- **GIVEN** el formulario con datos válidos y el foco en «Horas»
+- **WHEN** el usuario presiona `Enter` dos veces antes de que llegue la respuesta del `POST`
+- **THEN** la TUI emite exactamente una request de registro
+- **AND** mientras espera muestra un indicador de guardado
+
+#### Scenario: `Esc` se ignora mientras se guarda
+- **GIVEN** un `POST` de esfuerzo en curso
+- **WHEN** el usuario presiona `Esc`
+- **THEN** la TUI permanece en el formulario con el indicador de guardado
+- **AND** al llegar la respuesta se aplica su resultado
+
+#### Scenario: HTTP 422 con campos inválidos
+- **GIVEN** que la API responde HTTP 422 con `fields` que detalla `hours` y `description`
+- **WHEN** la TUI presenta el resultado
+- **THEN** el formulario muestra cada campo y su motivo como un elemento de lista
+- **AND** conserva fecha, «Actividad» y «Horas» tal como se escribieron
+- **AND** no comunica éxito ni deja el guardado activo
+
+#### Scenario: HTTP 400 por solicitud inválida
+- **GIVEN** que la API responde HTTP 400 con `invalid_request` y un mensaje
+- **WHEN** la TUI presenta el resultado
+- **THEN** el formulario muestra el código HTTP y el detalle de la API
+- **AND** conserva los valores escritos y no comunica éxito
+
+#### Scenario: HTTP 404 por recurso inexistente
+- **GIVEN** que la API responde HTTP 404 con `member_not_found` (o `task_not_found`, `story_not_found`, `project_not_found`)
+- **WHEN** la TUI presenta el resultado
+- **THEN** el formulario muestra un mensaje genérico de recurso inexistente y el detalle informado por la API
+- **AND** conserva los valores escritos y no comunica éxito
+
+#### Scenario: HTTP 500
+- **GIVEN** que la API responde HTTP 500 con `internal_error`
+- **WHEN** la TUI presenta el resultado
+- **THEN** el formulario muestra el código HTTP y el detalle de la API
+- **AND** conserva los valores escritos y no comunica éxito
+
+#### Scenario: Otro código no exitoso se presenta de forma genérica
+- **GIVEN** que la API responde HTTP 409 con un cuerpo JSON de error
+- **WHEN** la TUI presenta el resultado
+- **THEN** el formulario muestra el código 409 y el detalle de la API, sin comunicar éxito
+
+#### Scenario: Error de conexión
+- **GIVEN** que no se puede establecer conexión con la API o que la request excede el tiempo de espera
+- **WHEN** falla el `POST` de esfuerzo
+- **THEN** el formulario informa el problema de conexión
+- **AND** indica que no se pudo confirmar el registro y aconseja verificar antes de reintentar
+- **AND** conserva los valores escritos y la TUI sigue abierta
+
+#### Scenario: Corregir y reenviar tras un rechazo
+- **GIVEN** el formulario mostrando el error de un HTTP 422 con los valores conservados
+- **WHEN** el usuario corrige «Horas» y confirma de nuevo
+- **THEN** la TUI emite una nueva request de registro con los valores corregidos
+- **AND** si la API responde HTTP 201 vuelve al selector de historias de Esfuerzo con el aviso de éxito
+
+### Requirement: Recorrer hacia atrás el flujo de esfuerzo y descartar respuestas tardías
+`Esc` DEBERÁ retroceder un nivel por vez en el flujo de Esfuerzo: del formulario al selector de integrantes, del selector de integrantes al de tareas, del selector de tareas al de historias y del selector de historias al navegador de proyectos. Cada retroceso DEBERÁ restaurar el selector anterior tal como estaba al elegir su fila (filas, cursor y filtro), sin emitir requests; en un selector con filtro aplicado, el primer `Esc` limpia el filtro y el siguiente retrocede. Salir del formulario con `Esc` descarta lo escrito. Tras un registro exitoso la TUI vuelve al selector de historias y el siguiente registro empieza con el formulario inicial. Cambiar de proyecto desde el navegador DEBERÁ descartar el estado del flujo (historia, tarea, integrante y formulario) y abrir Esfuerzo en el selector de historias del nuevo proyecto. La TUI DEBERÁ descartar sin efecto toda respuesta que ya no corresponda a la pantalla, el paso o la consulta activos: una respuesta de tareas o de integrantes tras haber retrocedido y un resultado de guardado sin un guardado en curso.
+(Previously: desde una pantalla de resultado `Esc` volvía al selector de tareas de la misma historia, `p` cambiaba el proyecto activo, el selector de historias volvía al menú y se descartaban las respuestas de métricas tardías.)
+
+#### Scenario: `Esc` recorre formulario, integrantes, tareas e historias
+- **GIVEN** el formulario de esfuerzo abierto desde los selectores de historia, tarea e integrante
+- **WHEN** el usuario presiona `Esc` tres veces
+- **THEN** la TUI pasa sucesivamente al selector de integrantes, al selector de tareas y al selector de historias
+- **AND** no emite ninguna request en esos retrocesos
+- **AND** un cuarto `Esc` vuelve al navegador de proyectos
+
+#### Scenario: El filtro del selector de tareas se conserva
+- **GIVEN** que el usuario filtró las tareas con `dis` y eligió «Diseñar»
+- **WHEN** retrocede desde el formulario al selector de integrantes y de allí al selector de tareas
+- **THEN** el selector de tareas muestra el filtro `dis` y el cursor sobre «Diseñar», sin consultar de nuevo
+- **AND** el siguiente `Esc` limpia el filtro y recién el que sigue vuelve al selector de historias
+
+#### Scenario: Un segundo registro empieza con el formulario inicial
+- **GIVEN** que la TUI volvió al selector de historias tras un registro exitoso
+- **WHEN** el usuario elige una historia, otra fila de tareas y un integrante
+- **THEN** el formulario se abre con la fecha de hoy y «Actividad» y «Horas» vacías
+
+#### Scenario: Respuesta tardía de integrantes tras retroceder
+- **GIVEN** que el usuario eligió una tarea y la consulta de integrantes sigue en curso
+- **WHEN** presiona `Esc` y después llega la respuesta de integrantes
+- **THEN** la TUI sigue mostrando el selector de tareas sin cambios
+- **AND** la respuesta se descarta
+
+#### Scenario: Respuesta tardía de tareas tras retroceder
+- **GIVEN** que el usuario eligió una historia y la consulta de tareas sigue en curso
+- **WHEN** presiona `Esc` y después llega la respuesta de tareas
+- **THEN** la TUI sigue mostrando el selector de historias sin cambios
+- **AND** la respuesta se descarta
+
+#### Scenario: Resultado de guardado sin guardado en curso
+- **GIVEN** que no hay un `POST` de esfuerzo en curso
+- **WHEN** llega un resultado de guardado
+- **THEN** la TUI lo descarta sin cambiar de pantalla ni de contenido
+
+#### Scenario: Cambiar el proyecto descarta el flujo
+- **GIVEN** que el usuario registró un esfuerzo en el proyecto `p-1`
+- **WHEN** vuelve al navegador, elige el proyecto `p-2` y abre la pestaña Esfuerzo
+- **THEN** la TUI abre Esfuerzo en el selector de historias de `p-2`
+- **AND** la pantalla no conserva el aviso, el registro ni las selecciones de `p-1`
+
 ## REMOVED Requirements
+
+### Requirement: Mostrar el esfuerzo registrado y las métricas del proyecto
+**Reason**: la pantalla de resultado del esfuerzo se reemplaza por un aviso efímero y las métricas del proyecto viven en el Dashboard; la TUI ya no consulta `GET /projects/{pid}/metrics` después de registrar.
+**Migration**: Requirement: Avisos efímeros en lugar de pantallas de resultado (escenario «Registrar esfuerzo vuelve a la pestaña Esfuerzo»), Requirement: Enviar el registro de esfuerzo y presentar los errores de la API y Requirement: Dashboard con las métricas del proyecto y de un Sprint.
 
 ### Requirement: Mostrar menú base de navegación
 **Reason**: el menú plano de nueve opciones se reemplaza por el navegador de proyectos inicial y el espacio de trabajo con pestañas.

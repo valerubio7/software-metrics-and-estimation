@@ -31,14 +31,10 @@ func TestOpenSectionResetsEffortFlowKeepingSeq(t *testing.T) {
 	m := NewModel("http://localhost")
 	m.activeProjectID = "p1"
 	m.effort = effortState{
-		story:         selectorItem{ID: "s1", Label: "Login"},
-		description:   "Implementar login",
-		hours:         "3.5",
-		seq:           7,
-		record:        &EffortRecord{ID: "e1"},
-		rawBody:       "no-json",
-		metricsStatus: effortMetricsLoading,
-		metricsErr:    "boom",
+		story:       selectorItem{ID: "s1", Label: "Login"},
+		description: "Implementar login",
+		hours:       "3.5",
+		seq:         7,
 	}
 
 	m, _ = m.openSection(sectionEffort)

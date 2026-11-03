@@ -37,12 +37,14 @@ type defectStatusResult struct {
 func (m Model) beginDefectStatusUpdate() (Model, tea.Cmd) {
 	m.defectStatusIndex = 0
 	m.defectStatusMessage = ""
-	m.defectStatusOK = false
 	m.Screen = "defect-status-select"
 	return m, nil
 }
 
 func (m Model) updateDefectStatusSelect(key tea.KeyMsg) (Model, tea.Cmd) {
+	if m.defectStatusLoading {
+		return m, nil
+	}
 	switch key.Type {
 	case tea.KeyEsc:
 		m.Screen = "defect-detail"
@@ -129,6 +131,9 @@ func resolutionSprintItem(id, goal string, closed bool) selectorItem {
 }
 
 func (m Model) updateDefectResolutionSelect(key tea.KeyMsg) (Model, tea.Cmd) {
+	if m.defectStatusLoading {
+		return m, nil
+	}
 	switch m.defectResolutionSelector.update(key) {
 	case selectorBack:
 		m.defectStatusOptionsLoading = false
@@ -144,12 +149,13 @@ func (m Model) updateDefectResolutionSelect(key tea.KeyMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
+// submitDefectStatus sends the chosen status and stays on the screen that chose
+// it until the API answers.
 func (m Model) submitDefectStatus(status, resolutionSprintID string) (Model, tea.Cmd) {
 	if m.defectStatusLoading {
 		return m, nil
 	}
-	m.Screen = "defect-status-result"
-	m.defectStatusLoading, m.defectStatusOK, m.defectStatusMessage = true, false, ""
+	m.defectStatusLoading, m.defectStatusMessage, m.defectStatusPending = true, "", status
 	m.defectRequestSequence++
 	requestID := m.defectRequestSequence
 	m.defectStatusRequestID = requestID
@@ -160,8 +166,13 @@ func (m Model) submitDefectStatus(status, resolutionSprintID string) (Model, tea
 	}
 }
 
+// applyDefectStatusResult returns to the detail of the defect with a toast on
+// success. The detail and its row in the list are refreshed from the PATCH
+// body (or with the sent status when the body is not the defect), so no extra
+// request is needed. A rejection stays on the selector with the API reason.
 func (m Model) applyDefectStatusResult(result defectStatusResult) (Model, tea.Cmd) {
-	if result.ProjectID != m.activeProjectID || m.Screen != "defect-status-result" || !m.defectStatusLoading || result.RequestID != m.defectStatusRequestID {
+	onSelector := m.Screen == "defect-status-select" || m.Screen == "defect-resolution-select"
+	if result.ProjectID != m.activeProjectID || !onSelector || !m.defectStatusLoading || result.RequestID != m.defectStatusRequestID {
 		return m, nil
 	}
 	m.defectStatusLoading = false
@@ -173,21 +184,35 @@ func (m Model) applyDefectStatusResult(result defectStatusResult) (Model, tea.Cm
 		m.defectStatusMessage = fmt.Sprintf("Error HTTP %d: %s", result.Response.StatusCode, strings.TrimSpace(string(result.Response.Body)))
 		return m, nil
 	}
-	m.defectStatusOK = true
-	m.defectStatusMessage = fmt.Sprintf("Estado actualizado (HTTP %d): %s", result.Response.StatusCode, strings.TrimSpace(string(result.Response.Body)))
-	m.Screen = "defects"
-	return m.startDefectLoad()
-}
-
-func (m Model) updateDefectStatusResult(key tea.KeyMsg) (Model, tea.Cmd) {
-	if m.defectStatusLoading || (key.Type != tea.KeyEnter && key.Type != tea.KeyEsc) {
-		return m, nil
+	var updated Defect
+	if json.Unmarshal(result.Response.Body, &updated) == nil && updated.ID == m.defectDetail.ID {
+		m.defectDetail = updated
+	} else {
+		m.defectDetail.Status = m.defectStatusPending
 	}
-	if m.defectStatusOK {
-		return m.openDefects()
+	defects := make([]Defect, len(m.defects))
+	copy(defects, m.defects)
+	for i := range defects {
+		if defects[i].ID == m.defectDetail.ID {
+			defects[i] = m.defectDetail
+		}
 	}
+	m.defects = defects
+	m.toast = "Estado del defecto actualizado: " + m.defectDetail.Status
 	m.Screen = "defect-detail"
 	return m, nil
+}
+
+// defectStatusLines renders the in-flight indicator and the API rejection of a
+// status change below its selector.
+func (m Model) defectStatusLines() string {
+	if m.defectStatusLoading {
+		return "\n\n" + statusMutedStyle.Render("Actualizando estado…")
+	}
+	if m.defectStatusMessage != "" {
+		return "\n\n" + strings.TrimRight(m.errorBlock(m.defectStatusMessage), "\n")
+	}
+	return ""
 }
 
 func (m Model) viewDefectStatusSelect() string {
@@ -198,12 +223,5 @@ func (m Model) viewDefectStatusSelect() string {
 		b.WriteString(m.row(i == m.defectStatusIndex, option.label) + "\n")
 	}
 	b.WriteString("\n" + hintStyle.Render("Elegí uno de los estados admitidos por la API. Esc cancela sin cambios."))
-	return strings.TrimRight(b.String(), "\n")
-}
-
-func (m Model) viewDefectStatusResult() string {
-	if m.defectStatusLoading {
-		return screenTitleStyle.Render("Actualizar estado") + "\n\n" + statusMutedStyle.Render("Actualizando estado…")
-	}
-	return screenTitleStyle.Render("Error al actualizar el estado") + "\n\n" + m.errorBlock(m.defectStatusMessage)
+	return strings.TrimRight(b.String(), "\n") + m.defectStatusLines()
 }

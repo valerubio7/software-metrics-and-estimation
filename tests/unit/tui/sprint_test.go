@@ -262,11 +262,51 @@ func TestTaskClientOmitsOptionalEstimatedHours(t *testing.T) {
 	}
 }
 
+// pendingSprintWrite opens the Sprints of p1 (Sprint sp1 with story1 assigned)
+// and starts op ("close", "tasks" or "complete") without running its request,
+// so a test can deliver the answer.
+func pendingSprintWrite(t *testing.T, op string) tui.Model {
+	t.Helper()
+	server := sprintServer(t, func(w http.ResponseWriter, r *http.Request) bool {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /projects/p1/sprints/open":
+			_, _ = w.Write([]byte(`{"project_id":"p1","sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Meta","is_closed":false}]}`))
+		case "GET /projects/p1/sprints/sp1/stories":
+			_, _ = w.Write([]byte(`{"stories":[{"id":"story1","title":"Historia uno"}]}`))
+		default:
+			return false
+		}
+		return true
+	})
+	m := openSprintsWithProject(t, server.URL, "p1")
+	var cmd tea.Cmd
+	switch op {
+	case "close":
+		m = typeText(m, "x")
+		m, cmd = apply(m, keyMsg("s"))
+	default:
+		m, cmd = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+		m = run(t, m, cmd)
+		if op == "complete" {
+			m, cmd = apply(m, keyMsg("c"))
+			break
+		}
+		m = press(m, tea.KeyEnter) // task form
+		m = typeText(m, "Tarea")
+		m = press(m, tea.KeyEnter) // hours
+		m, cmd = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	}
+	if cmd == nil {
+		t.Fatalf("%s should send a request", op)
+	}
+	return m
+}
+
 func TestTaskConflictResponseIsShownWithoutSuccess(t *testing.T) {
-	m := tui.NewModel("http://localhost")
+	m := pendingSprintWrite(t, "tasks")
 	updated, _ := m.Update(tui.SprintResultMsg{Op: "tasks", Response: tui.APIResponse{StatusCode: http.StatusConflict, Body: []byte(`{"error":"story_not_in_sprint","message":"story is not assigned to the selected sprint"}`)}})
 	view := updated.(tui.Model).View()
-	if !strings.Contains(view, "story_not_in_sprint") || strings.Contains(view, "Tareas creadas") {
+	if updated.(tui.Model).Screen != "sprint-task-form" || !strings.Contains(view, "story_not_in_sprint") || strings.Contains(view, "Tarea creada") {
 		t.Fatalf("task conflict view = %q", view)
 	}
 }
@@ -289,10 +329,10 @@ func TestSprintClientCompletesStoryWithinSprintAndPreservesConflict(t *testing.T
 func TestCompletionConflictsAreRenderedAsAPIOutcomes(t *testing.T) {
 	for _, code := range []string{"sprint_closed", "story_not_in_sprint", "story_already_completed"} {
 		t.Run(code, func(t *testing.T) {
-			m := tui.NewModel("http://localhost")
+			m := pendingSprintWrite(t, "complete")
 			updated, _ := m.Update(tui.SprintResultMsg{Op: "complete", Response: tui.APIResponse{StatusCode: http.StatusConflict, Body: []byte(`{"error":"` + code + `","message":"API rejected completion"}`)}})
 			view := updated.(tui.Model).View()
-			if !strings.Contains(view, code) || strings.Contains(view, "Historia completada") {
+			if updated.(tui.Model).Screen != "sprint-assigned-list" || !strings.Contains(view, code) || strings.Contains(view, "Historia completada") {
 				t.Fatalf("completion conflict view = %q", view)
 			}
 		})

@@ -236,6 +236,17 @@ func submitUpdate(m tui.Model) (tui.Model, tea.Cmd) {
 	return apply(m, tea.KeyMsg{Type: tea.KeyEnter})
 }
 
+// savingStory opens the backlog of p1 and submits a new story, leaving the
+// create request pending so a test can deliver its answer.
+func savingStory(t *testing.T, url string) tui.Model {
+	t.Helper()
+	m, cmd := submitStory(openBacklogWithProject(t, url, "p1"), "T", "D", "alta", "")
+	if cmd == nil || m.Screen != "backlog-form" {
+		t.Fatalf("submitting should leave the form saving (screen %q)", m.Screen)
+	}
+	return m
+}
+
 func failure(status int, body string) tui.BacklogResultMsg {
 	return tui.BacklogResultMsg{Op: tui.BacklogOpCreate, Response: tui.APIResponse{StatusCode: status, Body: []byte(body)}}
 }
@@ -447,11 +458,11 @@ func TestBacklogCreateStorySendsFourKeysAndShowsSuccess(t *testing.T) {
 	if title != "Como usuario quiero ingresar" {
 		t.Errorf("title = %q, want the full title with spaces", title)
 	}
-	if m.Screen != "backlog-result" {
-		t.Fatalf("Screen = %q, want backlog-result", m.Screen)
+	if m.Screen != "backlog" {
+		t.Fatalf("Screen = %q, want the backlog list", m.Screen)
 	}
 	view := m.View()
-	for _, want := range []string{"201", "creada", "Respuesta de la API"} {
+	for _, want := range []string{"✓ Historia creada: Respuesta de la API"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("View() = %q, want %q", view, want)
 		}
@@ -577,8 +588,8 @@ func TestBacklogUpdateWithoutChangesSendsSixKeys(t *testing.T) {
 			if string(keys["title"]) != `"`+tc.wantTitle+`"` || string(keys["estimated_hours"]) != tc.wantHours || string(keys["acceptance_criteria"]) != tc.wantCrit {
 				t.Errorf("body = %s, want title %q hours %s criteria %s", got.Body, tc.wantTitle, tc.wantHours, tc.wantCrit)
 			}
-			if m.Screen != "backlog-result" || !strings.Contains(m.View(), "modificada") {
-				t.Errorf("Screen = %q view = %q, want the update success result", m.Screen, m.View())
+			if m.Screen != "backlog" || !strings.Contains(m.View(), "✓ Historia modificada") {
+				t.Errorf("Screen = %q view = %q, want the backlog with the update toast", m.Screen, m.View())
 			}
 		})
 	}
@@ -724,12 +735,12 @@ func TestBacklogFormEscReturnsToBacklogWithoutRequest(t *testing.T) {
 
 func TestBacklogRendersValidationErrorsAsList(t *testing.T) {
 	server, _ := fakeBacklogAPI(t, apiStubs{})
-	m := openBacklogWithProject(t, server.URL, "p1")
+	m := savingStory(t, server.URL)
 	m, _ = apply(m, failure(http.StatusUnprocessableEntity,
 		`{"error":"validation_failed","message":"datos inválidos","fields":{"title":"es obligatorio","priority":"valor inválido"}}`))
 	view := m.View()
-	if m.Screen != "backlog-result" {
-		t.Errorf("Screen = %q, want backlog-result", m.Screen)
+	if m.Screen != "backlog-form" {
+		t.Errorf("Screen = %q, want the form kept", m.Screen)
 	}
 	if !strings.Contains(view, "La API rechazó los datos (422)") {
 		t.Errorf("View() = %q, want the 422 heading", view)
@@ -758,7 +769,7 @@ func TestBacklogRendersNotFoundWithGenericMessageAndAPIDetail(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			server, _ := fakeBacklogAPI(t, apiStubs{})
-			m := openBacklogWithProject(t, server.URL, "p1")
+			m, _ := submitUpdate(advanceFields(selectStory(openBacklogWithProject(t, server.URL, "p1"), 0), 5))
 			m, _ = apply(m, tui.BacklogResultMsg{Op: tui.BacklogOpUpdate, Response: tui.APIResponse{StatusCode: 404, Body: []byte(tc.body)}})
 			view := m.View()
 			for _, want := range tc.want {
@@ -784,7 +795,7 @@ func TestBacklogRendersNonJSONErrorWithStatusCode(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			server, _ := fakeBacklogAPI(t, apiStubs{})
-			m := openBacklogWithProject(t, server.URL, "p1")
+			m := savingStory(t, server.URL)
 			m, cmd := apply(m, failure(tc.status, tc.body))
 			if isQuit(cmd) {
 				t.Error("a non-JSON error must not quit the TUI")
@@ -799,37 +810,34 @@ func TestBacklogRendersNonJSONErrorWithStatusCode(t *testing.T) {
 	}
 }
 
-func TestBacklogListFailureReturnsToPicker(t *testing.T) {
-	for _, key := range []tea.KeyType{tea.KeyEnter, tea.KeyEsc} {
-		t.Run(key.String(), func(t *testing.T) {
-			server, _ := fakeBacklogAPI(t, apiStubs{list: stub{http.StatusUnprocessableEntity,
-				`{"error":"validation_failed","message":"identificador inválido","fields":{"project_id":"debe ser un UUID"}}`}})
-			m := loadingBacklog(t, server.URL, "p1")
-			m, _ = apply(m, tui.BacklogResultMsg{Op: tui.BacklogOpList, Response: tui.APIResponse{
-				StatusCode: 422, Body: []byte(`{"error":"validation_failed","message":"identificador inválido","fields":{"project_id":"debe ser un UUID"}}`),
-			}})
-			view := m.View()
-			if m.Screen != "backlog-result" || !strings.Contains(view, "- project_id: debe ser un UUID") {
-				t.Fatalf("Screen = %q view = %q, want the 422 fields list", m.Screen, view)
-			}
-			m, cmd := apply(m, tea.KeyMsg{Type: key})
-			if m.Screen != "project-picker" {
-				t.Fatalf("Screen = %q after %s, want project-picker", m.Screen, key)
-			}
-			if cmd == nil {
-				t.Fatal("returning to the picker should reload the project collection")
-			}
-		})
+func TestBacklogListFailureStaysOnBacklogWithReason(t *testing.T) {
+	body := `{"error":"validation_failed","message":"identificador inválido","fields":{"project_id":"debe ser un UUID"}}`
+	server, _ := fakeBacklogAPI(t, apiStubs{list: stub{http.StatusUnprocessableEntity, body}})
+	m := loadingBacklog(t, server.URL, "p1")
+	m, _ = apply(m, tui.BacklogResultMsg{Op: tui.BacklogOpList, Response: tui.APIResponse{StatusCode: 422, Body: []byte(body)}})
+	view := m.View()
+	if m.Screen != "backlog" || !strings.Contains(view, "- project_id: debe ser un UUID") {
+		t.Fatalf("Screen = %q view = %q, want the backlog with the 422 fields list", m.Screen, view)
+	}
+	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.Screen != "project-picker" || cmd == nil {
+		t.Fatalf("Screen = %q after Esc (cmd nil %v), want the reloading project-picker", m.Screen, cmd == nil)
 	}
 }
 
 func TestBacklogTransportErrorDoesNotQuit(t *testing.T) {
 	server, _ := fakeBacklogAPI(t, apiStubs{})
-	ops := []tui.BacklogOp{tui.BacklogOpList, tui.BacklogOpCreate, tui.BacklogOpUpdate}
-	for _, op := range ops {
+	models := map[tui.BacklogOp]func(t *testing.T) tui.Model{
+		tui.BacklogOpList:   func(t *testing.T) tui.Model { return loadingBacklog(t, server.URL, "p1") },
+		tui.BacklogOpCreate: func(t *testing.T) tui.Model { return savingStory(t, server.URL) },
+		tui.BacklogOpUpdate: func(t *testing.T) tui.Model {
+			m, _ := submitUpdate(advanceFields(selectStory(openBacklogWithProject(t, server.URL, "p1"), 0), 5))
+			return m
+		},
+	}
+	for op, open := range models {
 		t.Run(string(op), func(t *testing.T) {
-			m := loadingBacklog(t, server.URL, "p1")
-			m, cmd := apply(m, tui.BacklogResultMsg{Op: op, Err: errors.New("connection refused")})
+			m, cmd := apply(open(t), tui.BacklogResultMsg{Op: op, Err: errors.New("connection refused")})
 			if isQuit(cmd) {
 				t.Error("a transport error must not quit the TUI")
 			}
@@ -849,12 +857,8 @@ func TestBacklogResultReturnDestinations(t *testing.T) {
 	t.Run("create-success-reloads-backlog", func(t *testing.T) {
 		m := openBacklogWithProject(t, server.URL, "p1")
 		m, cmd := submitStory(m, "T", "D", "alta", "")
-		m = run(t, m, cmd)
-		if m.Screen != "backlog-result" {
-			t.Fatalf("Screen = %q, want backlog-result", m.Screen)
-		}
 		before := countMethod(rec, http.MethodGet)
-		m, cmd = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+		m, cmd = apply(m, cmd())
 		if m.Screen != "backlog" {
 			t.Errorf("Screen = %q, want backlog", m.Screen)
 		}
@@ -871,9 +875,8 @@ func TestBacklogResultReturnDestinations(t *testing.T) {
 		m := selectStory(openBacklogWithProject(t, server.URL, "p1"), 0)
 		m = advanceFields(m, 5)
 		m, cmd := submitUpdate(m)
-		m = run(t, m, cmd)
 		before := countMethod(rec, http.MethodGet)
-		m, cmd = apply(m, tea.KeyMsg{Type: tea.KeyEsc})
+		m, cmd = apply(m, cmd())
 		if m.Screen != "backlog" {
 			t.Errorf("Screen = %q, want backlog", m.Screen)
 		}
@@ -887,7 +890,6 @@ func TestBacklogResultReturnDestinations(t *testing.T) {
 		m := openBacklogWithProject(t, server.URL, "p1")
 		m, _ = submitStory(m, "Título escrito", "Descripción escrita", "alta", "uno; dos")
 		m, _ = apply(m, failure(http.StatusUnprocessableEntity, `{"error":"validation_failed","message":"x","fields":{"title":"mal"}}`))
-		m = press(m, tea.KeyEnter)
 		if m.Screen != "backlog-form" {
 			t.Fatalf("Screen = %q, want backlog-form", m.Screen)
 		}
@@ -903,7 +905,6 @@ func TestBacklogResultReturnDestinations(t *testing.T) {
 		m = advanceFields(m, 5)
 		m, _ = submitUpdate(m)
 		m, _ = apply(m, tui.BacklogResultMsg{Op: tui.BacklogOpUpdate, Response: tui.APIResponse{StatusCode: 404, Body: []byte(`{"error":"story_not_found","message":"nope"}`)}})
-		m = press(m, tea.KeyEsc)
 		if m.Screen != "backlog-form" {
 			t.Fatalf("Screen = %q, want backlog-form", m.Screen)
 		}
@@ -915,13 +916,12 @@ func TestBacklogResultReturnDestinations(t *testing.T) {
 		}
 	})
 
-	t.Run("list-failure-returns-to-picker", func(t *testing.T) {
+	t.Run("list-failure-stays-on-backlog", func(t *testing.T) {
 		server, _ := fakeBacklogAPI(t, apiStubs{list: stub{http.StatusNotFound, `{"error":"project_not_found","message":"x"}`}})
 		m := loadingBacklog(t, server.URL, "p1")
 		m, _ = apply(m, tui.BacklogResultMsg{Op: tui.BacklogOpList, Response: tui.APIResponse{StatusCode: 404, Body: []byte(`{"error":"project_not_found","message":"x"}`)}})
-		m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
-		if m.Screen != "project-picker" {
-			t.Errorf("Screen = %q, want project-picker", m.Screen)
+		if m.Screen != "backlog" || !strings.Contains(m.View(), "project_not_found") {
+			t.Errorf("Screen = %q, want the backlog with the reason", m.Screen)
 		}
 	})
 }
@@ -948,12 +948,12 @@ func TestBacklogLateListResultIsDiscarded(t *testing.T) {
 		}
 	})
 
-	t.Run("create-and-update-always-apply", func(t *testing.T) {
+	t.Run("create-and-update-without-a-pending-save", func(t *testing.T) {
 		for _, op := range []tui.BacklogOp{tui.BacklogOpCreate, tui.BacklogOpUpdate} {
 			m := press(openBacklogWithProject(t, server.URL, "p1"), tea.KeyEsc)
-			m, _ = apply(m, tui.BacklogResultMsg{Op: op, Response: tui.APIResponse{StatusCode: 200, Body: []byte(`{"id":"s1","title":"Aplicada"}`)}})
-			if m.Screen != "backlog-result" {
-				t.Errorf("op %s: Screen = %q, want backlog-result", op, m.Screen)
+			m, cmd := apply(m, tui.BacklogResultMsg{Op: op, Response: tui.APIResponse{StatusCode: 200, Body: []byte(`{"id":"s1","title":"Aplicada"}`)}})
+			if m.Screen != "project-picker" || cmd != nil || strings.Contains(m.View(), "Aplicada") {
+				t.Errorf("op %s: Screen = %q, a late write answer must not take over the browser", op, m.Screen)
 			}
 		}
 	})
@@ -985,7 +985,6 @@ func backlogScreens(t *testing.T, url string) []struct {
 } {
 	t.Helper()
 	loaded := openBacklogWithProject(t, url, "p1")
-	result, _ := apply(loaded, failure(http.StatusUnprocessableEntity, `{"error":"validation_failed","message":"x","fields":{"title":"mal"}}`))
 	picker, _ := startBrowser(url)
 	return []struct {
 		screen string
@@ -995,7 +994,6 @@ func backlogScreens(t *testing.T, url string) []struct {
 		{"project-picker", "", picker},
 		{"backlog-form", "Título", typeText(loaded, "n")},
 		{"backlog", "", loaded},
-		{"backlog-result", "", result},
 	}
 }
 

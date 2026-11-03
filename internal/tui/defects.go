@@ -214,9 +214,6 @@ func (m Model) viewDefects() string {
 	b.WriteString(screenTitleStyle.Render("Defectos del proyecto " + m.projectLabel()))
 	b.WriteString("\n")
 	b.WriteString(hintStyle.Render("Listado de solo lectura · Enter muestra detalle."))
-	if m.defectStatusMessage != "" {
-		b.WriteString("\n\n" + m.resultBlock(m.defectStatusMessage, m.defectStatusOK))
-	}
 	b.WriteString("\n\n")
 	if m.defectFiltering || m.defectFilter != "" {
 		b.WriteString(searchLine(m.defectFilter, m.defectFiltering) + "\n\n")

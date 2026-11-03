@@ -22,13 +22,11 @@ func TestDefectFlowFootersAdvertiseOnlyAvailableActions(t *testing.T) {
 		{name: "filtered story selector", screen: "defect-story-select", filtering: true, want: []string{"escribí", "para filtrar"}, mustNot: []string{"refrescar", "proyecto"}},
 		{name: "detection Sprint selector", screen: "defect-sprint-select", want: []string{"r", "refrescar", "Enter", "elegir"}},
 		{name: "create confirmation", screen: "defect-create-confirm", want: []string{"s", "confirmar registro", "n", "cancelar"}},
-		{name: "create loading", screen: "defect-create-result", loading: true, want: []string{"Ctrl+C", "salir"}, mustNot: []string{"Enter", "volver", "q", "proyecto"}},
-		{name: "create result", screen: "defect-create-result", want: []string{"Enter/Esc", "volver"}},
+		{name: "create loading", screen: "defect-create-confirm", loading: true, want: []string{"Ctrl+C", "salir"}, mustNot: []string{"confirmar", "volver", "q", "proyecto"}},
 		{name: "status selection", screen: "defect-status-select", want: []string{"Enter", "elegir estado"}},
 		{name: "resolution Sprint selector", screen: "defect-resolution-select", want: []string{"r", "refrescar", "Enter", "elegir"}},
 		{name: "filtered resolution selector", screen: "defect-resolution-select", filtering: true, want: []string{"escribí", "para filtrar"}, mustNot: []string{"refrescar", "proyecto"}},
-		{name: "status loading", screen: "defect-status-result", loading: true, want: []string{"Ctrl+C", "salir"}, mustNot: []string{"Enter", "volver", "q", "proyecto"}},
-		{name: "status result", screen: "defect-status-result", want: []string{"Enter/Esc", "volver"}},
+		{name: "status loading", screen: "defect-status-select", loading: true, want: []string{"Ctrl+C", "salir"}, mustNot: []string{"Enter", "cancelar", "q", "proyecto"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -125,9 +123,8 @@ func TestDefectFlowBreadcrumbsUseSpanishLabels(t *testing.T) {
 	labels := map[string]string{
 		"defects": "Defectos", "defect-detail": "Detalle", "defect-create-form": "Registrar defecto",
 		"defect-story-select": "Historia", "defect-sprint-select": "Sprint de detección",
-		"defect-create-confirm": "Confirmar registro", "defect-create-result": "Resultado del registro",
-		"defect-status-select": "Cambiar estado", "defect-resolution-select": "Sprint de resolución",
-		"defect-status-result": "Resultado del estado",
+		"defect-create-confirm": "Confirmar registro",
+		"defect-status-select":  "Cambiar estado", "defect-resolution-select": "Sprint de resolución",
 	}
 	for screen, label := range labels {
 		t.Run(screen, func(t *testing.T) {
@@ -147,7 +144,7 @@ func TestDefectFlowBreadcrumbsUseSpanishLabels(t *testing.T) {
 }
 
 func TestDefectHelpDescribesSupportedActionsOnly(t *testing.T) {
-	for _, screen := range []string{"defects", "defect-detail", "defect-create-form", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-create-result", "defect-status-select", "defect-resolution-select", "defect-status-result"} {
+	for _, screen := range []string{"defects", "defect-detail", "defect-create-form", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-status-select", "defect-resolution-select"} {
 		t.Run(screen, func(t *testing.T) {
 			m := NewModel("http://localhost:8080")
 			m.Screen, m.showHelp = screen, true

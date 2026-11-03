@@ -27,6 +27,7 @@ type storyForm struct {
 	title, description, priority, status, criteria, hours string
 	field                                                 int
 	err                                                   string
+	saving                                                bool // a create or update is in flight
 }
 
 // newUpdateForm prefills a form with the current values of story.
@@ -143,7 +144,7 @@ func (m Model) visibleStories() []Story {
 }
 
 func (m Model) startBacklogLoad() (Model, tea.Cmd) {
-	m.backlogStories, m.backlogLoading, m.backlogCursor = nil, true, 0
+	m.backlogStories, m.backlogLoading, m.backlogCursor, m.backlogMessage = nil, true, 0, ""
 	return m, m.listStoriesCmd(m.activeProjectID)
 }
 
@@ -225,6 +226,10 @@ func (m Model) editSelectedStory(stories []Story) (Model, tea.Cmd) {
 }
 
 func (m Model) updateBacklogForm(key tea.KeyMsg) (Model, tea.Cmd) {
+	if m.backlogForm.saving {
+		// The request is in flight: no key may send it again or leave the form.
+		return m, nil
+	}
 	form := m.backlogForm
 	fields := form.fields()
 	switch key.Type {
@@ -255,6 +260,7 @@ func (m Model) updateBacklogForm(key tea.KeyMsg) (Model, tea.Cmd) {
 func (m Model) submitStoryForm(form storyForm) (Model, tea.Cmd) {
 	m.backlogForm = form
 	if form.storyID == "" {
+		m.backlogForm.saving, m.backlogForm.err = true, ""
 		return m, m.createStoryCmd(m.activeProjectID, form.createInput())
 	}
 	input, err := form.updateInput()
@@ -262,23 +268,8 @@ func (m Model) submitStoryForm(form storyForm) (Model, tea.Cmd) {
 		m.backlogForm.err = err.Error()
 		return m, nil
 	}
+	m.backlogForm.saving, m.backlogForm.err = true, ""
 	return m, m.updateStoryCmd(m.activeProjectID, form.storyID, input)
-}
-
-func (m Model) updateBacklogResult(key tea.KeyMsg) (Model, tea.Cmd) {
-	if key.Type != tea.KeyEsc && key.Type != tea.KeyEnter {
-		return m, nil
-	}
-	switch m.backlogReturn {
-	case "backlog-form":
-		m.Screen = "backlog-form"
-	case "project-picker":
-		return m.leaveWorkspace()
-	default:
-		m.Screen = "backlog"
-		return m.startBacklogLoad()
-	}
-	return m, nil
 }
 
 func backlogCmd(op BacklogOp, call func(context.Context) (APIResponse, error)) tea.Cmd {
@@ -309,9 +300,10 @@ func (m Model) updateStoryCmd(projectID, storyID string, input StoryUpdateInput)
 	})
 }
 
-// applyBacklogResult shows the outcome of a backlog request. A list result only
-// applies while the backlog screen is waiting for it; create and update results
-// always apply because the mutation already happened on the server.
+// applyBacklogResult applies a backlog response. A list result only applies
+// while the backlog screen is waiting for it; a create or update result only
+// while its form is saving. Success returns to the reloaded list with a toast and
+// a rejection stays on the form with the API reason.
 func (m Model) applyBacklogResult(result BacklogResultMsg) (Model, tea.Cmd) {
 	if result.Op == BacklogOpList {
 		if m.Screen != "backlog" || !m.backlogLoading {
@@ -319,14 +311,13 @@ func (m Model) applyBacklogResult(result BacklogResultMsg) (Model, tea.Cmd) {
 		}
 		m.backlogLoading = false
 		if message, failed := backlogFailure(result); failed {
-			m.Screen, m.backlogMessage, m.backlogReturn = "backlog-result", message, "project-picker"
+			m.backlogMessage = message
 			return m, nil
 		}
 		var listing struct {
 			Stories []Story `json:"stories"`
 		}
 		if err := json.Unmarshal(result.Response.Body, &listing); err != nil {
-			m.Screen, m.backlogReturn = "backlog-result", "project-picker"
 			m.backlogMessage = "No se pudo interpretar la respuesta de la API: " + err.Error()
 			return m, nil
 		}
@@ -334,18 +325,26 @@ func (m Model) applyBacklogResult(result BacklogResultMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.Screen = "backlog-result"
+	if m.Screen != "backlog-form" || !m.backlogForm.saving {
+		return m, nil // an answer nobody is waiting for
+	}
+	m.backlogForm.saving = false
 	if message, failed := backlogFailure(result); failed {
-		m.backlogMessage, m.backlogReturn = message, "backlog-form"
+		m.backlogForm.err = message
 		return m, nil
 	}
 	verb := "creada"
 	if result.Op == BacklogOpUpdate {
 		verb = "modificada"
 	}
-	m.backlogMessage = fmt.Sprintf("Historia %s correctamente (%d)\n\n%s", verb, result.Response.StatusCode, describeStory(result.Response.Body))
-	m.backlogReturn = "backlog"
-	return m, nil
+	title := m.backlogForm.title
+	var story Story
+	if json.Unmarshal(result.Response.Body, &story) == nil && story.Title != "" {
+		title = story.Title
+	}
+	m.toast = fmt.Sprintf("Historia %s: %s", verb, title)
+	m.Screen = "backlog"
+	return m.startBacklogLoad()
 }
 
 // backlogFailure describes a transport error or a non-2xx response.
@@ -395,15 +394,6 @@ func describeBacklogFailure(response APIResponse) string {
 	default:
 		return fmt.Sprintf("Error HTTP %d: %s", response.StatusCode, detail)
 	}
-}
-
-// describeStory shows the story returned by the API, or its raw body when it is not one.
-func describeStory(body []byte) string {
-	var story Story
-	if json.Unmarshal(body, &story) == nil && story.Title != "" {
-		return storyRow(story)
-	}
-	return strings.TrimSpace(string(body))
 }
 
 func storyRow(story Story) string {
@@ -468,6 +458,9 @@ func (m Model) viewBacklog() string {
 	case m.backlogLoading:
 		b.WriteString(statusMutedStyle.Render("Cargando backlog…") + "\n")
 		return b.String()
+	case m.backlogMessage != "":
+		b.WriteString(m.errorBlock(m.backlogMessage) + "\n" + hintStyle.Render("r para reintentar.") + "\n")
+		return b.String()
 	case !hasProject:
 		b.WriteString(emptyState("◇", "Elegí un proyecto para ver su backlog.", "Presioná c para elegir un proyecto.") + "\n")
 		return b.String()
@@ -511,21 +504,12 @@ func (m Model) viewBacklogForm() string {
 	for i, field := range form.fields() {
 		b.WriteString(m.formRow(i == form.field, field.label, *field.value) + "\n")
 	}
+	if form.saving {
+		b.WriteString("\n" + statusMutedStyle.Render("Guardando…") + "\n")
+	}
 	if form.err != "" {
 		b.WriteString("\n" + m.errorBlock(form.err) + "\n")
 	}
 	b.WriteString("\n" + hintStyle.Render("Separá los criterios de aceptación con punto y coma."))
 	return b.String()
-}
-
-// viewBacklogResult shows failures in the error banner and successes in the ok
-// style. Only a successful mutation returns to the backlog list afterwards.
-func (m Model) viewBacklogResult() string {
-	var body string
-	if m.backlogReturn != "backlog" {
-		body = m.errorBlock(m.backlogMessage)
-	} else {
-		body = m.resultBlock(m.backlogMessage, true)
-	}
-	return screenTitleStyle.Render("Resultado") + "\n\n" + body
 }

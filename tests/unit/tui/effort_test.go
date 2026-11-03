@@ -558,8 +558,8 @@ func TestEffortOnlyExplicitSubmitEmitsThePost(t *testing.T) {
 	}
 
 	m = stepRunning(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.Screen != "effort-result" {
-		t.Fatalf("Screen = %q, want effort-result after the confirmation", m.Screen)
+	if m.Screen != "section" {
+		t.Fatalf("Screen = %q, want the Esfuerzo root after the confirmation", m.Screen)
 	}
 	var posts int
 	for _, request := range rec.all() {

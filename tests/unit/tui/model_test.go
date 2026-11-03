@@ -2,7 +2,6 @@ package tui_test
 
 import (
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -186,7 +185,9 @@ func TestProjectAPIErrorIsShownWithoutSuccess(t *testing.T) {
 }
 
 func TestProjectNotFoundIsExplicitAndPreservesAPIDetail(t *testing.T) {
-	m := tui.NewModel("http://localhost:8080")
+	m := toEditProject(t, tui.NewModel("http://localhost:8080"), sampleProjects()[0])
+	m = press(press(m, tea.KeyTab), tea.KeyTab)
+	m = press(m, tea.KeyEnter) // submit, leaving the request pending
 	updated, _ := m.Update(tui.ProjectResultMsg{Response: tui.APIResponse{StatusCode: 404, Body: []byte(`{"error":"project_not_found","message":"project not found"}`)}})
 	m = updated.(tui.Model)
 	view := m.View()
@@ -260,10 +261,6 @@ func TestQuitOnQFromProjectBrowserAndLists(t *testing.T) {
 		open   func(tui.Model) tui.Model
 	}{
 		{"project-picker", func(m tui.Model) tui.Model { return m }},
-		{"project-result", func(m tui.Model) tui.Model {
-			updated, _ := m.Update(tui.ProjectResultMsg{Err: errors.New("connection refused")})
-			return updated.(tui.Model)
-		}},
 	}
 	for _, tc := range screens {
 		for _, char := range []string{"q", "Q"} {

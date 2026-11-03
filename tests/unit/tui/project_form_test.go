@@ -218,7 +218,7 @@ func TestEditProjectPrefillsFromSelectedSummary(t *testing.T) {
 	}
 }
 
-func TestProjectResultFailureReturnsToFormWithError(t *testing.T) {
+func TestProjectFailureStaysOnFormWithError(t *testing.T) {
 	m := openProjectForm(t, "http://localhost:8080")
 	m = typeText(m, "Alfa")
 	m = press(m, tea.KeyTab)
@@ -227,10 +227,6 @@ func TestProjectResultFailureReturnsToFormWithError(t *testing.T) {
 	m = typeDateInto(m, "2026", "12", "01")
 	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
 	m, _ = apply(m, tui.ProjectResultMsg{Response: tui.APIResponse{StatusCode: 422, Body: []byte(`{"error":"validation_failed","message":"fechas inválidas"}`)}})
-	if m.Screen != "project-result" {
-		t.Fatalf("Screen = %q, want project-result", m.Screen)
-	}
-	m = press(m, tea.KeyEnter)
 	if m.Screen != "create-project" {
 		t.Fatalf("Screen = %q, want create-project after a failed request", m.Screen)
 	}
@@ -243,7 +239,7 @@ func TestProjectResultFailureReturnsToFormWithError(t *testing.T) {
 	}
 }
 
-func TestProjectResultSuccessReturnsToBrowser(t *testing.T) {
+func TestProjectSuccessReturnsToBrowser(t *testing.T) {
 	m := openBrowser(t, tui.ProjectSummary{ID: "p1", Name: "Alpha", StartDate: "2026-01-01", PlannedFinishDate: "2026-12-31", Status: "active"})
 	m = typeText(m, "e")
 	m = press(m, tea.KeyEnter) // -> fecha inicio
@@ -252,11 +248,7 @@ func TestProjectResultSuccessReturnsToBrowser(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("submitting the edit form should issue a command")
 	}
-	m, _ = apply(m, tui.ProjectResultMsg{Response: tui.APIResponse{StatusCode: 200, Body: []byte(`{"id":"p1","name":"Alpha"}`)}})
-	if m.Screen != "project-result" {
-		t.Fatalf("Screen = %q, want project-result", m.Screen)
-	}
-	m, cmd = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd = apply(m, tui.ProjectResultMsg{Response: tui.APIResponse{StatusCode: 200, Body: []byte(`{"id":"p1","name":"Alpha"}`)}})
 	if m.Screen != "project-picker" {
 		t.Fatalf("Screen = %q, want project-picker after success", m.Screen)
 	}

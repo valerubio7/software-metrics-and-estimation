@@ -33,7 +33,7 @@ func TestDefectListStatusActionUsesHighlightedDefectWithoutMutating(t *testing.T
 	}
 }
 
-func TestDefectStatusUpdatePatchesSupportedStatesAndReloads(t *testing.T) {
+func TestDefectStatusUpdatePatchesSupportedStatesAndRefreshesDetail(t *testing.T) {
 	tests := []struct {
 		name       string
 		index      int
@@ -42,9 +42,9 @@ func TestDefectStatusUpdatePatchesSupportedStatesAndReloads(t *testing.T) {
 		wantSprint string
 		wantCalls  string
 	}{
-		{name: "open clears resolution", visible: "Open", apiStatus: "detectado", wantCalls: "PATCH /projects/p-1/defects/d-1|GET /projects/p-1/defects"},
-		{name: "in progress clears resolution", index: 1, visible: "In Progress", apiStatus: "en_correccion", wantCalls: "PATCH /projects/p-1/defects/d-1|GET /projects/p-1/defects"},
-		{name: "resolved includes selected resolution Sprint", index: 2, visible: "Resolved", apiStatus: "resuelto", wantSprint: "closed-sprint", wantCalls: "GET /projects/p-1/sprints/open|GET /projects/p-1/sprints|PATCH /projects/p-1/defects/d-1|GET /projects/p-1/defects"},
+		{name: "open clears resolution", visible: "Open", apiStatus: "detectado", wantCalls: "PATCH /projects/p-1/defects/d-1"},
+		{name: "in progress clears resolution", index: 1, visible: "In Progress", apiStatus: "en_correccion", wantCalls: "PATCH /projects/p-1/defects/d-1"},
+		{name: "resolved includes selected resolution Sprint", index: 2, visible: "Resolved", apiStatus: "resuelto", wantSprint: "closed-sprint", wantCalls: "GET /projects/p-1/sprints/open|GET /projects/p-1/sprints|PATCH /projects/p-1/defects/d-1"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -80,6 +80,7 @@ func TestDefectStatusUpdatePatchesSupportedStatesAndReloads(t *testing.T) {
 			model := NewModel(server.URL)
 			model.Screen, model.activeProjectID = "defect-detail", "p-1"
 			model.defectDetail = Defect{ID: "d-1", Status: "detectado", ResolutionSprintID: stringPointer("old-resolution")}
+			model.defects = []Defect{model.defectDetail}
 			model = updateStatusTestModel(model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
 			for i := 0; i < tc.index; i++ {
 				model = updateStatusTestModel(model, tea.KeyMsg{Type: tea.KeyDown})
@@ -122,12 +123,14 @@ func TestDefectStatusUpdatePatchesSupportedStatesAndReloads(t *testing.T) {
 			} else if _, exists := patch["resolution_sprint_id"]; exists {
 				t.Fatalf("non-resolved PATCH included resolution Sprint: %#v", patch)
 			}
-			if model.Screen != "defects" || !model.defectLoading || !model.defectStatusOK || !strings.Contains(model.defectStatusMessage, "HTTP 200") || reload == nil {
-				t.Fatalf("success did not confirm and reload list: screen=%q loading=%v ok=%v message=%q cmd nil=%v", model.Screen, model.defectLoading, model.defectStatusOK, model.defectStatusMessage, reload == nil)
+			if model.Screen != "defect-detail" || model.defectStatusLoading || model.defectDetail.Status != tc.apiStatus || reload != nil {
+				t.Fatalf("success did not return to the refreshed detail: screen=%q loading=%v detail=%+v cmd nil=%v", model.Screen, model.defectStatusLoading, model.defectDetail, reload == nil)
 			}
-			model = updateStatusTestModel(model, reload())
+			if !strings.Contains(stripANSI(model.View()), "✓ Estado del defecto actualizado: "+tc.apiStatus) {
+				t.Fatalf("detail lacks the toast:\n%s", stripANSI(model.View()))
+			}
 			if len(model.defects) != 1 || model.defects[0].Status != tc.apiStatus {
-				t.Fatalf("reloaded defects = %#v", model.defects)
+				t.Fatalf("list row not refreshed: %#v", model.defects)
 			}
 			if got := strings.Join(requests, "|"); got != tc.wantCalls {
 				t.Fatalf("request sequence = %q, want %q", got, tc.wantCalls)
@@ -173,7 +176,7 @@ func TestDefectStatusCancelAndDuplicateSubmitDoNotMutate(t *testing.T) {
 func TestDefectStatusFailureShowsAPIStatusAndBody(t *testing.T) {
 	const responseBody = `{"error":"validation_failed","message":"resolution Sprint predates detection"}`
 	model := NewModel("http://example.invalid")
-	model.Screen, model.activeProjectID, model.defectStatusLoading = "defect-status-result", "p-1", true
+	model.Screen, model.activeProjectID, model.defectStatusLoading = "defect-status-select", "p-1", true
 	model.defectStatusRequestID = 5
 	model = updateStatusTestModel(model, defectStatusResult{ProjectID: "p-1", RequestID: 5, Response: APIResponse{StatusCode: http.StatusUnprocessableEntity, Body: []byte(responseBody)}})
 	model.width = 240

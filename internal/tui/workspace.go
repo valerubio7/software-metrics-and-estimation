@@ -77,7 +77,7 @@ func (m Model) currentTab() workspaceTab {
 		return tabDefects
 	case m.Screen == "planning-poker":
 		return tabEstimation
-	case m.Screen == "effort-form" || m.Screen == "effort-result":
+	case m.Screen == "effort-form":
 		return tabEffort
 	case m.Screen == "section":
 		switch m.section.kind {

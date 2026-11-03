@@ -195,18 +195,18 @@ func TestStyledBacklogFormUsesSelectionStyleAndErrorBanner(t *testing.T) {
 	})
 }
 
-func TestStyledBacklogFailureResultUsesErrorStyle(t *testing.T) {
+func TestStyledBacklogFailureUsesErrorStyle(t *testing.T) {
 	forceColor(t)
 	server, _ := fakeBacklogAPI(t, apiStubs{})
-	m := openBacklogWithProject(t, server.URL, "p1")
+	m := savingStory(t, server.URL)
 	m, _ = apply(m, failure(http.StatusUnprocessableEntity,
 		`{"error":"validation_failed","message":"datos inválidos","fields":{"title":"es obligatorio","priority":"valor inválido"}}`))
 	view := m.View()
 
-	for _, want := range []string{"Resultado", "La API rechazó los datos (422): datos inválidos", "- priority: valor inválido", "- title: es obligatorio"} {
+	for _, want := range []string{"Crear historia", "La API rechazó los datos (422): datos inválidos", "- priority: valor inválido", "- title: es obligatorio"} {
 		wantPlainBody(t, view, want)
 	}
-	wantStyled(t, view, "Resultado")
+	wantStyled(t, view, "Crear historia")
 	head := wantStyled(t, view, "La API rechazó los datos (422)")
 	if !strings.Contains(stripANSI(head), "✗") {
 		t.Errorf("error heading %q lacks the error marker", head)
@@ -216,21 +216,18 @@ func TestStyledBacklogFailureResultUsesErrorStyle(t *testing.T) {
 	}
 }
 
-func TestStyledBacklogSuccessResultUsesOkStyle(t *testing.T) {
+func TestStyledBacklogSuccessToastUsesOkStyle(t *testing.T) {
 	forceColor(t)
 	server, _ := fakeBacklogAPI(t, apiStubs{})
-	m := openBacklogWithProject(t, server.URL, "p1")
+	m := savingStory(t, server.URL)
 	m, _ = apply(m, tui.BacklogResultMsg{Op: tui.BacklogOpCreate, Response: tui.APIResponse{
 		StatusCode: http.StatusCreated,
 		Body:       []byte(storyBody(t, tui.Story{ID: "s9", Title: "Historia nueva", Priority: "alta", Status: "pendiente"})),
 	}})
 	view := m.View()
 
-	wantPlainBody(t, view, "Resultado")
-	wantPlainBody(t, view, "Historia creada correctamente (201)")
-	wantPlainBody(t, view, "Historia nueva")
-	wantStyled(t, view, "Resultado")
-	ok := wantStyled(t, view, "Historia creada correctamente (201)")
+	wantPlainBody(t, view, "✓ Historia creada: Historia nueva")
+	ok := wantStyled(t, view, "✓ Historia creada: Historia nueva")
 	if strings.Contains(stripANSI(ok), "✗") {
 		t.Errorf("success line %q carries the error marker, want only the ok style", ok)
 	}

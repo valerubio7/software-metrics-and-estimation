@@ -98,9 +98,9 @@ func TestSprintCloseAndHistoryFlows(t *testing.T) {
 }
 
 func TestSprintClosureConflictAndEmptyHistory(t *testing.T) {
-	m := tui.NewModel("http://localhost")
+	m := pendingSprintWrite(t, "close")
 	updated, _ := m.Update(tui.SprintResultMsg{Op: "close", Response: tui.APIResponse{StatusCode: http.StatusConflict, Body: []byte(`{"error":"sprint_already_closed","message":"Sprint was already closed"}`)}})
-	if got := updated.(tui.Model).View(); !strings.Contains(got, "sprint_already_closed") || strings.Contains(got, "cerrado") {
+	if got := updated.(tui.Model).View(); updated.(tui.Model).Screen != "sprint-confirm" || !strings.Contains(got, "sprint_already_closed") || strings.Contains(got, "Sprint cerrado") {
 		t.Fatalf("closure conflict view = %q", got)
 	}
 	updated, _ = m.Update(tui.SprintResultMsg{Op: "history", Response: tui.APIResponse{StatusCode: http.StatusOK, Body: []byte(`{"project_id":"p1","sprints":[]}`)}})

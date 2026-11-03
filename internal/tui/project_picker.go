@@ -159,7 +159,7 @@ func (m Model) selectProject(project ProjectSummary) (Model, tea.Cmd) {
 // isSprintScreen reports whether screen belongs to the Sprints flow.
 func isSprintScreen(screen string) bool {
 	switch screen {
-	case "sprints", "sprint-goal", "sprint-history", "sprint-confirm", "sprint-story-select", "sprint-assigned-list", "sprint-task-form", "sprint-result":
+	case "sprints", "sprint-goal", "sprint-history", "sprint-confirm", "sprint-story-select", "sprint-assigned-list", "sprint-task-form":
 		return true
 	}
 	return false
