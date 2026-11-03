@@ -93,10 +93,6 @@ func TestDefectsListAndRefreshAreReadOnly(t *testing.T) {
 	if strings.Contains(listView, "muestra el detalle") {
 		t.Fatal("list-only slice advertises a deferred detail view")
 	}
-	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyEnter})
-	if model.Screen != "defects" {
-		t.Fatalf("Enter left list-only screen for %q", model.Screen)
-	}
 	updated, refresh := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
 	model = updated.(Model)
 	if refresh == nil {
@@ -105,6 +101,168 @@ func TestDefectsListAndRefreshAreReadOnly(t *testing.T) {
 	model = updateDefectTestModel(model, refresh())
 	if got := strings.Join(methods, ","); got != "GET,GET" {
 		t.Fatalf("requests = %q, want GET only for list and refresh", got)
+	}
+}
+
+func TestDefectSearchMatchesEveryFieldCaseInsensitively(t *testing.T) {
+	resolutionSprintID := "sprint-fix"
+	defect := Defect{
+		ID: "DEFECT-42", Description: "Cache invalidation failed", Severity: "Critical",
+		Status: "Open", StoryID: "STORY-19", SprintID: "SPRINT-DETECT",
+		ResolutionSprintID: &resolutionSprintID,
+	}
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{name: "defect ID", query: "defect-42"},
+		{name: "description", query: "CACHE INVALIDATION"},
+		{name: "severity", query: "critical"},
+		{name: "status", query: "OPEN"},
+		{name: "story ID", query: "story-19"},
+		{name: "detection Sprint ID", query: "sprint-detect"},
+		{name: "resolution Sprint ID", query: "sprint-fix"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := NewModel("http://example.invalid")
+			model.Screen, model.defects = "defects", []Defect{defect}
+			model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+			for _, r := range tt.query {
+				model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+			}
+			if visible := model.visibleDefects(); len(visible) != 1 || visible[0].ID != defect.ID {
+				t.Fatalf("search for %q returned %#v", tt.query, visible)
+			}
+			model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyEnter})
+			if model.defectFiltering || model.defectFilter != tt.query {
+				t.Fatalf("Enter did not preserve and finish search: filtering=%v filter=%q", model.defectFiltering, model.defectFilter)
+			}
+		})
+	}
+}
+
+func TestDefectSearchKeepsGlobalShortcutsAsFilterText(t *testing.T) {
+	model := NewModel("http://example.invalid")
+	model.Screen, model.defects = "defects", []Defect{{ID: "d-1", Description: "Sample"}}
+	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	for _, key := range []string{"q", "p", "?"} {
+		updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		model = updated.(Model)
+		if cmd != nil || model.Screen != "defects" || !model.defectFiltering || model.showHelp {
+			t.Fatalf("key %q escaped search: screen=%q filtering=%v help=%v cmd nil=%v", key, model.Screen, model.defectFiltering, model.showHelp, cmd == nil)
+		}
+	}
+	if model.defectFilter != "qp?" {
+		t.Fatalf("filter = %q, want qp?", model.defectFilter)
+	}
+}
+
+func TestDefectSearchArrowSelectionAndEscapeClear(t *testing.T) {
+	model := NewModel("http://example.invalid")
+	model.Screen = "defects"
+	model.defects = []Defect{
+		{ID: "d-1", Description: "Match first"},
+		{ID: "d-2", Description: "Match second"},
+		{ID: "d-3", Description: "Other record"},
+	}
+	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	for _, r := range "match" {
+		model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyDown})
+	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyEnter})
+	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyEnter})
+	if model.Screen != "defect-detail" || model.defectDetail.ID != "d-2" {
+		t.Fatalf("filtered arrow selection opened screen %q for defect %q", model.Screen, model.defectDetail.ID)
+	}
+	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyEsc})
+	if model.Screen != "defects" || model.defectFilter != "match" {
+		t.Fatalf("detail Escape did not preserve filter: screen=%q filter=%q", model.Screen, model.defectFilter)
+	}
+	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyEsc})
+	if model.Screen != "defects" || model.defectFilter != "" || len(model.visibleDefects()) != 3 {
+		t.Fatalf("list Escape did not clear filter: screen=%q filter=%q visible=%d", model.Screen, model.defectFilter, len(model.visibleDefects()))
+	}
+	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	for _, r := range "match" {
+		model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyEsc})
+	if model.Screen != "defects" || model.defectFiltering || model.defectFilter != "" {
+		t.Fatalf("Escape while searching did not clear filter: screen=%q filtering=%v filter=%q", model.Screen, model.defectFiltering, model.defectFilter)
+	}
+}
+
+func TestDefectDetailUsesSelectedListRecordAndReturnsToFilteredList(t *testing.T) {
+	var methods []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		methods = append(methods, r.Method)
+		_, _ = w.Write([]byte(`{"project_id":"p-1","defects":[{"id":"d-alpha","description":"Alpha crash","severity":"high","status":"open","story_id":"story-a","sprint_id":"sprint-a","resolution_sprint_id":null},{"id":"d-beta","description":"Beta mismatch","severity":"low","status":"resolved","story_id":"story-b","sprint_id":"sprint-b","resolution_sprint_id":"sprint-fix"}]}`))
+	}))
+	defer server.Close()
+
+	model := NewModel(server.URL)
+	model.activeProjectID = "p-1"
+	model, cmd := model.openDefects()
+	model = updateDefectTestModel(model, cmd())
+	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	for _, r := range "alpha" {
+		model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyEnter})
+	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyEnter})
+	if model.Screen != "defect-detail" || model.defectDetail.ID != "d-alpha" {
+		t.Fatalf("detail = screen %q, defect %#v", model.Screen, model.defectDetail)
+	}
+	view := model.View()
+	for _, field := range []string{"d-alpha", "Alpha crash", "high", "open", "story-a", "sprint-a", "Sprint de resolución", "—"} {
+		if !strings.Contains(view, field) {
+			t.Errorf("detail view does not contain %q", field)
+		}
+	}
+	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyEsc})
+	if model.Screen != "defects" || model.defectFilter != "alpha" || model.defectFiltering {
+		t.Fatalf("Escape did not restore filtered list: screen=%q filter=%q filtering=%v", model.Screen, model.defectFilter, model.defectFiltering)
+	}
+	if view := model.View(); !strings.Contains(view, "d-alpha") || strings.Contains(view, "d-beta") {
+		t.Fatalf("filtered list context was not restored:\n%s", view)
+	}
+	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyEsc})
+	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	for _, r := range "beta" {
+		model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyEnter})
+	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyEnter})
+	if model.Screen != "defect-detail" || !strings.Contains(model.View(), "sprint-fix") {
+		t.Fatalf("non-null resolution Sprint missing from selected detail: screen=%q\n%s", model.Screen, model.View())
+	}
+	if got := strings.Join(methods, ","); got != "GET" {
+		t.Fatalf("detail requests = %q, want GET only", got)
+	}
+}
+
+func TestChangingProjectFromDefectDetailOpensNewProjectList(t *testing.T) {
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_, _ = w.Write([]byte(`{"project_id":"new-project","defects":[]}`))
+	}))
+	defer server.Close()
+
+	model := NewModel(server.URL)
+	model.Screen, model.activeProjectID = "defect-detail", "old-project"
+	model.defectDetail = Defect{ID: "old-defect", Description: "Old project record"}
+	model.defectFilter = "old-project-filter"
+	model, _ = model.openProjectPicker("project")
+	model, cmd := model.selectProject(ProjectSummary{ID: "new-project", Name: "New project"})
+	if model.Screen != "defects" || cmd == nil {
+		t.Fatalf("selecting another project from detail = screen %q, cmd nil %v", model.Screen, cmd == nil)
+	}
+	model = updateDefectTestModel(model, cmd())
+	if gotPath != "/projects/new-project/defects" || model.activeProjectID != "new-project" || model.defectFilter != "" {
+		t.Fatalf("new project list request = %q for %q with filter %q", gotPath, model.activeProjectID, model.defectFilter)
 	}
 }
 

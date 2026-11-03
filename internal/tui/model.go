@@ -95,14 +95,17 @@ type Model struct {
 	pokerMessage      string
 	pokerStory        Story
 
-	effortClient  *EffortClient
-	effort        effortState
-	defectClient  *DefectClient
-	defects       []Defect
-	defectCursor  int
-	defectLoading bool
-	defectError   string
-	now           func() time.Time
+	effortClient    *EffortClient
+	effort          effortState
+	defectClient    *DefectClient
+	defects         []Defect
+	defectCursor    int
+	defectFilter    string
+	defectFiltering bool
+	defectLoading   bool
+	defectError     string
+	defectDetail    Defect
+	now             func() time.Time
 }
 
 // WithClock returns a copy of the model that reads the current time from now.
@@ -252,6 +255,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateEffortResult(key)
 	case "defects":
 		return m.updateDefects(key)
+	case "defect-detail":
+		if key.Type == tea.KeyEsc {
+			m.Screen = "defects"
+		}
+		return m, nil
 	default:
 		if key.Type == tea.KeyEsc {
 			m.Screen = "menu"
@@ -275,7 +283,7 @@ func entersText(screen string) bool {
 // listed, so q is a plain character there; Ctrl+C always quits.
 func quitsOnQ(screen string) bool {
 	switch screen {
-	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "planning-poker", "effort-result", "defects":
+	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "planning-poker", "effort-result", "defects", "defect-detail":
 		return true
 	}
 	return false
@@ -289,6 +297,7 @@ func isQuitRune(key tea.KeyMsg) bool {
 // shortcuts (?, p, q) must be typed into it instead of triggering.
 func (m Model) filtering() bool {
 	return (m.Screen == "backlog" && m.backlogFiltering) ||
+		(m.Screen == "defects" && m.defectFiltering) ||
 		(m.Screen == "project-picker" && m.projectFiltering) ||
 		(m.Screen == "section" && m.section.selector.filtering) ||
 		(isSprintScreen(m.Screen) && m.sprintFiltering)
@@ -614,6 +623,8 @@ func (m Model) viewBody() string {
 		return m.viewEffortResult()
 	case "defects":
 		return m.viewDefects()
+	case "defect-detail":
+		return m.viewDefectDetail()
 	default:
 		return screenTitleStyle.Render(m.Choices[m.Cursor])
 	}
@@ -788,8 +799,11 @@ func (m Model) crumbParts() []string {
 		parts = append(parts, sectionEffort.title(), "Registrar")
 	case "effort-result":
 		parts = append(parts, sectionEffort.title(), "Resultado")
-	case "defects":
+	case "defects", "defect-detail":
 		parts = append(parts, sectionDefects.title())
+		if m.Screen == "defect-detail" {
+			parts = append(parts, "Detalle")
+		}
 	default:
 		parts = append(parts, "")
 	}
@@ -871,7 +885,12 @@ func (m Model) footer() string {
 	case "effort-result":
 		return m.effortResultFooter()
 	case "defects":
-		return m.keyHints("↑/↓", "mover", "r", "refrescar", "p", "proyecto", "Esc", "menú", "?", "ayuda", "q", "salir")
+		if m.defectFiltering {
+			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
+		}
+		return m.keyHints("↑/↓", "mover", "Enter", "detalle", "r", "refrescar", "/", "buscar", "p", "proyecto", "Esc", "menú", "q", "salir")
+	case "defect-detail":
+		return m.keyHints("Esc", "volver al listado", "p", "proyecto", "q", "salir")
 	default:
 		return m.keyHints("Esc", "volver", "?", "ayuda", "q", "salir")
 	}
