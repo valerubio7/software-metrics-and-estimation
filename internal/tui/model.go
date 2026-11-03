@@ -229,10 +229,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.showHelp = true
 		return m, nil
 	}
-	if key.Type == tea.KeyRunes && string(key.Runes) == "p" && quitsOnQ(m.Screen) && m.Screen != "project-picker" && m.Screen != "sprint-confirm" && !m.filtering() {
+	if key.Type == tea.KeyRunes && string(key.Runes) == "p" && quitsOnQ(m.Screen) && m.Screen != "project-picker" && m.Screen != "sprint-confirm" && !m.filtering() && !m.defectSubmissionInFlight() {
 		return m.openProjectPicker("project")
 	}
-	if isQuitRune(key) && quitsOnQ(m.Screen) && !m.filtering() {
+	if isQuitRune(key) && quitsOnQ(m.Screen) && !m.filtering() && !m.defectSubmissionInFlight() {
 		return m, tea.Quit
 	}
 	switch m.Screen {
@@ -332,7 +332,7 @@ func entersText(screen string) bool {
 // listed, so q is a plain character there; Ctrl+C always quits.
 func quitsOnQ(screen string) bool {
 	switch screen {
-	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "planning-poker", "effort-result", "defects", "defect-detail", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-create-result":
+	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "planning-poker", "effort-result", "defects", "defect-detail", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-create-result", "defect-status-select", "defect-resolution-select", "defect-status-result":
 		return true
 	}
 	return false
@@ -353,6 +353,11 @@ func (m Model) filtering() bool {
 		(m.Screen == "project-picker" && m.projectFiltering) ||
 		(m.Screen == "section" && m.section.selector.filtering) ||
 		(isSprintScreen(m.Screen) && m.sprintFiltering)
+}
+
+func (m Model) defectSubmissionInFlight() bool {
+	return (m.Screen == "defect-status-result" && m.defectStatusLoading) ||
+		(m.Screen == "defect-create-result" && m.defectCreateLoading)
 }
 
 // editText applies a text-editing key to value: runes and the space bar are
