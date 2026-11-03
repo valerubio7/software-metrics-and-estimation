@@ -159,18 +159,6 @@ func TestMetricsFlowShowsProjectAndSprintMetricsWithoutRecalculation(t *testing.
 	}
 }
 
-func TestDashboardKeepsFutureNoticeAfterChoosingASprint(t *testing.T) {
-	server := metricsServer(t)
-	m := openSectionWithProject(t, server.URL, "p1", menuDashboard)
-	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
-	view := stripANSI(m.View())
-	for _, want := range []string{"TUI-11", "Sprint de métricas", "No se guardó ningún dato"} {
-		if !strings.Contains(view, want) {
-			t.Errorf("notice lacks %q: %q", want, view)
-		}
-	}
-}
-
 func TestMetricsShowsAPIErrorWithoutClosingTheScreen(t *testing.T) {
 	server := sectionServer(t, map[string]string{
 		"/projects/p1/sprints/open": `{"project_id":"p1","sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Sprint de métricas","is_closed":false}]}`,

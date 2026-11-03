@@ -95,6 +95,7 @@ type Model struct {
 	pokerMessage      string
 	pokerStory        Story
 
+	dashboard             dashboardState
 	effortClient          *EffortClient
 	effort                effortState
 	defectClient          *DefectClient
@@ -197,6 +198,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if result, ok := msg.(effortMetricsResult); ok {
 		return m.applyEffortMetrics(result)
 	}
+	if result, ok := msg.(dashboardResultMsg); ok {
+		return m.applyDashboardResult(result)
+	}
 	if result, ok := msg.(DefectResultMsg); ok {
 		return m.applyDefectResult(result)
 	}
@@ -278,6 +282,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "section":
 		return m.updateSection(key)
+	case "dashboard":
+		return m.updateDashboard(key)
 	case "planning-poker":
 		return m.updatePlanningPoker(key)
 	case "effort-form":
@@ -332,7 +338,7 @@ func entersText(screen string) bool {
 // listed, so q is a plain character there; Ctrl+C always quits.
 func quitsOnQ(screen string) bool {
 	switch screen {
-	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "planning-poker", "effort-result", "defects", "defect-detail", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-create-result", "defect-status-select", "defect-resolution-select", "defect-status-result":
+	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "dashboard", "planning-poker", "effort-result", "defects", "defect-detail", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-create-result", "defect-status-select", "defect-resolution-select", "defect-status-result":
 		return true
 	}
 	return false
@@ -403,7 +409,7 @@ func (m Model) updateMenu(key tea.KeyMsg) (Model, tea.Cmd) {
 		case 6:
 			return m.openSection(sectionMetrics)
 		case 7:
-			return m.openSection(sectionDashboard)
+			return m.openDashboard()
 		default:
 			return m, tea.Quit
 		}
@@ -672,6 +678,8 @@ func (m Model) viewBody() string {
 		return m.viewSprintResult()
 	case "section":
 		return m.viewSection()
+	case "dashboard":
+		return m.viewDashboard()
 	case "planning-poker":
 		return m.viewPlanningPoker()
 	case "effort-form":
@@ -816,6 +824,8 @@ func (m Model) crumbParts() []string {
 		switch {
 		case m.pickerReturn == "backlog":
 			parts = append(parts, "Backlog")
+		case m.pickerPurpose == "dashboard" || m.pickerReturn == "dashboard":
+			parts = append(parts, "Dashboard")
 		case m.pickerReturn == "sprints" || isSprintScreen(m.pickerReturn) || m.pickerPurpose == "sprints":
 			parts = append(parts, "Sprints")
 		case m.pickerReturn == "section" || strings.HasPrefix(m.pickerPurpose, "section:"):
@@ -872,6 +882,8 @@ func (m Model) crumbParts() []string {
 		parts = append(parts, sectionEffort.title(), "Registrar")
 	case "effort-result":
 		parts = append(parts, sectionEffort.title(), "Resultado")
+	case "dashboard":
+		parts = append(parts, "Dashboard")
 	case "defects", "defect-detail", "defect-create-form", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-create-result", "defect-status-select", "defect-resolution-select", "defect-status-result":
 		parts = append(parts, sectionDefects.title())
 		switch m.Screen {
@@ -968,6 +980,8 @@ func (m Model) footer() string {
 		return m.keyHints("↑/↓", "mover", "Enter", "desplegar", "r", "refrescar", "/", "buscar", "Esc", "volver", "q", "salir")
 	case "section":
 		return m.sectionFooter()
+	case "dashboard":
+		return m.dashboardFooter()
 	case "planning-poker":
 		return m.planningPokerFooter()
 	case "effort-form":
@@ -1053,6 +1067,9 @@ func (m Model) helpRows() [][2]string {
 	}
 	if m.Screen == "section" {
 		return m.sectionHelpRows()
+	}
+	if m.Screen == "dashboard" {
+		return dashboardHelpRows()
 	}
 	if m.Screen == "effort-result" {
 		return effortResultHelpRows()

@@ -163,6 +163,8 @@ func (m Model) selectProject(project ProjectSummary) (Model, tea.Cmd) {
 	m.message = ""
 
 	switch {
+	case purpose == "dashboard" || returnTo == "dashboard":
+		return m.openDashboard()
 	case purpose == "backlog":
 		m.Screen = "backlog"
 		m.backlogFilter, m.backlogFiltering = "", false
@@ -208,6 +210,9 @@ func (m Model) viewProjectPicker() string {
 	}
 	if strings.HasPrefix(m.pickerPurpose, "section:") {
 		hint = "Enter continúa en " + m.section.kind.title() + " con el proyecto elegido."
+	}
+	if m.pickerPurpose == "dashboard" {
+		hint = "Enter abre el Dashboard del proyecto elegido."
 	}
 	var b strings.Builder
 	b.WriteString(screenTitleStyle.Render(title))
