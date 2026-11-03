@@ -115,7 +115,16 @@ type Model struct {
 	defectStoryRequestID  uint64
 	defectSprintRequestID uint64
 	defectCreateRequestID uint64
-	now                   func() time.Time
+
+	defectStatusIndex            int
+	defectResolutionSelector     selector
+	defectStatusOptionsLoading   bool
+	defectStatusOptionsRequestID uint64
+	defectStatusLoading          bool
+	defectStatusRequestID        uint64
+	defectStatusMessage          string
+	defectStatusOK               bool
+	now                          func() time.Time
 }
 
 // WithClock returns a copy of the model that reads the current time from now.
@@ -197,6 +206,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if result, ok := msg.(defectCreateResult); ok {
 		return m.applyDefectCreateResult(result)
 	}
+	if result, ok := msg.(defectStatusOptionsResult); ok {
+		return m.applyDefectStatusOptionsResult(result)
+	}
+	if result, ok := msg.(defectStatusResult); ok {
+		return m.applyDefectStatusResult(result)
+	}
 	key, isKey := msg.(tea.KeyMsg)
 	if !isKey {
 		return m, nil
@@ -274,8 +289,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "defect-detail":
 		if key.Type == tea.KeyEsc {
 			m.Screen = "defects"
+		} else if key.Type == tea.KeyRunes && string(key.Runes) == "u" {
+			return m.beginDefectStatusUpdate()
 		}
 		return m, nil
+	case "defect-status-select":
+		return m.updateDefectStatusSelect(key)
+	case "defect-resolution-select":
+		return m.updateDefectResolutionSelect(key)
+	case "defect-status-result":
+		return m.updateDefectStatusResult(key)
 	case "defect-create-form":
 		return m.updateDefectCreateForm(key)
 	case "defect-story-select":
@@ -326,6 +349,7 @@ func (m Model) filtering() bool {
 		(m.Screen == "defects" && m.defectFiltering) ||
 		(m.Screen == "defect-story-select" && m.defectStorySelector.filtering) ||
 		(m.Screen == "defect-sprint-select" && m.defectSprintSelector.filtering) ||
+		(m.Screen == "defect-resolution-select" && m.defectResolutionSelector.filtering) ||
 		(m.Screen == "project-picker" && m.projectFiltering) ||
 		(m.Screen == "section" && m.section.selector.filtering) ||
 		(isSprintScreen(m.Screen) && m.sprintFiltering)
@@ -653,6 +677,12 @@ func (m Model) viewBody() string {
 		return m.viewDefects()
 	case "defect-detail":
 		return m.viewDefectDetail()
+	case "defect-status-select":
+		return m.viewDefectStatusSelect()
+	case "defect-resolution-select":
+		return m.viewSelector(&m.defectResolutionSelector, "Defecto · Sprint de resolución", "Elegí un Sprint abierto o cerrado del proyecto.", "No hay Sprints disponibles.", "Creá un Sprint desde Sprints y volvé a intentar.")
+	case "defect-status-result":
+		return m.viewDefectStatusResult()
 	case "defect-create-form":
 		return m.viewDefectCreateForm()
 	case "defect-story-select":
