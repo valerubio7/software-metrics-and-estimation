@@ -141,15 +141,6 @@ func (m Model) navigateEffortForm(key tea.KeyMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// effortFormFooter lists only the keys that act inside the form: q, p, r and ?
-// are text there.
-func (m Model) effortFormFooter() string {
-	if m.effort.saving {
-		return m.keyHints("Ctrl+C", "salir")
-	}
-	return m.keyHints("Tab/↑/↓", "campo", "←/→", "fecha", "Enter", "siguiente/enviar", "Esc", "volver", "Ctrl+C", "salir")
-}
-
 // effortSaveResult is the asynchronous result of the effort POST, tagged with
 // the sequence number of the submission that produced it.
 type effortSaveResult struct {

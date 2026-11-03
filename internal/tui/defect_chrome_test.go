@@ -69,10 +69,8 @@ func TestDefectSelectorFooterDoesNotOfferChooseWhenEmpty(t *testing.T) {
 				t.Errorf("empty selector footer advertises choosing an unavailable option: %q", footer)
 			}
 			m.showHelp = true
-			for _, row := range m.helpRows() {
-				if row[0] == "Enter" {
-					t.Errorf("empty selector help advertises choosing an unavailable option: %#v", row)
-				}
+			if help := helpDescription(m.bindings(), "Enter"); help != "" {
+				t.Errorf("empty selector help advertises choosing an unavailable option: %q", help)
 			}
 		})
 	}
@@ -184,7 +182,7 @@ func TestDefectSelectorHelpDistinguishesFilteringFromChoosing(t *testing.T) {
 					selector := defectSelectorForScreen(&m, screen)
 					selector.items = []selectorItem{{ID: "option-1", Label: "Option"}}
 					selector.filtering = filtering
-					rows := m.helpRows()
+					rows := m.bindings()
 					enterAction := helpDescription(rows, "Enter")
 					if filtering {
 						if strings.Contains(enterAction, "Elegir") || enterAction != "Dejar de filtrar" {
@@ -237,10 +235,10 @@ func TestDefectListItemActionsRequireVisibleDefects(t *testing.T) {
 	}
 }
 
-func helpDescription(rows [][2]string, key string) string {
+func helpDescription(rows []binding, key string) string {
 	for _, row := range rows {
-		if row[0] == key {
-			return row[1]
+		if row.key == key {
+			return row.helpText()
 		}
 	}
 	return ""

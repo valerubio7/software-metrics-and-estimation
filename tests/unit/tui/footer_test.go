@@ -16,7 +16,7 @@ func TestFooterWrapsInsteadOfClipping(t *testing.T) {
 	m, _ = apply(m, tea.WindowSizeMsg{Width: 44, Height: 24})
 	view := m.View() // startup project browser
 
-	for _, want := range []string{"q", "salir"} {
+	for _, want := range []string{"?", "más"} { // the last footer pair
 		if !strings.Contains(view, want) {
 			t.Fatalf("narrow footer lost %q: %q", want, view)
 		}

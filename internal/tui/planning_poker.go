@@ -162,24 +162,6 @@ func (m Model) viewPlanningPoker() string {
 	}
 	return b.String()
 }
-func (m Model) planningPokerFooter() string {
-	switch m.pokerPhase {
-	case "vote":
-		return m.keyHints("0–100/?", "votar", "↑/↓", "cambiar participante", "Enter", "siguiente", "Esc", "volver", "q", "salir")
-	case "reveal":
-		return m.keyHints("Enter/r", "revelar ronda", "Esc", "volver", "q", "salir")
-	case "revealed":
-		return m.keyHints("Enter", "elegir estimación", "n", "nueva ronda", "Esc", "volver", "q", "salir")
-	case "estimate":
-		return m.keyHints("↑/↓", "cambiar estimación", "Enter", "continuar", "Esc", "volver", "q", "salir")
-	case "confirm":
-		return m.keyHints("y/Enter", "confirmar envío", "Esc", "volver", "q", "salir")
-	case "result":
-		return m.keyHints("Esc", "volver", "q", "salir")
-	default:
-		return m.keyHints("Esc", "volver", "q", "salir")
-	}
-}
 func (m Model) setStoryPointsCmd() tea.Cmd {
 	client := m.storyPointsClient
 	p, s, v := m.activeProjectID, m.section.selected.ID, m.pokerEstimate

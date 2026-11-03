@@ -52,9 +52,15 @@ func TestSprintBrowserListsOpenSprintsWithNavigatorKeys(t *testing.T) {
 
 	m := openSprintsWithProject(t, server.URL, "p1")
 	view := m.View()
-	for _, want := range []string{"Sprints de Alpha", "Ship the release", "sp1", "x cerrar", "h cerrados", "a asignar", "/ busca"} {
+	for _, want := range []string{"Sprints de Alpha", "Ship the release", "sp1", "/ busca"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("browser view missing %q: %q", want, view)
+		}
+	}
+	help, _ := apply(m, keyMsg("?"))
+	for _, want := range []string{"x   ", "h   ", "a   ", "Cerrar el Sprint", "Ver los Sprints cerrados", "Asignar historias"} {
+		if !strings.Contains(stripANSI(help.View()), want) {
+			t.Fatalf("browser help missing %q: %q", want, help.View())
 		}
 	}
 	if !strings.Contains(view, "Enter") {

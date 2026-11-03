@@ -74,7 +74,7 @@ func TestPlanningPokerFootersAdvertiseContextualSelectionAndVoteKeys(t *testing.
 	m, _ = apply(m, tea.KeyMsg{Type: tea.KeySpace})
 	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
 	view = stripANSI(m.View())
-	if strings.Contains(view, "?  ayuda") || strings.Contains(view, "? ayuda") {
+	if strings.Contains(view, "?  ayuda") || strings.Contains(view, "? ayuda") || strings.Contains(view, "?  más") {
 		t.Fatalf("vote footer must not advertise ? as help because it is a vote card: %q", view)
 	}
 	if !strings.Contains(view, "↑/↓") || !strings.Contains(view, "participante") {

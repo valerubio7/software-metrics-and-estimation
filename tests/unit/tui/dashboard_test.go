@@ -306,7 +306,7 @@ func TestDashboardFooterAndHelpOnlyShowValidKeys(t *testing.T) {
 	server := dashboardServer(t)
 	m := startDashboard(t, server.URL, "p1")
 	view := stripANSI(m.View())
-	for _, want := range []string{"r  refrescar", "Esc  proyectos", "?  ayuda", "q  salir"} {
+	for _, want := range []string{"r  refrescar", "Esc  proyectos", "?  más", "q  salir"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("dashboard footer lacks %q: %q", want, view)
 		}

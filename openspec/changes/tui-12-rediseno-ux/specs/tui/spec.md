@@ -116,7 +116,7 @@ Cuando una operación de escritura termina con éxito (crear o modificar un proy
 - **THEN** la TUI no emite otra request y muestra «Guardando…»
 
 ### Requirement: Pie de teclas acotado y ayuda agrupada
-El pie DEBERÁ mostrar como máximo cinco atajos, los principales de la pantalla y el paso activos, y agregar `? más` cuando la pantalla tenga más atajos disponibles. La ayuda abierta con `?` DEBERÁ listar todos los atajos válidos de la pantalla activa agrupados en «Navegación», «Acciones» y «General», omitiendo los grupos vacíos. Las teclas de cambio de pestaña DEBERÁN figurar en la ayuda de las pantallas raíz del espacio de trabajo.
+El pie DEBERÁ mostrar como máximo cinco atajos, los principales de la pantalla y el paso activos, y agregar `? más` cuando la pantalla tenga más atajos disponibles y `?` abra la ayuda en ese paso. La ayuda abierta con `?` DEBERÁ listar todos los atajos válidos de la pantalla activa agrupados en «Navegación», «Acciones» y «General», omitiendo los grupos vacíos. Las teclas de cambio de pestaña DEBERÁN figurar en la ayuda de las pantallas raíz del espacio de trabajo.
 
 #### Scenario: Pie de la lista de Sprints
 - **GIVEN** que la pestaña Sprints muestra su lista
@@ -128,6 +128,21 @@ El pie DEBERÁ mostrar como máximo cinco atajos, los principales de la pantalla
 - **WHEN** el usuario presiona `?`
 - **THEN** la ayuda muestra los grupos «Navegación», «Acciones» y «General»
 - **AND** incluye los atajos de cerrar Sprint, ver los cerrados y descargar el PDF
+
+#### Scenario: Pantalla con pocos atajos
+- **GIVEN** que el formulario del objetivo del Sprint está abierto
+- **WHEN** la TUI dibuja el pie
+- **THEN** muestra todos sus atajos y no agrega `? más`
+
+#### Scenario: Filtro o campo de texto activo
+- **GIVEN** que el usuario escribe en un filtro o en un campo de texto
+- **WHEN** la TUI dibuja el pie
+- **THEN** el pie no ofrece `?`, porque ahí `?` es un carácter
+
+#### Scenario: Teclas de pestaña en la ayuda
+- **GIVEN** que la pantalla activa es la raíz de una pestaña del espacio de trabajo
+- **WHEN** el usuario presiona `?`
+- **THEN** la ayuda lista `Tab/Shift+Tab` y `1–6` en «Navegación»
 
 ### Requirement: Atajos contextuales de estimación y esfuerzo
 En la lista del backlog, `P` DEBERÁ abrir la pestaña Estimación con la historia resaltada ya elegida, mostrando el selector de participantes, y `E` DEBERÁ abrir la pestaña Esfuerzo con la historia resaltada ya elegida, mostrando el selector de tareas. `Esc` desde ese primer selector DEBERÁ volver a la lista de historias de la pestaña abierta. Los atajos solo emiten consultas `GET`.

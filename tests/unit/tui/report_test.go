@@ -170,11 +170,8 @@ func TestReportKeysAppearInFooterAndHelp(t *testing.T) {
 		t.Errorf("dashboard help lacks the report action: %q", help)
 	}
 
+	// The Sprint list footer keeps its five primary keys; d lives in the help.
 	m = openSprintsWithProject(t, server.URL, "p1")
-	view = stripANSI(m.View())
-	if !strings.Contains(view, "d  PDF") {
-		t.Errorf("sprint footer lacks the report key: %q", view)
-	}
 	m, _ = apply(m, keyMsg("?"))
 	if help := stripANSI(m.View()); !strings.Contains(help, "Descargar el reporte PDF del Sprint resaltado") {
 		t.Errorf("sprint help lacks the report action: %q", help)
