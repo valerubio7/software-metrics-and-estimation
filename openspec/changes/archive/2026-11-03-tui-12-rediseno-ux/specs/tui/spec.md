@@ -145,7 +145,7 @@ El pie DEBERÁ mostrar como máximo cinco atajos, los principales de la pantalla
 - **THEN** la ayuda lista `Tab/Shift+Tab` y `1–6` en «Navegación»
 
 ### Requirement: Atajos contextuales de estimación y esfuerzo
-En la lista del backlog, `P` DEBERÁ abrir la pestaña Estimación con la historia resaltada ya elegida, mostrando el selector de participantes, y `E` DEBERÁ abrir la pestaña Esfuerzo con la historia resaltada ya elegida, mostrando el selector de tareas. `Esc` desde ese primer selector DEBERÁ volver a la lista del backlog y recargarla; desde un paso posterior, `Esc` retrocede un paso como siempre. Los atajos solo emiten consultas `GET`, se distinguen por mayúscula (`p` y `e` minúsculas siguen iniciando la búsqueda) y se listan en la ayuda, grupo «Acciones», sin ocupar el pie. Con el backlog vacío no hacen nada y no se anuncian.
+En la lista del backlog, `P` DEBERÁ abrir la pestaña Estimación con la historia resaltada ya elegida, mostrando el selector de participantes, y `E` DEBERÁ abrir la pestaña Esfuerzo con la historia resaltada ya elegida, mostrando el selector de tareas. `Esc` desde ese primer selector DEBERÁ volver a la lista del backlog y recargarla. Los atajos se listan en la ayuda, grupo «Acciones», sin ocupar el pie.
 
 #### Scenario: Estimar desde el backlog
 - **GIVEN** que el backlog tiene una historia resaltada
@@ -167,11 +167,115 @@ En la lista del backlog, `P` DEBERÁ abrir la pestaña Estimación con la histor
 - **WHEN** el usuario presiona `P` o `E`
 - **THEN** la pantalla no cambia, no se emite ninguna consulta y la ayuda no ofrece esos atajos
 
+#### Scenario: Un paso posterior retrocede de a uno
+- **GIVEN** que el usuario abrió Esfuerzo con `E` y eligió una tarea
+- **WHEN** presiona `Esc` en el selector de integrantes
+- **THEN** la TUI vuelve al selector de tareas de esa historia, no al backlog
+
+#### Scenario: Los atajos solo leen
+- **WHEN** el usuario recorre `P` o `E` y vuelve al backlog
+- **THEN** la TUI solo emite consultas `GET`
+
+#### Scenario: Las minúsculas siguen buscando
+- **GIVEN** que la lista del backlog está activa
+- **WHEN** el usuario presiona `p` o `e`
+- **THEN** la TUI inicia la búsqueda con ese carácter ya escrito
+
+### Requirement: Salir limpiamente desde el navegador y las pestañas
+El usuario DEBERÁ poder salir limpiamente con `Ctrl+C` desde cualquier pantalla y con `q` desde el navegador de proyectos, las listas, los selectores, las confirmaciones y las pantallas raíz de las pestañas. Dentro de un campo de entrada de texto, `q` (y `Q`) DEBERÁ tratarse como un carácter más y NO cerrará la TUI.
+
+#### Scenario: Salida limpia
+- **WHEN** el usuario pide salir
+- **THEN** la TUI termina con código 0 sin traza de error
+
+#### Scenario: `q` sale desde el navegador de proyectos
+- **GIVEN** que el navegador de proyectos está activo
+- **WHEN** el usuario presiona `q`
+- **THEN** la TUI se cierra con código 0
+
+#### Scenario: `q` sale desde una lista
+- **GIVEN** que una lista seleccionable está activa (por ejemplo, el backlog)
+- **WHEN** el usuario presiona `q`
+- **THEN** la TUI se cierra con código 0
+
+#### Scenario: `q` en un campo de texto no sale
+- **GIVEN** que el foco está en un campo de texto de un formulario o en el buscador
+- **WHEN** el usuario presiona `q` o `Q`
+- **THEN** la TUI permanece abierta
+- **AND** el carácter se agrega al valor del campo
+
+#### Scenario: `Ctrl+C` sale desde cualquier pantalla
+- **GIVEN** que cualquier pantalla está activa, incluidos los formularios y los buscadores
+- **WHEN** el usuario presiona `Ctrl+C`
+- **THEN** la TUI se cierra con código 0 sin traza de error
+
+### Requirement: Retroceder en el flujo de esfuerzo y descartar respuestas tardías
+`Esc` DEBERÁ retroceder un nivel por vez en el flujo de Esfuerzo: del formulario al selector de integrantes, del selector de integrantes al de tareas, del selector de tareas al de historias y del selector de historias al navegador de proyectos. Cada retroceso DEBERÁ restaurar el selector anterior tal como estaba al elegir su fila (filas, cursor y filtro), sin emitir requests; en un selector con filtro aplicado, el primer `Esc` limpia el filtro y el siguiente retrocede. Salir del formulario con `Esc` descarta lo escrito. Tras un registro exitoso la TUI vuelve al selector de historias y el siguiente registro empieza con el formulario inicial. Cambiar de proyecto desde el navegador DEBERÁ descartar el estado del flujo (historia, tarea, integrante y formulario) y abrir Esfuerzo en el selector de historias del nuevo proyecto. La TUI DEBERÁ descartar sin efecto toda respuesta que ya no corresponda a la pantalla, el paso o la consulta activos: una respuesta de tareas o de integrantes tras haber retrocedido y un resultado de guardado sin un guardado en curso.
+
+#### Scenario: `Esc` recorre formulario, integrantes, tareas e historias
+- **GIVEN** el formulario de esfuerzo abierto desde los selectores de historia, tarea e integrante
+- **WHEN** el usuario presiona `Esc` tres veces
+- **THEN** la TUI pasa sucesivamente al selector de integrantes, al selector de tareas y al selector de historias
+- **AND** no emite ninguna request en esos retrocesos
+- **AND** un cuarto `Esc` vuelve al navegador de proyectos
+
+#### Scenario: El filtro del selector de tareas se conserva
+- **GIVEN** que el usuario filtró las tareas con `dis` y eligió «Diseñar»
+- **WHEN** retrocede desde el formulario al selector de integrantes y de allí al selector de tareas
+- **THEN** el selector de tareas muestra el filtro `dis` y el cursor sobre «Diseñar», sin consultar de nuevo
+- **AND** el siguiente `Esc` limpia el filtro y recién el que sigue vuelve al selector de historias
+
+#### Scenario: Un segundo registro empieza con el formulario inicial
+- **GIVEN** que la TUI volvió al selector de historias tras un registro exitoso
+- **WHEN** el usuario elige una historia, otra fila de tareas y un integrante
+- **THEN** el formulario se abre con la fecha de hoy y «Actividad» y «Horas» vacías
+
+#### Scenario: Respuesta tardía de integrantes tras retroceder
+- **GIVEN** que el usuario eligió una tarea y la consulta de integrantes sigue en curso
+- **WHEN** presiona `Esc` y después llega la respuesta de integrantes
+- **THEN** la TUI sigue mostrando el selector de tareas sin cambios
+- **AND** la respuesta se descarta
+
+#### Scenario: Respuesta tardía de tareas tras retroceder
+- **GIVEN** que el usuario eligió una historia y la consulta de tareas sigue en curso
+- **WHEN** presiona `Esc` y después llega la respuesta de tareas
+- **THEN** la TUI sigue mostrando el selector de historias sin cambios
+- **AND** la respuesta se descarta
+
+#### Scenario: Resultado de guardado sin guardado en curso
+- **GIVEN** que no hay un `POST` de esfuerzo en curso
+- **WHEN** llega un resultado de guardado
+- **THEN** la TUI lo descarta sin cambiar de pantalla ni de contenido
+
+#### Scenario: Cambiar el proyecto descarta el flujo
+- **GIVEN** que el usuario registró un esfuerzo en el proyecto `p-1`
+- **WHEN** vuelve al navegador, elige el proyecto `p-2` y abre la pestaña Esfuerzo
+- **THEN** la TUI abre Esfuerzo en el selector de historias de `p-2`
+- **AND** la pantalla no conserva el aviso, el registro ni las selecciones de `p-1`
+
 ## MODIFIED Requirements
 
 ### Requirement: Listar y elegir proyectos con un buscador
 La TUI DEBERÁ obtener el catálogo de proyectos con `GET /projects` y presentarlo en un navegador buscable, de modo que el usuario NO necesite recordar ni escribir identificadores. El navegador es la pantalla inicial de la TUI y el punto desde el que se entra al espacio de trabajo de un proyecto. DEBERÁ permitir filtrar por nombre o identificador (la búsqueda se activa con `/` y cualquier otro carácter la inicia ya escrito), navegar con las teclas de flecha, abrir el proyecto resaltado con `Enter`, abrir la creación con `n`, abrir la modificación del proyecto resaltado con `e` y refrescar con `r`. `Esc` limpia el filtro aplicado; sin filtro no hace nada. Cada fila DEBERÁ mostrar el nombre, el estado derivado con una etiqueta en español (`planificado`, `en curso` o `atrasado`) y una forma corta del identificador, y marcar con `✓` el último proyecto abierto en la sesión. El estado `active` de la API se muestra como «en curso». Si el catálogo está vacío o la búsqueda no arroja coincidencias, la TUI DEBERÁ informarlo sin cerrarse.
 (Previously: el navegador se abría desde la opción «Proyectos» del menú, servía de selector a las demás secciones y `Esc` volvía a la pantalla previa.)
+
+#### Scenario: Abrir el navegador desde Proyectos
+- **GIVEN** que la TUI arranca
+- **WHEN** la API responde `GET /projects`
+- **THEN** la TUI muestra el navegador con el título «Proyectos»
+- **AND** cada fila muestra el nombre, el estado y la forma corta del identificador
+
+#### Scenario: Abrir el selector desde el backlog
+- **GIVEN** que la pestaña Backlog muestra su lista sin filtro aplicado
+- **WHEN** el usuario presiona `Esc`
+- **THEN** la TUI emite `GET /projects` y muestra el navegador
+- **AND** cada fila muestra el nombre, el estado y la forma corta del identificador
+
+#### Scenario: Volver sin cambiar de proyecto
+- **GIVEN** que el usuario volvió al navegador desde el espacio de trabajo de un proyecto
+- **WHEN** presiona `Esc` sin filtro aplicado
+- **THEN** la TUI permanece en el navegador
+- **AND** ese proyecto sigue marcado con `✓` como el último abierto
 
 #### Scenario: Filtrar el catálogo
 - **GIVEN** que el navegador muestra el catálogo
@@ -215,39 +319,10 @@ El formulario de modificación DEBERÁ abrirse precargado con el nombre, la fech
 - **WHEN** la TUI procesa la respuesta
 - **THEN** vuelve al navegador, recarga `GET /projects` y muestra un aviso que empieza con `✓`
 
-#### Scenario: Permanecer en el formulario tras el rechazo
+#### Scenario: Vuelta al formulario tras el rechazo
 - **GIVEN** que la API rechaza los datos con un error
 - **WHEN** la TUI procesa la respuesta
 - **THEN** permanece en el formulario con los valores escritos y muestra el motivo informado por la API
-
-### Requirement: Salir limpiamente de la TUI
-El usuario DEBERÁ poder salir limpiamente con `Ctrl+C` desde cualquier pantalla y con `q` desde el navegador de proyectos, las listas y las pantallas raíz de las pestañas. Dentro de un campo de entrada de texto, `q` (y `Q`) DEBERÁ tratarse como un carácter más y NO cerrará la TUI.
-(Previously: `q` también salía desde el menú y desde las pantallas de resultado, y existía la opción Salir del menú.)
-
-#### Scenario: Salida limpia
-- **WHEN** el usuario pide salir
-- **THEN** la TUI termina con código 0 sin traza de error
-
-#### Scenario: `q` sale desde el navegador de proyectos
-- **GIVEN** que el navegador de proyectos está activo
-- **WHEN** el usuario presiona `q`
-- **THEN** la TUI se cierra con código 0
-
-#### Scenario: `q` sale desde una lista
-- **GIVEN** que una lista seleccionable está activa (por ejemplo, el backlog)
-- **WHEN** el usuario presiona `q`
-- **THEN** la TUI se cierra con código 0
-
-#### Scenario: `q` en un campo de texto no sale
-- **GIVEN** que el foco está en un campo de texto de un formulario o en el buscador
-- **WHEN** el usuario presiona `q` o `Q`
-- **THEN** la TUI permanece abierta
-- **AND** el carácter se agrega al valor del campo
-
-#### Scenario: `Ctrl+C` sale desde cualquier pantalla
-- **GIVEN** que cualquier pantalla está activa, incluidos los formularios y los buscadores
-- **WHEN** el usuario presiona `Ctrl+C`
-- **THEN** la TUI se cierra con código 0 sin traza de error
 
 ### Requirement: Listas navegables con teclas uniformes
 
@@ -327,7 +402,7 @@ La TUI DEBERÁ presentar el resultado de cada operación del backlog sin cerrars
 - **THEN** presenta un error de la API que incluye el código de estado recibido
 - **AND** no falla al interpretar el cuerpo ni se cierra
 
-#### Scenario: HTTP 422 al consultar la lista del proyecto
+#### Scenario: HTTP 422 al consultar la lista del proyecto activo
 - **GIVEN** que la API rechaza la consulta del backlog con HTTP 422
 - **WHEN** la TUI presenta el resultado de la consulta
 - **THEN** la lista del backlog muestra el detalle de `fields` como lista formateada
@@ -347,11 +422,17 @@ La TUI DEBERÁ presentar el resultado de cada operación del backlog sin cerrars
 La TUI DEBERÁ permitir operar los Sprints del proyecto del espacio de trabajo desde la pestaña Sprints, que muestra el navegador de Sprints abiertos. Desde el navegador el usuario abre las historias de un Sprint (`Enter`), asigna historias del backlog al Sprint resaltado (`a`), cierra el Sprint resaltado (`x`, con confirmación), crea un Sprint (`n`) y consulta los Sprints cerrados con `h`. Las pantallas de asignación (multiselección con `Space`) y de historias del Sprint reutilizan el patrón navegable (Requirement: Listas navegables con teclas uniformes) y consumen la API existente sin incorporar reglas de negocio. El éxito y el rechazo de cada escritura se resuelven según Requirement: Avisos efímeros en lugar de pantallas de resultado; los errores de las consultas se muestran en la pantalla que las pidió.
 (Previously: los Sprints se abrían desde la opción «Sprints» del menú, pedían un proyecto si no había uno activo y cada operación terminaba en una pantalla de resultado.)
 
-#### Scenario: La pestaña Sprints abre el navegador
+#### Scenario: La opción Sprints abre el navegador
 - **GIVEN** que el espacio de trabajo de un proyecto está abierto
 - **WHEN** el usuario abre la pestaña Sprints
 - **THEN** la TUI emite `GET /projects/{pid}/sprints/open` y presenta el navegador de Sprints abiertos
 - **AND** no pide ningún identificador a mano
+
+#### Scenario: Sin proyecto activo abre el selector
+- **GIVEN** que en la sesión aún no se abrió ningún proyecto y la API devuelve varios
+- **WHEN** la TUI arranca
+- **THEN** presenta el navegador de proyectos con el catálogo de la API
+- **AND** no consulta los Sprints hasta que el usuario abra un proyecto y su pestaña Sprints
 
 #### Scenario: Crear un Sprint vuelve a la lista con un aviso
 - **GIVEN** que el usuario escribió el objetivo «Meta» en el formulario de un Sprint nuevo
@@ -465,51 +546,6 @@ Al confirmar con datos válidos, la TUI DEBERÁ emitir exactamente una request `
 - **THEN** la TUI emite una nueva request de registro con los valores corregidos
 - **AND** si la API responde HTTP 201 vuelve al selector de historias de Esfuerzo con el aviso de éxito
 
-### Requirement: Recorrer hacia atrás el flujo de esfuerzo y descartar respuestas tardías
-`Esc` DEBERÁ retroceder un nivel por vez en el flujo de Esfuerzo: del formulario al selector de integrantes, del selector de integrantes al de tareas, del selector de tareas al de historias y del selector de historias al navegador de proyectos. Cada retroceso DEBERÁ restaurar el selector anterior tal como estaba al elegir su fila (filas, cursor y filtro), sin emitir requests; en un selector con filtro aplicado, el primer `Esc` limpia el filtro y el siguiente retrocede. Salir del formulario con `Esc` descarta lo escrito. Tras un registro exitoso la TUI vuelve al selector de historias y el siguiente registro empieza con el formulario inicial. Cambiar de proyecto desde el navegador DEBERÁ descartar el estado del flujo (historia, tarea, integrante y formulario) y abrir Esfuerzo en el selector de historias del nuevo proyecto. La TUI DEBERÁ descartar sin efecto toda respuesta que ya no corresponda a la pantalla, el paso o la consulta activos: una respuesta de tareas o de integrantes tras haber retrocedido y un resultado de guardado sin un guardado en curso.
-(Previously: desde una pantalla de resultado `Esc` volvía al selector de tareas de la misma historia, `p` cambiaba el proyecto activo, el selector de historias volvía al menú y se descartaban las respuestas de métricas tardías.)
-
-#### Scenario: `Esc` recorre formulario, integrantes, tareas e historias
-- **GIVEN** el formulario de esfuerzo abierto desde los selectores de historia, tarea e integrante
-- **WHEN** el usuario presiona `Esc` tres veces
-- **THEN** la TUI pasa sucesivamente al selector de integrantes, al selector de tareas y al selector de historias
-- **AND** no emite ninguna request en esos retrocesos
-- **AND** un cuarto `Esc` vuelve al navegador de proyectos
-
-#### Scenario: El filtro del selector de tareas se conserva
-- **GIVEN** que el usuario filtró las tareas con `dis` y eligió «Diseñar»
-- **WHEN** retrocede desde el formulario al selector de integrantes y de allí al selector de tareas
-- **THEN** el selector de tareas muestra el filtro `dis` y el cursor sobre «Diseñar», sin consultar de nuevo
-- **AND** el siguiente `Esc` limpia el filtro y recién el que sigue vuelve al selector de historias
-
-#### Scenario: Un segundo registro empieza con el formulario inicial
-- **GIVEN** que la TUI volvió al selector de historias tras un registro exitoso
-- **WHEN** el usuario elige una historia, otra fila de tareas y un integrante
-- **THEN** el formulario se abre con la fecha de hoy y «Actividad» y «Horas» vacías
-
-#### Scenario: Respuesta tardía de integrantes tras retroceder
-- **GIVEN** que el usuario eligió una tarea y la consulta de integrantes sigue en curso
-- **WHEN** presiona `Esc` y después llega la respuesta de integrantes
-- **THEN** la TUI sigue mostrando el selector de tareas sin cambios
-- **AND** la respuesta se descarta
-
-#### Scenario: Respuesta tardía de tareas tras retroceder
-- **GIVEN** que el usuario eligió una historia y la consulta de tareas sigue en curso
-- **WHEN** presiona `Esc` y después llega la respuesta de tareas
-- **THEN** la TUI sigue mostrando el selector de historias sin cambios
-- **AND** la respuesta se descarta
-
-#### Scenario: Resultado de guardado sin guardado en curso
-- **GIVEN** que no hay un `POST` de esfuerzo en curso
-- **WHEN** llega un resultado de guardado
-- **THEN** la TUI lo descarta sin cambiar de pantalla ni de contenido
-
-#### Scenario: Cambiar el proyecto descarta el flujo
-- **GIVEN** que el usuario registró un esfuerzo en el proyecto `p-1`
-- **WHEN** vuelve al navegador, elige el proyecto `p-2` y abre la pestaña Esfuerzo
-- **THEN** la TUI abre Esfuerzo en el selector de historias de `p-2`
-- **AND** la pantalla no conserva el aviso, el registro ni las selecciones de `p-1`
-
 ## REMOVED Requirements
 
 ### Requirement: Mostrar el esfuerzo registrado y las métricas del proyecto
@@ -531,3 +567,11 @@ Al confirmar con datos válidos, la TUI DEBERÁ emitir exactamente una request `
 ### Requirement: Abrir el Dashboard desde el menú
 **Reason**: el Dashboard es la pestaña inicial del espacio de trabajo e integra la sección Métricas.
 **Migration**: Requirement: Espacio de trabajo del proyecto con pestañas y Requirement: Dashboard con las métricas del proyecto y de un Sprint.
+
+### Requirement: Salir limpiamente de la TUI
+**Reason**: el menú y las pantallas de resultado ya no existen, de modo que los escenarios «`q` sale desde el menú» y «`q` sale desde una pantalla de resultado» no tienen pantalla a la que aplicarse.
+**Migration**: Requirement: Salir limpiamente desde el navegador y las pestañas, que conserva `Ctrl+C`, `q` en las listas y `q` como carácter en los campos de texto, y agrega `q` desde el navegador de proyectos.
+
+### Requirement: Recorrer hacia atrás el flujo de esfuerzo y descartar respuestas tardías
+**Reason**: la pantalla de resultado del esfuerzo y la consulta de métricas posterior al registro se eliminaron; ya no hay un `Esc` desde el resultado ni respuestas de métricas que descartar, y el selector de historias vuelve al navegador de proyectos en lugar del menú.
+**Migration**: Requirement: Retroceder en el flujo de esfuerzo y descartar respuestas tardías (retrocesos, filtros conservados, cambio de proyecto y respuestas tardías de tareas, integrantes y guardado) y Requirement: Avisos efímeros en lugar de pantallas de resultado (escenario «Registrar esfuerzo vuelve a la pestaña Esfuerzo»).

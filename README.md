@@ -1,8 +1,8 @@
 # Software Metrics & Estimation
 
 API HTTP en Go y una TUI de terminal (Bubble Tea) para gestionar proyectos,
-backlog y Sprints, y para navegar las secciones de Planning Poker, Esfuerzo,
-Defectos, Métricas y Dashboard.
+backlog y Sprints, y para navegar el Dashboard, la estimación con Planning
+Poker, el esfuerzo y los defectos de cada proyecto.
 
 ## Requisitos
 
@@ -36,13 +36,32 @@ API_URL='http://127.0.0.1:8080' go run ./cmd/tui
 
 ## Teclas
 
+La TUI arranca en el navegador de proyectos («Proyectos»). Si la API devuelve un
+único proyecto, la primera carga abre directamente su espacio de trabajo; al
+volver con `Esc` la TUI se queda en el navegador. `Enter` sobre un proyecto abre
+su espacio de trabajo en la pestaña Dashboard, con una línea con el nombre y el
+estado del proyecto y la barra de pestañas:
+
+`1 Dashboard` · `2 Backlog` · `3 Sprints` · `4 Estimación` · `5 Esfuerzo` · `6 Defectos`
+
+| Tecla               | Acción                                                     |
+| ------------------- | ---------------------------------------------------------- |
+| `Tab` / `Shift+Tab` | Pestaña siguiente / anterior (circular)                    |
+| `1`–`6`             | Abrir la pestaña de esa posición                           |
+| `Esc`               | En la raíz de una pestaña, volver a Proyectos              |
+
+Las teclas de pestaña rigen en la pantalla raíz de cada pestaña; dentro de un
+flujo `Esc` retrocede un paso y, con un filtro en edición, los dígitos se
+escriben en el filtro. Todas las pestañas operan sobre el proyecto abierto; para
+cambiarlo se vuelve a Proyectos con `Esc` y se elige otro.
+
 Las listas (Proyectos, Backlog, Sprints, historias del Sprint, historial y los
-selectores de las secciones del Sprint 3) comparten el mismo patrón navegable:
+selectores de las pestañas) comparten el mismo patrón navegable:
 
 | Tecla         | Acción                                                        |
 | ------------- | ------------------------------------------------------------- |
 | `↑` / `↓`     | Mover la selección                                            |
-| `Enter`       | Acción primaria de la fila (usar, editar, abrir, desplegar)    |
+| `Enter`       | Acción primaria de la fila (abrir, editar, desplegar)         |
 | `n`           | Crear                                                         |
 | `e`           | Editar (Proyectos)                                            |
 | `Space`       | Marcar historias en la multiselección                         |
@@ -51,35 +70,47 @@ selectores de las secciones del Sprint 3) comparten el mismo patrón navegable:
 | `d`           | Descargar el reporte PDF (Dashboard y Sprints)                |
 | `x`           | Cerrar el Sprint resaltado (pide confirmación `s/n`)          |
 | `h`           | Ver los Sprints cerrados                                      |
-| `p`           | Cambiar el proyecto activo                                    |
+| `P` / `E`     | Estimar / registrar esfuerzo de la historia resaltada (Backlog) |
 | `Esc`         | Limpiar el filtro y luego volver                              |
 | `?`           | Ayuda                                                         |
-| `q` / `Ctrl+C`| Salir                                                         |
+| `q` / `Ctrl+C`| Salir (`q` es texto dentro de un campo; `Ctrl+C` sale siempre) |
+
+El pie muestra como máximo cinco atajos, los principales de la pantalla, y
+agrega `? más` cuando hay otros. `?` abre la ayuda con todos los atajos válidos
+de la pantalla agrupados en «Navegación», «Acciones» y «General». En un filtro o
+un campo de texto, `?` es un carácter y el pie no lo ofrece.
+
+Al terminar con éxito una escritura (proyecto, historia, Sprint, asignación,
+tarea, cierre, esfuerzo o defecto), la TUI vuelve a la pantalla de origen,
+recarga su lista y muestra un aviso que empieza con `✓`; el aviso desaparece con
+la siguiente tecla. Si la API rechaza la operación, el formulario conserva lo
+escrito y muestra el motivo. Mientras se guarda, la pantalla indica
+«Guardando…» e ignora los reenvíos.
 
 ## Secciones
 
-El menú incluye nueve opciones: Proyectos, Backlog, Sprints, Planning Poker,
-Esfuerzo, Defectos, Métricas, Dashboard y Salir. Las cinco secciones nuevas
-abren directamente su pantalla principal y encadenan selectores según el flujo:
-
-| Sección        | Navegación                                      | Estado |
-| -------------- | ----------------------------------------------- | ------ |
-| Planning Poker | historia → integrante                           | TUI-07 |
-| Esfuerzo       | historia → tarea o historia completa → integrante → registro | disponible (TUI-08) |
-| Defectos       | listado/búsqueda → detalle; alta con historia y Sprint de detección; actualización de estado con Sprint de resolución si queda resuelto | disponible (TUI-09) |
-| Métricas       | Sprint                                          | TUI-10 |
-| Dashboard      | proyecto activo (estado y métricas)             | disponible (TUI-11) |
+| Pestaña    | Navegación                                                    | Estado |
+| ---------- | ------------------------------------------------------------- | ------ |
+| Dashboard  | estado y métricas del proyecto o de un Sprint (`s`)           | disponible (TUI-11, TUI-12) |
+| Backlog    | lista → historia (crear con `n`, editar con `Enter`)          | disponible |
+| Sprints    | Sprints abiertos → historias del Sprint → tareas; asignar, cerrar, historial | disponible |
+| Estimación | historia → integrante (Planning Poker)                        | TUI-07 |
+| Esfuerzo   | historia → tarea o historia completa → integrante → registro  | disponible (TUI-08) |
+| Defectos   | listado/búsqueda → detalle; alta con historia y Sprint de detección; actualización de estado con Sprint de resolución si queda resuelto | disponible (TUI-09) |
 
 Defectos permite consultar, filtrar y abrir el detalle del listado del proyecto,
 registrar un defecto mediante confirmación y cambiar su estado entre las opciones
-admitidas por la API. El Dashboard presenta el estado y las métricas del proyecto
-activo sin modificarlo. Las secciones que encadenan selectores consultan la API
-con `GET` y muestran estados de carga, vacío y error. Si no hay proyecto activo,
-la sección abre primero el navegador de proyectos; el atajo `p` permite cambiarlo
-sin salir de la sección.
+admitidas por la API. Las pestañas que encadenan selectores consultan la API con
+`GET` y muestran estados de carga, vacío y error.
 
-Esfuerzo es la excepción: registra el esfuerzo mediante `POST` y muestra las
-métricas del proyecto devueltas por la API, sin calcular horas ni desvíos.
+Desde el Backlog, `P` abre la pestaña Estimación y `E` la pestaña Esfuerzo con la
+historia resaltada ya elegida; `Esc` en ese primer selector vuelve al Backlog.
+Los atajos se listan en la ayuda y no hacen nada con el backlog vacío; `p` y `e`
+minúsculas siguen iniciando la búsqueda.
+
+Esfuerzo registra el esfuerzo mediante `POST` y, ante el éxito, vuelve al
+selector de historias con un aviso que resume horas, fecha, historia, tarea e
+integrante, sin calcular horas ni desvíos.
 
 Lecturas nuevas usadas por los selectores:
 
@@ -90,23 +121,28 @@ Lecturas nuevas usadas por los selectores:
 
 ### Dashboard
 
-Dashboard se abre directamente desde el menú para el proyecto activo (o pide
-elegir uno si la sesión no tiene ninguno) y combina `GET /projects/{project_id}`
-con `GET /projects/{project_id}/metrics`. Muestra el estado del proyecto
+El Dashboard es la pestaña inicial del espacio de trabajo e integra la consulta
+de métricas: combina `GET /projects/{project_id}` con
+`GET /projects/{project_id}/metrics`. Muestra el estado del proyecto
 (`planificado`, `en curso` o `atrasado`) y las métricas de US-19 con barras
 Unicode (`█` lleno, `░` vacío) para Story Points, horas, historias completadas y
 defectos. Una métrica `null` se presenta como «sin datos», nunca como cero. La
 pantalla es de solo lectura, se mantiene legible en terminales de 80 y 44
 columnas y no depende del color: cada fila conserva su etiqueta y sus valores.
-`r` refresca, `p` cambia el proyecto y `Esc` vuelve al menú. `d` descarga el
-reporte PDF del proyecto en el directorio actual.
+
+`s` abre el selector de ámbito con «Proyecto completo» y los Sprints abiertos;
+elegir un Sprint consulta `GET /projects/{project_id}/sprints/{sprint_id}/metrics`
+y muestra el bloque «Métricas del Sprint» con las mismas barras. `Esc` en el
+selector vuelve sin cambiar el ámbito. `r` recarga el ámbito mostrado, `d`
+descarga su reporte PDF y `Esc` vuelve a Proyectos.
 
 ### Reportes en PDF desde la TUI
 
 La TUI usa las mismas rutas de reporte de solo lectura que la API y guarda el
 archivo en el directorio desde donde se ejecuta:
 
-- `d` en Dashboard guarda `reporte-proyecto-{project_id}.pdf` del proyecto activo.
+- `d` en Dashboard guarda el reporte del ámbito mostrado:
+  `reporte-proyecto-{project_id}.pdf` o `reporte-sprint-{sprint_id}.pdf`.
 - `d` en Sprints guarda `reporte-sprint-{sprint_id}.pdf` del Sprint resaltado.
 
 La descarga solo emite `GET`, valida que la respuesta empiece con la firma

@@ -44,16 +44,20 @@ Este archivo registra la evidencia observada de cada Unidad de Trabajo (UT) y el
 
 ## UT 5 — Atajos contextuales de estimación y esfuerzo (tarea 5, S6)
 
-- **Commit**: `1929638` `feat(tui): estimar y registrar esfuerzo desde la historia resaltada`.
+- **Commit**: `f7b4ee1` `feat(tui): estimar y registrar esfuerzo desde la historia resaltada`.
 - **RED**: `TestBacklogPOpensEstimationParticipantsForHighlightedStory`, `TestBacklogEOpensEffortTasksForHighlightedStory`, `TestEscFromPreselectedSelectorReturnsToBacklog/{P,E}`, `TestDeeperEscStillGoesBackOneStep` y `TestContextualShortcutFlowOnlyReads` fallan antes del cambio con «expected a command to execute, got nil» (los atajos no existían); `TestBacklogHelpListsPAndE` falla porque el grupo «Acciones» solo listaba `Enter`, `n` y `r`.
 - **GREEN**: `go test -count=1 ./internal/tui ./tests/unit/tui` → `ok`.
 - Producción: `openSectionForStory` en `backlog_screens.go` abre la pestaña con la historia ya elegida y avanza al paso siguiente (`storyNextStep`); `sectionState.preselected` hace que `Esc` en ese primer selector vuelva al backlog recargándolo, y los pasos más profundos siguen retrocediendo de a uno; la vista de participantes de Planning Poker muestra la línea «Historia: …»; `keys.go` declara `P` y `E` en el grupo «Acciones», solo cuando la lista tiene historias.
 - Decisión: `P` y `E` quedan en la ayuda, no en el pie; los cinco primarios del backlog (`↑/↓`, `Enter`, `n`, `/`, `Esc`) se usan más seguido y `? más` ya aparecía.
 - **PRESERVE**: `TestShortcutsDoNothingOnEmptyBacklog` y `TestLowercasePAndEStillStartASearch` pasan antes y después; fijan que el backlog vacío no reacciona y que `p`/`e` minúsculas siguen iniciando la búsqueda.
 
-## Pendiente
+## UT 6 — README, validación, consolidación y archivado (tarea 6, S7)
 
-- Tarea 6 (S7): README, consolidación de `openspec/specs/tui/spec.md` y archivado.
+- **README**: la sección «Teclas» describe el arranque en Proyectos (con apertura automática del proyecto único), la barra de pestañas con `Tab`/`Shift+Tab`/`1`–`6`, `Esc` a Proyectos, el pie de cinco atajos más `? más`, la ayuda agrupada y los avisos `✓`; la tabla de teclas suma `P`/`E` y pierde `p`. «Secciones» pasa a una tabla de pestañas sin la fila Métricas ni la descripción del menú de nueve opciones; «Dashboard» documenta el ámbito con `s` y el PDF del ámbito mostrado con `d`.
+- **Delta**: `openspec validate tui-12-rediseno-ux --strict` reportaba 6 `ERROR` por escenarios omitidos en requisitos MODIFIED. Se reescribieron a la nueva navegación los escenarios vigentes de «Listar y elegir proyectos…», «Precargar la modificación…», «Presentar los errores de la API del backlog» y «Operar los Sprints…»; «Salir limpiamente de la TUI» y «Recorrer hacia atrás el flujo de esfuerzo…» pasaron a REMOVED y su comportamiento vigente quedó en los ADDED «Salir limpiamente desde el navegador y las pestañas» y «Retroceder en el flujo de esfuerzo y descartar respuestas tardías». Se acortó el texto de «Atajos contextuales…». Corrida final: sin `ERROR`, solo advertencias SHALL/MUST (esperables en español) y cuatro de texto largo.
+- **Verificación**: `go build ./...` y `go vet ./...` sin salida; `gofmt -l internal tests` solo reporta `internal/tui/metrics.go`, preexistente; `go test -count=1 ./internal/tui ./tests/unit/tui` → `ok` en ambos paquetes. No se ejecutó `go test ./...` (requiere Docker/Testcontainers). Detalle en `verify-report.md`.
+- **Archivado**: `openspec archive tui-12-rediseno-ux --yes --skip-specs` movió el cambio a `openspec/changes/archive/2026-11-03-tui-12-rediseno-ux`. La consolidación manual en `openspec/specs/tui/spec.md` reemplazó los 7 requisitos MODIFIED en su lugar, eliminó los 7 REMOVED y agregó los 8 ADDED al final; la spec pasa de 37 a 38 requisitos y `openspec validate tui --type spec --strict` no reporta `ERROR`.
+- **Pendiente detectado**: requisitos que el delta no tocó («Navegación de solo lectura», «Operar proyectos mediante la TUI», «Operar el backlog mediante la TUI», «Avisar el límite de las pantallas de navegación», entre otros) todavía mencionan el menú; conviene corregirlos en un cambio dedicado.
 
 ## Estrategia de entrega
 
