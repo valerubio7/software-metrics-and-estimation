@@ -167,7 +167,7 @@ func (m Model) selectProject(project ProjectSummary) (Model, tea.Cmd) {
 		m.Screen = "backlog"
 		m.backlogFilter, m.backlogFiltering = "", false
 		return m.startBacklogLoad()
-	case purpose == "defects" || returnTo == "defects" || returnTo == "defect-detail":
+	case purpose == "defects" || returnTo == "defects" || strings.HasPrefix(returnTo, "defect-"):
 		return m.openDefects()
 	case purpose == "sprints" || isSprintScreen(returnTo):
 		return m.enterSprints()

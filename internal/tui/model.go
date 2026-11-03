@@ -95,17 +95,27 @@ type Model struct {
 	pokerMessage      string
 	pokerStory        Story
 
-	effortClient    *EffortClient
-	effort          effortState
-	defectClient    *DefectClient
-	defects         []Defect
-	defectCursor    int
-	defectFilter    string
-	defectFiltering bool
-	defectLoading   bool
-	defectError     string
-	defectDetail    Defect
-	now             func() time.Time
+	effortClient          *EffortClient
+	effort                effortState
+	defectClient          *DefectClient
+	defects               []Defect
+	defectCursor          int
+	defectFilter          string
+	defectFiltering       bool
+	defectLoading         bool
+	defectError           string
+	defectDetail          Defect
+	defectCreateForm      defectCreateForm
+	defectStorySelector   selector
+	defectSprintSelector  selector
+	defectCreateLoading   bool
+	defectCreateOK        bool
+	defectCreateMessage   string
+	defectRequestSequence uint64
+	defectStoryRequestID  uint64
+	defectSprintRequestID uint64
+	defectCreateRequestID uint64
+	now                   func() time.Time
 }
 
 // WithClock returns a copy of the model that reads the current time from now.
@@ -180,6 +190,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if result, ok := msg.(DefectResultMsg); ok {
 		return m.applyDefectResult(result)
+	}
+	if result, ok := msg.(defectOptionsResult); ok {
+		return m.applyDefectOptionsResult(result)
+	}
+	if result, ok := msg.(defectCreateResult); ok {
+		return m.applyDefectCreateResult(result)
 	}
 	key, isKey := msg.(tea.KeyMsg)
 	if !isKey {
@@ -260,6 +276,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Screen = "defects"
 		}
 		return m, nil
+	case "defect-create-form":
+		return m.updateDefectCreateForm(key)
+	case "defect-story-select":
+		return m.updateDefectStorySelect(key)
+	case "defect-sprint-select":
+		return m.updateDefectSprintSelect(key)
+	case "defect-create-confirm":
+		return m.updateDefectCreateConfirm(key)
+	case "defect-create-result":
+		return m.updateDefectCreateResult(key)
 	default:
 		if key.Type == tea.KeyEsc {
 			m.Screen = "menu"
@@ -273,7 +299,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // plain character rather than the help shortcut.
 func entersText(screen string) bool {
 	switch screen {
-	case "create-project", "edit-project", "backlog-form", "sprint-goal", "sprint-task-form", "effort-form":
+	case "create-project", "edit-project", "backlog-form", "sprint-goal", "sprint-task-form", "effort-form", "defect-create-form":
 		return true
 	}
 	return false
@@ -283,7 +309,7 @@ func entersText(screen string) bool {
 // listed, so q is a plain character there; Ctrl+C always quits.
 func quitsOnQ(screen string) bool {
 	switch screen {
-	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "planning-poker", "effort-result", "defects", "defect-detail":
+	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "planning-poker", "effort-result", "defects", "defect-detail", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-create-result":
 		return true
 	}
 	return false
@@ -298,6 +324,8 @@ func isQuitRune(key tea.KeyMsg) bool {
 func (m Model) filtering() bool {
 	return (m.Screen == "backlog" && m.backlogFiltering) ||
 		(m.Screen == "defects" && m.defectFiltering) ||
+		(m.Screen == "defect-story-select" && m.defectStorySelector.filtering) ||
+		(m.Screen == "defect-sprint-select" && m.defectSprintSelector.filtering) ||
 		(m.Screen == "project-picker" && m.projectFiltering) ||
 		(m.Screen == "section" && m.section.selector.filtering) ||
 		(isSprintScreen(m.Screen) && m.sprintFiltering)
@@ -625,6 +653,16 @@ func (m Model) viewBody() string {
 		return m.viewDefects()
 	case "defect-detail":
 		return m.viewDefectDetail()
+	case "defect-create-form":
+		return m.viewDefectCreateForm()
+	case "defect-story-select":
+		return m.viewSelector(&m.defectStorySelector, "Defecto · Historia", "Elegí la historia relacionada.", "No hay historias en el backlog.", "Creá una historia desde Backlog y volvé a intentar.")
+	case "defect-sprint-select":
+		return m.viewSelector(&m.defectSprintSelector, "Defecto · Sprint de detección", "Elegí un Sprint abierto del proyecto.", "No hay Sprints abiertos.", "Creá un Sprint desde Sprints y volvé a intentar.")
+	case "defect-create-confirm":
+		return m.viewDefectCreateConfirm()
+	case "defect-create-result":
+		return m.viewDefectCreateResult()
 	default:
 		return screenTitleStyle.Render(m.Choices[m.Cursor])
 	}
@@ -799,10 +837,12 @@ func (m Model) crumbParts() []string {
 		parts = append(parts, sectionEffort.title(), "Registrar")
 	case "effort-result":
 		parts = append(parts, sectionEffort.title(), "Resultado")
-	case "defects", "defect-detail":
+	case "defects", "defect-detail", "defect-create-form", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-create-result":
 		parts = append(parts, sectionDefects.title())
 		if m.Screen == "defect-detail" {
 			parts = append(parts, "Detalle")
+		} else if strings.HasPrefix(m.Screen, "defect-") && m.Screen != "defects" {
+			parts = append(parts, strings.TrimPrefix(m.Screen, "defect-"))
 		}
 	default:
 		parts = append(parts, "")
@@ -888,9 +928,18 @@ func (m Model) footer() string {
 		if m.defectFiltering {
 			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
 		}
-		return m.keyHints("↑/↓", "mover", "Enter", "detalle", "r", "refrescar", "/", "buscar", "p", "proyecto", "Esc", "menú", "q", "salir")
+		return m.keyHints("↑/↓", "mover", "Enter", "detalle", "n", "nuevo defecto", "r", "refrescar", "/", "buscar", "p", "proyecto", "Esc", "menú", "q", "salir")
 	case "defect-detail":
 		return m.keyHints("Esc", "volver al listado", "p", "proyecto", "q", "salir")
+	case "defect-create-form":
+		return m.keyHints("Tab/↑/↓", "campo", "←/→", "opción", "Enter", "continuar", "Esc", "cancelar")
+	case "defect-create-confirm":
+		return m.keyHints("s", "confirmar registro", "n", "cancelar", "Esc", "volver", "p", "proyecto", "q", "salir")
+	case "defect-create-result":
+		if m.defectCreateLoading {
+			return m.keyHints("Ctrl+C", "salir")
+		}
+		return m.keyHints("Enter/Esc", "volver", "q", "salir")
 	default:
 		return m.keyHints("Esc", "volver", "?", "ayuda", "q", "salir")
 	}
