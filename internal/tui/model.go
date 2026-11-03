@@ -95,9 +95,14 @@ type Model struct {
 	pokerMessage      string
 	pokerStory        Story
 
-	effortClient *EffortClient
-	effort       effortState
-	now          func() time.Time
+	effortClient  *EffortClient
+	effort        effortState
+	defectClient  *DefectClient
+	defects       []Defect
+	defectCursor  int
+	defectLoading bool
+	defectError   string
+	now           func() time.Time
 }
 
 // WithClock returns a copy of the model that reads the current time from now.
@@ -133,6 +138,7 @@ func NewModel(apiURL string) Model {
 		taskClient:    NewTaskClient(apiURL),
 		memberClient:  NewMemberClient(apiURL),
 		effortClient:  NewEffortClient(apiURL),
+		defectClient:  NewDefectClient(apiURL),
 	}
 }
 
@@ -168,6 +174,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if result, ok := msg.(effortMetricsResult); ok {
 		return m.applyEffortMetrics(result)
+	}
+	if result, ok := msg.(DefectResultMsg); ok {
+		return m.applyDefectResult(result)
 	}
 	key, isKey := msg.(tea.KeyMsg)
 	if !isKey {
@@ -241,6 +250,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateEffortForm(key)
 	case "effort-result":
 		return m.updateEffortResult(key)
+	case "defects":
+		return m.updateDefects(key)
 	default:
 		if key.Type == tea.KeyEsc {
 			m.Screen = "menu"
@@ -264,7 +275,7 @@ func entersText(screen string) bool {
 // listed, so q is a plain character there; Ctrl+C always quits.
 func quitsOnQ(screen string) bool {
 	switch screen {
-	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "planning-poker", "effort-result":
+	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "planning-poker", "effort-result", "defects":
 		return true
 	}
 	return false
@@ -322,7 +333,7 @@ func (m Model) updateMenu(key tea.KeyMsg) (Model, tea.Cmd) {
 		case 4:
 			return m.openSection(sectionEffort)
 		case 5:
-			return m.openSection(sectionDefects)
+			return m.openDefects()
 		case 6:
 			return m.openSection(sectionMetrics)
 		case 7:
@@ -601,6 +612,8 @@ func (m Model) viewBody() string {
 		return m.viewEffortForm()
 	case "effort-result":
 		return m.viewEffortResult()
+	case "defects":
+		return m.viewDefects()
 	default:
 		return screenTitleStyle.Render(m.Choices[m.Cursor])
 	}
@@ -775,6 +788,8 @@ func (m Model) crumbParts() []string {
 		parts = append(parts, sectionEffort.title(), "Registrar")
 	case "effort-result":
 		parts = append(parts, sectionEffort.title(), "Resultado")
+	case "defects":
+		parts = append(parts, sectionDefects.title())
 	default:
 		parts = append(parts, "")
 	}
@@ -855,6 +870,8 @@ func (m Model) footer() string {
 		return m.effortFormFooter()
 	case "effort-result":
 		return m.effortResultFooter()
+	case "defects":
+		return m.keyHints("↑/↓", "mover", "r", "refrescar", "p", "proyecto", "Esc", "menú", "?", "ayuda", "q", "salir")
 	default:
 		return m.keyHints("Esc", "volver", "?", "ayuda", "q", "salir")
 	}

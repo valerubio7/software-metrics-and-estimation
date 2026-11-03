@@ -109,7 +109,6 @@ func TestMenuRoutesToEachSprint3Section(t *testing.T) {
 	}{
 		{"planning", menuPlanning, "Planning Poker", storiesBodyForSection(sectionStories()), "Primera historia"},
 		{"effort", menuEffort, "Esfuerzo", storiesBodyForSection(sectionStories()), "Primera historia"},
-		{"defects", menuDefects, "Defectos", storiesBodyForSection(sectionStories()), "Primera historia"},
 		{"metrics", menuMetrics, "Métricas", `{"ok":true}`, "Proyecto"},
 		{"dashboard", menuDashboard, "Dashboard", `{"project_id":"p1","sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Sprint base","is_closed":false}]}`, "Sprint base"},
 	} {
@@ -130,6 +129,29 @@ func TestMenuRoutesToEachSprint3Section(t *testing.T) {
 				t.Errorf("section view looks like an operations submenu: %q", view)
 			}
 		})
+	}
+}
+
+// TestDefectsMenuOpensProjectDefectList covers TUI-09 replacing the former
+// placeholder section with the project-scoped defect listing.
+func TestDefectsMenuOpensProjectDefectList(t *testing.T) {
+	server := sectionServer(t, map[string]string{
+		"/projects/p1/defects": `{"project_id":"p1","defects":[{"id":"d1","project_id":"p1","story_id":"s1","sprint_id":"sp1","description":"Primer defecto","severity":"alta","status":"detectado","resolution_sprint_id":null}]}`,
+	})
+	m, load := startSection(server.URL, menuDefects)
+	m, cmd := confirmProjectInPicker(t, m, load, "p1")
+	if cmd == nil {
+		t.Fatal("opening Defectos should load the project defect list")
+	}
+	m = run(t, m, cmd)
+	if m.Screen != "defects" {
+		t.Fatalf("Screen = %q after opening Defectos, want defects", m.Screen)
+	}
+	view := stripANSI(m.View())
+	for _, want := range []string{"Defectos", "Primer defecto", "alta", "detectado"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("defect list lacks %q: %q", want, view)
+		}
 	}
 }
 

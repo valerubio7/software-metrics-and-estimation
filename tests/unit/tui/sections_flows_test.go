@@ -25,26 +25,11 @@ func planningServer(t *testing.T) *httptest.Server {
 	})
 }
 
-func defectsServer(t *testing.T) *httptest.Server {
-	t.Helper()
-	return sprintServer(t, func(w http.ResponseWriter, r *http.Request) bool {
-		switch r.URL.Path {
-		case "/projects/p1/stories":
-			_, _ = w.Write([]byte(storiesBodyForSection(sectionStories())))
-			return true
-		case "/projects/p1/sprints/open":
-			_, _ = w.Write([]byte(`{"project_id":"p1","sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Sprint de detección","is_closed":false}]}`))
-			return true
-		}
-		return false
-	})
-}
-
 func metricsServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return sectionServer(t, map[string]string{
-		"/projects/p1/sprints/open": `{"project_id":"p1","sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Sprint de métricas","is_closed":false}]}`,
-		"/projects/p1/metrics":      `{"project_id":"p1","story_points_planned":21,"story_points_completed":13,"velocity":13,"estimated_hours":34.5,"actual_hours":30.5,"deviation":-4,"completed_stories_percentage":61.9,"defects_detected":3,"defects_resolved":null}`,
+		"/projects/p1/sprints/open":        `{"project_id":"p1","sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Sprint de métricas","is_closed":false}]}`,
+		"/projects/p1/metrics":             `{"project_id":"p1","story_points_planned":21,"story_points_completed":13,"velocity":13,"estimated_hours":34.5,"actual_hours":30.5,"deviation":-4,"completed_stories_percentage":61.9,"defects_detected":3,"defects_resolved":null}`,
 		"/projects/p1/sprints/sp1/metrics": `{"project_id":"p1","sprint_id":"sp1","story_points_planned":8,"story_points_completed":5,"velocity":5,"estimated_hours":14,"actual_hours":12.5,"deviation":-1.5,"completed_stories_percentage":62.5,"defects_detected":2,"defects_resolved":1}`,
 	})
 }
@@ -132,29 +117,6 @@ func TestPlanningPokerCollectsHiddenVotesRevealsResetsAndSaves(t *testing.T) {
 	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	if got := stripANSI(m.View()); strings.Contains(got, "Ada Lovelace: 8") {
 		t.Fatalf("new round leaked prior votes: %q", got)
-	}
-}
-
-func TestDefectsFlowChoosesStoryAndSprintThenShowsTheTUI09Notice(t *testing.T) {
-	server := defectsServer(t)
-	m := openSectionWithProject(t, server.URL, "p1", menuDefects)
-
-	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
-	if cmd == nil {
-		t.Fatal("choosing a story should load the Sprint selector")
-	}
-	m = run(t, m, cmd)
-	view := stripANSI(m.View())
-	if !strings.Contains(view, "Sprint de detección") {
-		t.Fatalf("Sprint selector lacks the Sprint: %q", view)
-	}
-
-	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
-	view = stripANSI(m.View())
-	for _, want := range []string{"TUI-09", "Sprint de detección", "No se guardó ningún dato"} {
-		if !strings.Contains(view, want) {
-			t.Errorf("defect notice lacks %q: %q", want, view)
-		}
 	}
 }
 
