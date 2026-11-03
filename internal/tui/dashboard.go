@@ -106,6 +106,8 @@ func (m Model) updateDashboard(key tea.KeyMsg) (Model, tea.Cmd) {
 		m.dashboard.loading = true
 		m.dashboard.statusErr, m.dashboard.metricsErr = "", ""
 		return m, m.loadDashboardCmd()
+	case key.Type == tea.KeyRunes && string(key.Runes) == "d":
+		return m.startReport(projectReportScope, m.activeProjectID, "")
 	}
 	return m, nil
 }
@@ -146,6 +148,11 @@ func (m Model) viewDashboard() string {
 		b.WriteString(statusMutedStyle.Render("Cargando…"))
 	default:
 		b.WriteString(m.viewDashboardMetrics())
+	}
+	if block := m.reportView(projectReportScope, m.activeProjectID); block != "" {
+		b.WriteString("\n\n")
+		b.WriteString(block)
+		b.WriteString("\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -262,12 +269,13 @@ func dashboardBar(fraction float64, width int) string {
 }
 
 func (m Model) dashboardFooter() string {
-	return m.keyHints("r", "refrescar", "p", "proyecto", "Esc", "menú", "?", "ayuda", "q", "salir")
+	return m.keyHints("r", "refrescar", "d", "PDF", "p", "proyecto", "Esc", "menú", "?", "ayuda", "q", "salir")
 }
 
 func dashboardHelpRows() [][2]string {
 	return [][2]string{
 		{"r", "Refrescar el estado y las métricas del proyecto"},
+		{"d", "Descargar el reporte PDF del proyecto"},
 		{"p", "Cambiar el proyecto activo"},
 		{"Esc", "Volver al menú"},
 		{"?", "Mostrar u ocultar esta ayuda"},

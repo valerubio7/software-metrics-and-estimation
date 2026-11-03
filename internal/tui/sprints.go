@@ -233,6 +233,12 @@ func (m Model) updateSprints(key tea.KeyMsg) (Model, tea.Cmd) {
 			m.sprintStories, m.selectedStories = nil, map[string]bool{}
 			m.sprintCursor, m.sprintFilter, m.sprintFiltering = 0, "", false
 			return m, m.listAssignedBacklogCmd()
+		case "d":
+			sprint, ok := sprintAt(sprints, m.sprintCursor)
+			if !ok {
+				return m, nil
+			}
+			return m.startReport(sprintReportScope, m.activeProjectID, sprint.ID)
 		case "x":
 			sprint, ok := sprintAt(sprints, m.sprintCursor)
 			if !ok {

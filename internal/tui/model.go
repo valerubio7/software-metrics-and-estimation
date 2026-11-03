@@ -62,6 +62,8 @@ type Model struct {
 	storyPointsClient    *StoryPointsClient
 	sprintClient         *SprintClient
 	metricsClient        *MetricsClient
+	reportClient         *ReportClient
+	report               reportState
 	sprintCursor         int
 	historyCursor        int
 	historyExpanded      string
@@ -158,6 +160,7 @@ func NewModel(apiURL string) Model {
 		backlogClient:     NewBacklogClient(apiURL),
 		storyPointsClient: NewStoryPointsClient(apiURL), sprintClient: NewSprintClient(apiURL),
 		metricsClient: NewMetricsClient(apiURL),
+		reportClient:  NewReportClient(apiURL),
 		taskClient:    NewTaskClient(apiURL),
 		memberClient:  NewMemberClient(apiURL),
 		effortClient:  NewEffortClient(apiURL),
@@ -200,6 +203,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if result, ok := msg.(dashboardResultMsg); ok {
 		return m.applyDashboardResult(result)
+	}
+	if result, ok := msg.(ReportResultMsg); ok {
+		return m.applyReportResult(result)
 	}
 	if result, ok := msg.(DefectResultMsg); ok {
 		return m.applyDefectResult(result)
@@ -956,7 +962,7 @@ func (m Model) footer() string {
 		if m.sprintFiltering {
 			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
 		}
-		return m.keyHints("↑/↓", "mover", "Enter", "historias", "a", "asignar", "x", "cerrar", "h", "cerrados", "n", "nuevo", "r", "refrescar", "/", "buscar", "Esc", "menú", "q", "salir")
+		return m.keyHints("↑/↓", "mover", "Enter", "historias", "d", "PDF", "a", "asignar", "x", "cerrar", "h", "cerrados", "n", "nuevo", "r", "refrescar", "/", "buscar", "Esc", "menú", "q", "salir")
 	case "sprint-goal":
 		return m.keyHints("Enter", "enviar", "Esc", "volver", "Ctrl+C", "salir")
 	case "sprint-confirm":
@@ -1074,6 +1080,9 @@ func (m Model) helpRows() [][2]string {
 	if m.Screen == "effort-result" {
 		return effortResultHelpRows()
 	}
+	if m.Screen == "sprints" {
+		return sprintsHelpRows()
+	}
 	return [][2]string{
 		{"↑ / ↓", "Mover la selección"},
 		{"Enter", "Elegir / confirmar la fila resaltada"},
@@ -1089,6 +1098,25 @@ func (m Model) helpRows() [][2]string {
 		{"Tab / ↑ / ↓", "Cambiar de campo en un formulario"},
 		{"?", "Mostrar u ocultar esta ayuda"},
 		{"q", "Salir (no dentro de un campo de texto)"},
+		{"Ctrl+C", "Salir desde cualquier pantalla"},
+	}
+}
+
+func sprintsHelpRows() [][2]string {
+	return [][2]string{
+		{"↑ / ↓", "Mover la selección"},
+		{"Enter", "Ver las historias del Sprint resaltado"},
+		{"d", "Descargar el reporte PDF del Sprint resaltado"},
+		{"a", "Asignar historias del backlog"},
+		{"x", "Cerrar el Sprint resaltado (pide confirmación)"},
+		{"h", "Ver los Sprints cerrados"},
+		{"n", "Crear un Sprint"},
+		{"/", "Buscar o filtrar Sprints"},
+		{"r", "Refrescar el listado"},
+		{"p", "Cambiar el proyecto activo"},
+		{"Esc", "Limpiar el filtro y volver al menú"},
+		{"?", "Mostrar u ocultar esta ayuda"},
+		{"q / Q", "Salir"},
 		{"Ctrl+C", "Salir desde cualquier pantalla"},
 	}
 }

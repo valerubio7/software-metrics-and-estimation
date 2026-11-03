@@ -56,10 +56,14 @@ func (m Model) viewSprints() string {
 	var b strings.Builder
 	b.WriteString(screenTitleStyle.Render("Sprints de " + m.projectLabel()))
 	b.WriteString("\n")
-	b.WriteString(hintStyle.Render("Enter historias · a asignar · x cerrar · h cerrados · n nuevo · / busca."))
+	b.WriteString(hintStyle.Render("Enter historias · d PDF · a asignar · x cerrar · h cerrados · / busca."))
 	b.WriteString("\n\n")
 	if m.sprintFiltering || m.sprintFilter != "" {
 		b.WriteString(searchLine(m.sprintFilter, m.sprintFiltering))
+		b.WriteString("\n\n")
+	}
+	if block := m.reportView(sprintReportScope, m.activeProjectID); block != "" {
+		b.WriteString(block)
 		b.WriteString("\n\n")
 	}
 	if m.sprintLoading {
