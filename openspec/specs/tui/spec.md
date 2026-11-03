@@ -702,13 +702,13 @@ La TUI DEBERÁ ofrecer selectores de integrante, historia, tarea y Sprint como l
 - **AND** la selección de una fila no emite requests que modifiquen datos
 
 ### Requirement: Avisar el límite de las pantallas de navegación
-Las pantallas de navegación de TUI-06 NO implementan los flujos de negocio de las secciones que todavía no tienen su historia de TUI integrada: hoy, Defectos (TUI-09) y Dashboard (TUI-11). Cuando el usuario completa la selección de navegación de una de esas secciones, la TUI DEBERÁ mostrar un aviso que indique en qué historia estará disponible el flujo, sin comunicar que la operación se guardó. Planning Poker (TUI-07), Esfuerzo (TUI-08) y Métricas tienen su propio flujo y NO DEBERÁN mostrar este aviso.
-(Previously: el aviso cubría Planning Poker, Esfuerzo, Defectos, Métricas y Dashboard y remitía a TUI-07 a TUI-11; Planning Poker ya no lo muestra desde TUI-07, Métricas presenta sus valores desde la consulta de solo lectura y Esfuerzo deja de mostrarlo con TUI-08.)
+Las pantallas de navegación de TUI-06 NO implementan los flujos de negocio de las secciones que todavía no tienen su historia de TUI integrada. Desde este cambio, Dashboard (TUI-11) tiene su propio flujo y la TUI MUST NOT mostrar el aviso de TUI-11. La consolidación de Defectos (TUI-09) sigue pendiente de su propio cambio; hasta entonces, el aviso de esa sección se conserva tal como estaba especificado. Planning Poker (TUI-07), Esfuerzo (TUI-08) y Métricas tienen su propio flujo y NO DEBERÁN mostrar este aviso. Cuando el usuario completa la selección de navegación de una sección que todavía lo requiera, la TUI DEBERÁ mostrar un aviso que indique en qué historia estará disponible el flujo, sin comunicar que la operación se guardó.
+(Previously: el aviso cubría Defectos (TUI-09) y Dashboard (TUI-11); Dashboard deja de mostrarlo con TUI-11 y la mención de Defectos queda pendiente de la consolidación de TUI-09.)
 
 #### Scenario: Aviso al completar una selección
-- **GIVEN** que el usuario eligió los elementos de navegación de Defectos o de Dashboard
+- **GIVEN** que el usuario eligió los elementos de navegación de una sección que todavía usa el aviso de TUI-06
 - **WHEN** la TUI alcanza el final del flujo disponible
-- **THEN** muestra un aviso con la historia que implementará el flujo (TUI-09 o TUI-11)
+- **THEN** muestra un aviso con la historia que implementará el flujo
 - **AND** no comunica éxito de una operación de negocio
 - **AND** permite volver con `Enter` o `Esc`
 
@@ -717,6 +717,12 @@ Las pantallas de navegación de TUI-06 NO implementan los flujos de negocio de l
 - **WHEN** la TUI alcanza el final del flujo de selección
 - **THEN** abre el formulario de esfuerzo
 - **AND** no muestra ningún aviso que mencione TUI-08 ni «No se guardó ningún dato»
+
+#### Scenario: Dashboard ya no muestra el aviso
+- **GIVEN** que el usuario confirma Dashboard en el menú
+- **WHEN** la TUI abre la pantalla del proyecto activo
+- **THEN** no muestra ningún aviso que mencione TUI-11 ni «No se guardó ningún dato»
+- **AND** presenta el estado y las métricas del proyecto
 ### Requirement: Elegir historia, tarea e integrante para registrar esfuerzo
 La sección Esfuerzo DEBERÁ guiar el registro con los selectores navegables existentes, en este orden: historia del backlog del proyecto activo, tarea de esa historia (o la historia completa) e integrante del proyecto activo. Una vez cargadas las tareas de la historia elegida, el selector de tareas DEBERÁ anteponer, como primera fila, la fila sintética «Toda la historia (sin tarea)», seguida de las tareas en el orden informado por la API; la fila sintética DEBERÁ estar presente también cuando la historia no tiene tareas. Elegir una tarea registra el esfuerzo sobre esa tarea; elegir la fila sintética lo registra sobre la historia completa. Elegir cualquiera de las dos filas DEBERÁ abrir el selector de integrantes del proyecto activo, que en Esfuerzo es de selección simple: `Enter` elige el integrante resaltado y abre el formulario de esfuerzo (Requirement: Completar el formulario de esfuerzo), y `Space` no marca integrantes. Ningún paso DEBERÁ pedir un identificador escrito a mano. El avance entre selectores y la apertura del formulario NO DEBERÁN emitir requests que modifiquen datos. Si el proyecto no tiene integrantes, el selector de integrantes DEBERÁ mostrar un estado vacío propio que informe que el proyecto no tiene integrantes registrados, que NO remita a ninguna opción del menú principal y que permita volver con `Esc` y refrescar con `r`.
 
@@ -1104,4 +1110,85 @@ Ante HTTP 201 la TUI DEBERÁ pasar a una pantalla de resultado propia que comuni
 - **WHEN** el usuario presiona `p` y confirma el proyecto `p-2`
 - **THEN** la TUI abre Esfuerzo en el selector de historias de `p-2`
 - **AND** la pantalla no conserva el registro, las métricas ni las selecciones de `p-1`
+
+### Requirement: Abrir el Dashboard desde el menú
+La TUI MUST ofrecer una pantalla Dashboard que se abra directamente desde el menú para el proyecto activo, sin pedir identificadores ni obligar a elegir un Sprint. Si no hay proyecto activo, DEBERÁ abrir primero el navegador de proyectos y, al confirmarlo, continuar en Dashboard. La pantalla DEBERÁ consultar el estado del proyecto mediante `GET /projects/{project_id}` y mostrar el nombre del proyecto y su estado derivado con una etiqueta textual.
+
+#### Scenario: Abrir Dashboard con proyecto activo
+- **GIVEN** que hay un proyecto activo con estado `active`
+- **WHEN** el usuario confirma Dashboard en el menú
+- **THEN** la TUI abre la pantalla Dashboard y consulta `GET /projects/{project_id}`
+- **AND** muestra el nombre del proyecto y el estado «en curso»
+- **AND** no muestra el aviso de TUI-11 ni pide un identificador escrito a mano
+
+#### Scenario: Abrir Dashboard sin proyecto activo
+- **GIVEN** que no hay proyecto activo en la sesión
+- **WHEN** el usuario confirma Dashboard en el menú
+- **THEN** la TUI abre el navegador de proyectos
+- **AND** al confirmar un proyecto abre Dashboard y carga su estado y sus métricas
+- **AND** no pide ningún identificador escrito a mano
+
+### Requirement: Presentar los valores de las métricas sin recalcularlos
+El Dashboard MUST consultar `GET /projects/{project_id}/metrics` con el sobre de US-19 y mostrar los valores exactos devueltos por la API, sin recalcular el porcentaje de historias, la velocidad ni la desviación. Una métrica ausente (`null`) DEBERÁ mostrarse como «sin datos», nunca como cero; un cero devuelto por la API se conserva como cero.
+
+#### Scenario: Filas de métricas del Dashboard
+- **GIVEN** que la API devuelve el sobre de métricas de US-19
+- **WHEN** la TUI presenta el Dashboard
+- **THEN** muestra Story Points planificados y completados, velocidad, horas estimadas y reales, desviación, porcentaje de historias completadas y defectos detectados y resueltos
+
+#### Scenario: Métrica no calculable
+- **GIVEN** que la API devuelve `null` en una o más métricas del proyecto
+- **WHEN** la TUI presenta el Dashboard
+- **THEN** muestra «sin datos» en cada métrica ausente
+- **AND** no muestra cero ni una barra para esa métrica
+- **AND** conserva las métricas que sí tienen valor
+
+#### Scenario: Valores consistentes con Métricas
+- **GIVEN** que la pantalla de Métricas y el Dashboard consultan el mismo proyecto
+- **WHEN** el usuario compara sus valores
+- **THEN** ambos muestran los mismos números devueltos por la API
+- **AND** el Dashboard no recalcula el porcentaje de historias, la velocidad ni la desviación
+
+#### Scenario: Los valores llegan desde la API
+- **GIVEN** un proyecto con Story Points planificados `21` y completados `13`
+- **WHEN** la TUI presenta el Dashboard
+- **THEN** muestra `13 / 21` para Story Points
+- **AND** no calcula esos valores a partir de historias ni de tareas
+
+### Requirement: Graficar las métricas con barras Unicode
+El Dashboard MUST incluir barras Unicode para las relaciones disponibles: Story Points, horas, historias completadas y defectos. Las barras NO DEBERÁN ser el único portador del significado: cada fila DEBERÁ conservar su etiqueta y sus valores numéricos, y la pantalla DEBERÁ seguir siendo legible sin color y en 80 y 44 columnas.
+
+#### Scenario: Barras visibles sin color
+- **GIVEN** un proyecto con métricas disponibles
+- **WHEN** la TUI presenta el Dashboard y se eliminan las secuencias de color
+- **THEN** las etiquetas, los valores y los glifos `█/░` de las barras siguen presentes
+- **AND** el estado del proyecto se distingue por su texto, no solo por su color
+
+#### Scenario: Terminal angosta
+- **GIVEN** una terminal de 80 o 44 columnas
+- **WHEN** la TUI presenta el Dashboard
+- **THEN** ninguna línea visible excede el ancho de la terminal
+- **AND** las etiquetas, los valores y los glifos de las barras siguen presentes
+
+### Requirement: Mantener el Dashboard de solo lectura y tolerante a errores
+El Dashboard MUST ser de solo lectura: todas sus consultas DEBERÁN ser `GET` y NO DEBERÁ modificar datos. Si la API no responde o devuelve un error, DEBERÁ mostrar el motivo dentro de la pantalla, permanecer abierta y permitir reintentar con `r` y volver con `Esc`, sin comunicar que se guardó ningún dato. Las respuestas tardías de un proyecto anterior o de un reintento anterior DEBERÁN descartarse.
+
+#### Scenario: API no disponible en el Dashboard
+- **GIVEN** que la API no responde o devuelve un error al consultar el estado o las métricas
+- **WHEN** la TUI presenta el resultado
+- **THEN** muestra el motivo del fallo dentro de la pantalla
+- **AND** permanece abierta y permite reintentar con `r` o volver con `Esc`
+- **AND** no comunica que se guardó ningún dato
+
+#### Scenario: Actualizar el Dashboard
+- **GIVEN** que el Dashboard muestra datos del proyecto activo
+- **WHEN** el usuario presiona `r`
+- **THEN** la TUI vuelve a consultar el estado y las métricas del mismo proyecto
+- **AND** descarta cualquier respuesta tardía de la consulta anterior
+
+#### Scenario: Recorrido de solo lectura
+- **GIVEN** que el usuario abre el Dashboard, refresca y cambia de proyecto
+- **WHEN** la TUI emite sus consultas
+- **THEN** todas las requests son `GET`
+- **AND** no se crea, modifica ni elimina ningún dato
 

@@ -17,7 +17,6 @@ const (
 	sectionEffort        sectionKind = "effort"
 	sectionDefects       sectionKind = "defects"
 	sectionMetrics       sectionKind = "metrics"
-	sectionDashboard     sectionKind = "dashboard"
 )
 
 // title returns the user-facing section name.
@@ -31,8 +30,6 @@ func (k sectionKind) title() string {
 		return "Defectos"
 	case sectionMetrics:
 		return "Métricas"
-	case sectionDashboard:
-		return "Dashboard"
 	default:
 		return string(k)
 	}
@@ -421,8 +418,6 @@ func sectionNotice(kind sectionKind, primary, detail selectorItem) string {
 		return fmt.Sprintf("Historia: %s\nSprint de detección: %s\n\nEl alta de defectos estará disponible en TUI-09.\nNo se guardó ningún dato.", primary.Label, detail.Label)
 	case sectionMetrics:
 		return fmt.Sprintf("Sprint: %s\n\nLas métricas estarán disponibles en TUI-10.\nNo se guardó ningún dato.", primary.Label)
-	case sectionDashboard:
-		return fmt.Sprintf("Sprint: %s\n\nEl Dashboard estará disponible en TUI-11.\nNo se guardó ningún dato.", primary.Label)
 	default:
 		return "El flujo de negocio todavía no está disponible.\nNo se guardó ningún dato."
 	}
