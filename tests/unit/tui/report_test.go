@@ -166,7 +166,7 @@ func TestReportKeysAppearInFooterAndHelp(t *testing.T) {
 		t.Errorf("dashboard footer lacks the report key: %q", view)
 	}
 	m, _ = apply(m, keyMsg("?"))
-	if help := stripANSI(m.View()); !strings.Contains(help, "Descargar el reporte PDF del proyecto") {
+	if help := stripANSI(m.View()); !strings.Contains(help, "Descargar el reporte PDF del ámbito mostrado") {
 		t.Errorf("dashboard help lacks the report action: %q", help)
 	}
 

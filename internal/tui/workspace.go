@@ -67,7 +67,7 @@ func (m Model) openTab(t workspaceTab) (Model, tea.Cmd) {
 // the workspace.
 func (m Model) currentTab() workspaceTab {
 	switch {
-	case m.Screen == "dashboard":
+	case m.Screen == "dashboard" || m.Screen == "dashboard-sprint-select":
 		return tabDashboard
 	case strings.HasPrefix(m.Screen, "backlog"):
 		return tabBacklog
@@ -85,8 +85,6 @@ func (m Model) currentTab() workspaceTab {
 			return tabEstimation
 		case sectionEffort:
 			return tabEffort
-		case sectionMetrics:
-			return tabDashboard
 		}
 	}
 	return tabNone

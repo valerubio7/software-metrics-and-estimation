@@ -200,6 +200,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if result, ok := msg.(dashboardResultMsg); ok {
 		return m.applyDashboardResult(result)
 	}
+	if result, ok := msg.(dashboardScopesMsg); ok {
+		return m.applyDashboardScopes(result)
+	}
 	if result, ok := msg.(ReportResultMsg); ok {
 		return m.applyReportResult(result)
 	}
@@ -286,6 +289,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateSection(key)
 	case "dashboard":
 		return m.updateDashboard(key)
+	case "dashboard-sprint-select":
+		return m.updateDashboardScopes(key)
 	case "planning-poker":
 		return m.updatePlanningPoker(key)
 	case "effort-form":
@@ -339,7 +344,7 @@ func entersText(screen string) bool {
 // listed, so q is a plain character there; Ctrl+C always quits.
 func quitsOnQ(screen string) bool {
 	switch screen {
-	case "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "dashboard", "planning-poker", "effort-result", "defects", "defect-detail", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-create-result", "defect-status-select", "defect-resolution-select", "defect-status-result":
+	case "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "dashboard", "dashboard-sprint-select", "planning-poker", "effort-result", "defects", "defect-detail", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-create-result", "defect-status-select", "defect-resolution-select", "defect-status-result":
 		return true
 	}
 	return false
@@ -359,6 +364,7 @@ func (m Model) filtering() bool {
 		(m.Screen == "defect-resolution-select" && m.defectResolutionSelector.filtering) ||
 		(m.Screen == "project-picker" && m.projectFiltering) ||
 		(m.Screen == "section" && m.section.selector.filtering) ||
+		(m.Screen == "dashboard-sprint-select" && m.dashboard.scopes.filtering) ||
 		(isSprintScreen(m.Screen) && m.sprintFiltering)
 }
 
@@ -644,6 +650,8 @@ func (m Model) viewBody() string {
 		return m.viewSection()
 	case "dashboard":
 		return m.viewDashboard()
+	case "dashboard-sprint-select":
+		return m.viewDashboardScopes()
 	case "planning-poker":
 		return m.viewPlanningPoker()
 	case "effort-form":
@@ -820,6 +828,8 @@ func (m Model) crumbParts() []string {
 		parts = append(parts, sectionEffort.title(), "Resultado")
 	case "dashboard":
 		parts = append(parts, "Dashboard")
+	case "dashboard-sprint-select":
+		parts = append(parts, "Dashboard", "Elegir ámbito")
 	case "defects", "defect-detail", "defect-create-form", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-create-result", "defect-status-select", "defect-resolution-select", "defect-status-result":
 		parts = append(parts, sectionDefects.title())
 		switch m.Screen {
@@ -912,6 +922,8 @@ func (m Model) footer() string {
 		return m.sectionFooter()
 	case "dashboard":
 		return m.dashboardFooter()
+	case "dashboard-sprint-select":
+		return m.dashboardScopesFooter()
 	case "planning-poker":
 		return m.planningPokerFooter()
 	case "effort-form":
@@ -1000,6 +1012,9 @@ func (m Model) helpRows() [][2]string {
 	}
 	if m.Screen == "dashboard" {
 		return dashboardHelpRows()
+	}
+	if m.Screen == "dashboard-sprint-select" {
+		return m.dashboardScopesHelpRows()
 	}
 	if m.Screen == "effort-result" {
 		return effortResultHelpRows()
