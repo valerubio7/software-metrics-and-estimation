@@ -61,19 +61,21 @@ El menú incluye nueve opciones: Proyectos, Backlog, Sprints, Planning Poker,
 Esfuerzo, Defectos, Métricas, Dashboard y Salir. Las cinco secciones nuevas
 abren directamente su pantalla principal y encadenan selectores según el flujo:
 
-| Sección        | Navegación                                      | Flujo futuro |
-| -------------- | ----------------------------------------------- | ------------ |
-| Planning Poker | historia → integrante                           | TUI-07       |
+| Sección        | Navegación                                      | Estado |
+| -------------- | ----------------------------------------------- | ------ |
+| Planning Poker | historia → integrante                           | TUI-07 |
 | Esfuerzo       | historia → tarea o historia completa → integrante → registro | disponible (TUI-08) |
-| Defectos       | historia → Sprint                               | TUI-09       |
-| Métricas       | Sprint                                          | TUI-10       |
-| Dashboard      | Sprint                                          | TUI-11       |
+| Defectos       | listado/búsqueda → detalle; alta con historia y Sprint de detección; actualización de estado con Sprint de resolución si queda resuelto | disponible (TUI-09) |
+| Métricas       | Sprint                                          | TUI-10 |
+| Dashboard      | Sprint                                          | TUI-11 |
 
-Estas pantallas son *shells* de navegación de solo lectura: consultan la API con
-`GET`, muestran estados de carga, vacío y error, y terminan con un aviso de la
-historia que implementará el flujo de negocio. No crean, modifican ni eliminan
-datos. Si no hay proyecto activo, la sección abre primero el navegador de
-proyectos; el atajo `p` permite cambiarlo sin salir de la sección.
+Defectos permite consultar, filtrar y abrir el detalle del listado del proyecto,
+registrar un defecto mediante confirmación y cambiar su estado entre las opciones
+admitidas por la API. Las demás secciones indicadas como futuras siguen siendo
+*shells* de navegación de solo lectura: consultan la API con `GET`, muestran
+estados de carga, vacío y error, y terminan con un aviso del flujo pendiente. Si
+no hay proyecto activo, la sección abre primero el navegador de proyectos; el
+atajo `p` permite cambiarlo sin salir de la sección.
 
 Esfuerzo es la excepción: registra el esfuerzo mediante `POST` y muestra las
 métricas del proyecto devueltas por la API, sin calcular horas ni desvíos.
