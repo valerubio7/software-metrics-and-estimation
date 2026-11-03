@@ -77,7 +77,7 @@ func TestPlanningPokerEmptyMemberListHasClearStateAndCannotStartVoting(t *testin
 			return false
 		}
 	})
-	m := openSectionWithProject(t, server.URL, "p1", menuPlanning)
+	m := openSectionWithProject(t, server.URL, "p1", tabEstimation)
 	m, membersCmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
 	m = run(t, m, membersCmd)
 	if got := stripANSI(m.View()); !strings.Contains(got, "No hay participantes disponibles.") {
@@ -143,7 +143,7 @@ func TestPlanningPokerDisplaysEstimateAPIErrorsWithoutRefreshingOrClaimingSucces
 
 func pokerConfirmModel(t *testing.T, baseURL string) tui.Model {
 	t.Helper()
-	m := openSectionWithProject(t, baseURL, "p1", menuPlanning)
+	m := openSectionWithProject(t, baseURL, "p1", tabEstimation)
 	m, membersCmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
 	m = run(t, m, membersCmd)
 	m, _ = apply(m, tea.KeyMsg{Type: tea.KeySpace})

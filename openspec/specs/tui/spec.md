@@ -19,25 +19,6 @@ El sistema DEBERÁ permitir abrir la TUI configurando la conexión vía `API_URL
 - **WHEN** el usuario abre la TUI sin definir `API_URL`
 - **THEN** la TUI usa `http://localhost:8080` por defecto
 
-### Requirement: Mostrar menú base de navegación
-La TUI DEBERÁ mostrar un menú con las opciones Proyectos, Backlog, Sprints, Planning Poker, Esfuerzo, Defectos, Métricas, Dashboard y Salir. Las opciones Proyectos, Backlog y Sprints conservan su gestión respectiva; las cinco secciones nuevas abren directamente su pantalla principal, sin submenús de operaciones. La TUI DEBERÁ mostrar siempre un encabezado con el nombre del producto y el estado de conexión con la API, y un pie con las teclas disponibles para la pantalla activa.
-
-#### Scenario: Menú inicial
-- **WHEN** la TUI arranca correctamente
-- **THEN** muestra las nueve opciones y permite moverse entre ellas
-- **AND** muestra el encabezado con el estado de conexión y el pie con las teclas de la pantalla
-
-#### Scenario: Backlog abre su gestión desde el menú
-- **GIVEN** que el menú está activo con la selección en la primera opción
-- **WHEN** el usuario presiona «Abajo» y luego «Enter»
-- **THEN** la TUI presenta el flujo de gestión del backlog (el selector de proyectos si no hay proyecto activo, o la lista del backlog si ya lo hay)
-
-#### Scenario: Las secciones nuevas abren directo su pantalla principal
-- **GIVEN** que el menú está activo
-- **WHEN** el usuario confirma Planning Poker, Esfuerzo, Defectos, Métricas o Dashboard
-- **THEN** la TUI abre la pantalla principal de esa sección
-- **AND** no muestra un submenú de operaciones
-
 ### Requirement: Presentar el contenido en un panel con jerarquía visual
 La TUI DEBERÁ mostrar el contenido de cada pantalla dentro de un panel con borde que ocupa el ancho disponible, encabezado por una barra superior sólida con la marca y el estado de conexión a la API, seguida de la miga de pan (breadcrumb). La fila enfocada DEBERÁ resaltarse como una barra que ocupa todo el ancho del panel, no solo el texto. Cuando el ancho no alcanza para la marca, la barra superior DEBERÁ priorizar el indicador de conexión y mantener el contenido dentro del ancho disponible sin desbordar.
 
@@ -78,46 +59,12 @@ Si la API no está disponible la TUI DEBERÁ informar el motivo y seguir abierta
 - **WHEN** la API no responde al abrir o navegar
 - **THEN** la TUI muestra el motivo del fallo y no se cierra abruptamente
 
-### Requirement: Salir limpiamente de la TUI
-El usuario DEBERÁ poder salir limpiamente con `Ctrl+C` desde cualquier pantalla, con `q` únicamente desde el menú, las listas y las pantallas de resultado, o con la opción salir del menú. Dentro de un campo de entrada de texto, `q` (y `Q`) DEBERÁ tratarse como un carácter más y NO cerrará la TUI.
-(Previously: `q` / `Ctrl+C` / opción salir cerraban la TUI sin distinguir la pantalla, por lo que `q` también cerraba la TUI al escribir en un formulario.)
-
-#### Scenario: Salida limpia
-- **WHEN** el usuario pide salir
-- **THEN** la TUI termina con código 0 sin traza de error
-
-#### Scenario: `q` sale desde el menú
-- **GIVEN** que el menú está activo
-- **WHEN** el usuario presiona `q`
-- **THEN** la TUI se cierra con código 0
-
-#### Scenario: `q` sale desde una lista
-- **GIVEN** que una lista seleccionable está activa (el navegador de proyectos o el backlog)
-- **WHEN** el usuario presiona `q`
-- **THEN** la TUI se cierra con código 0
-
-#### Scenario: `q` sale desde una pantalla de resultado
-- **GIVEN** que una pantalla de resultado está activa (proyectos o backlog)
-- **WHEN** el usuario presiona `q`
-- **THEN** la TUI se cierra con código 0
-
-#### Scenario: `q` en un campo de texto no sale
-- **GIVEN** que el foco está en un campo de texto de un formulario o en el buscador
-- **WHEN** el usuario presiona `q` o `Q`
-- **THEN** la TUI permanece abierta
-- **AND** el carácter se agrega al valor del campo
-
-#### Scenario: `Ctrl+C` sale desde cualquier pantalla
-- **GIVEN** que cualquier pantalla está activa, incluidos los formularios y los buscadores
-- **WHEN** el usuario presiona `Ctrl+C`
-- **THEN** la TUI se cierra con código 0 sin traza de error
-
 ### Requirement: Navegación de solo lectura
-La navegación entre el menú y las pantallas DEBERÁ ser de solo lectura y NO modificará ningún dato del sistema. Solo las operaciones explícitas de escritura pueden emitir requests que modifiquen datos: la creación y modificación de proyectos (Requirement: Operar proyectos mediante la TUI), la creación y modificación de historias (Requirement: Crear historias mediante la TUI y Requirement: Modificar historias desde la lista), las operaciones de los Sprints (Requirement: Operar los Sprints mediante la TUI), el guardado del Story Points acordado en Planning Poker (Requirement: Estimar historias con Planning Poker), que emite un `PUT`, y el registro de esfuerzo (Requirement: Enviar el registro de esfuerzo y presentar los errores de la API), que emite un `POST`. Las secciones Planning Poker, Esfuerzo, Defectos, Métricas y Dashboard, sus selectores y sus pantallas de aviso DEBERÁN emitir únicamente consultas `GET`, salvo el `PUT` de Planning Poker al confirmar el Story Points y el `POST` de Esfuerzo al confirmar el formulario de registro.
-(Previously: el texto afirmaba que las secciones Planning Poker y Esfuerzo emitían únicamente consultas `GET` y solo reconocía como escrituras las operaciones de proyectos e historias; ya no contemplaba el `PUT` de Planning Poker (TUI-07), las operaciones de Sprints ni el `POST` de Esfuerzo (TUI-08).)
+Navegar entre el navegador de proyectos, las pestañas y sus pantallas DEBERÁ ser de solo lectura. Solo las operaciones explícitas de escritura emiten requests que modifican datos: proyectos, historias, Sprints, el `PUT` del Story Points de Estimación, el `POST` de esfuerzo y las operaciones de defectos, cada una definida en su propio requisito. Las demás pantallas y selectores DEBERÁN emitir únicamente consultas `GET`.
+(Previously: la navegación partía del menú, enumeraba las secciones Planning Poker, Esfuerzo, Defectos, Métricas y Dashboard e incluía sus pantallas de aviso.)
 
 #### Scenario: Navegar no muta
-- **WHEN** el usuario navega entre el menú y las pantallas sin confirmar una operación explícita de escritura
+- **WHEN** el usuario navega entre el navegador de proyectos, las pestañas y sus pantallas sin confirmar una operación explícita de escritura
 - **THEN** no se emite ninguna request que modifique datos
 
 #### Scenario: Consultar el backlog no muta
@@ -127,7 +74,7 @@ La navegación entre el menú y las pantallas DEBERÁ ser de solo lectura y NO m
 
 #### Scenario: Navegar por las secciones del Sprint 3 no muta
 - **GIVEN** un proyecto activo
-- **WHEN** el usuario recorre Planning Poker, Esfuerzo, Defectos, Métricas y Dashboard, elige filas y avanza entre selectores, sin confirmar el guardado de Story Points ni el envío del formulario de esfuerzo
+- **WHEN** el usuario recorre las pestañas Dashboard, Estimación, Esfuerzo y Defectos, elige filas y avanza entre selectores, sin confirmar el guardado de Story Points ni el envío del formulario de esfuerzo
 - **THEN** todas las requests emitidas son `GET`
 - **AND** no se crea, modifica ni elimina ningún dato
 
@@ -149,12 +96,12 @@ La navegación entre el menú y las pantallas DEBERÁ ser de solo lectura y NO m
 - **AND** al confirmar se emite únicamente el `PUT /projects/{pid}/stories/{sid}/story-points`
 
 ### Requirement: Operar proyectos mediante la TUI
-
-La TUI DEBERÁ permitir operar proyectos desde la opción «Proyectos», que abre directamente el navegador buscable de proyectos (Requirement: Listar y elegir proyectos con un buscador) en lugar de un submenú con un pedido manual de identificador. Desde el navegador el usuario fija el proyecto activo, crea uno nuevo y modifica el proyecto resaltado. La gestión consume la API existente y no incorpora lógica de negocio. La navegación de menú existente se conserva.
+La TUI DEBERÁ operar proyectos desde el navegador de proyectos, que es la pantalla inicial (Requirement: Listar y elegir proyectos con un buscador): abrir el proyecto resaltado, crear uno nuevo con `n` y modificar el resaltado con `e`, sin pedir identificadores a mano. La gestión consume la API existente y no incorpora lógica de negocio. El éxito vuelve al navegador con un aviso `✓` (Requirement: Precargar la modificación de proyecto y resolver el resultado).
+(Previously: los proyectos se operaban desde la opción «Proyectos» del menú, que se conservaba, y el resultado de la API se presentaba en una pantalla de resultado.)
 
 #### Scenario: La opción Proyectos abre el navegador
-- **GIVEN** que la TUI muestra el menú inicial
-- **WHEN** el usuario confirma la opción «Proyectos»
+- **GIVEN** que la API devuelve dos o más proyectos
+- **WHEN** la TUI arranca o el usuario vuelve con `Esc` desde la raíz de una pestaña
 - **THEN** la TUI emite `GET /projects` y presenta el navegador buscable
 - **AND** no pide ningún identificador a mano
 
@@ -162,13 +109,14 @@ La TUI DEBERÁ permitir operar proyectos desde la opción «Proyectos», que abr
 
 - **GIVEN** que el usuario abre la creación desde el navegador (tecla `n`) y completa nombre, fecha de inicio y fecha planificada de finalización
 - **WHEN** confirma la creación
-- **THEN** la TUI envía esos campos al endpoint HTTP de creación y presenta el resultado de la API
+- **THEN** la TUI envía esos campos al endpoint HTTP de creación
+- **AND** ante el éxito vuelve al navegador recargado con un aviso que empieza con `✓`
 
 #### Scenario: La API rechaza datos de creación
 
 - **GIVEN** que la API responde HTTP 422 con detalles de validación
-- **WHEN** la TUI presenta el resultado
-- **THEN** muestra el motivo informado por la API y no comunica éxito
+- **WHEN** la TUI recibe la respuesta
+- **THEN** permanece en el formulario, muestra el motivo informado por la API y no comunica éxito
 
 #### Scenario: Modificar un proyecto existente
 
@@ -179,8 +127,8 @@ La TUI DEBERÁ permitir operar proyectos desde la opción «Proyectos», que abr
 #### Scenario: Proyecto inexistente al modificar
 
 - **GIVEN** que la API responde HTTP 404 al modificar
-- **WHEN** la TUI presenta el resultado
-- **THEN** la TUI informa que el proyecto no existe y presenta el detalle de la API
+- **WHEN** la TUI recibe la respuesta
+- **THEN** la TUI permanece en el formulario, informa que el proyecto no existe y presenta el detalle de la API
 
 #### Scenario: El estado derivado se muestra en el navegador
 
@@ -218,19 +166,20 @@ En el formulario de proyectos, la fecha de inicio y la fecha fin planificada DEB
 - **THEN** la TUI muestra el error de orden en el formulario y NO emite ningún request
 
 ### Requirement: Operar el backlog mediante la TUI
-La TUI DEBERÁ permitir consultar, crear y modificar historias de usuario de un proyecto desde la opción «Backlog» del menú. La gestión consume la API existente (`GET /projects/{pid}/stories`, `POST /projects/{pid}/stories`, `PUT /projects/{pid}/stories/{sid}`) y NO incorpora reglas de negocio. La pantalla alcanzada desde el menú conserva el nombre `backlog`. La lista del backlog se comporta según el patrón navegable (Requirement: Listas navegables con teclas uniformes) y NO muestra filas de acción: crear, modificar, cambiar de proyecto y refrescar se ofrecen con las teclas `n`, `Enter`, `c` y `r`.
+La TUI DEBERÁ permitir consultar, crear y modificar historias del proyecto del espacio de trabajo desde la pestaña Backlog, con la API existente (`GET`, `POST` y `PUT` de `/projects/{pid}/stories`) y sin reglas de negocio. La pantalla conserva el nombre `backlog` y se comporta según el patrón navegable (Requirement: Listas navegables con teclas uniformes), sin filas de acción: `n` crea, `Enter` modifica y `r` refresca. Cambiar de proyecto se hace volviendo a Proyectos con `Esc`.
+(Previously: el backlog se abría desde la opción «Backlog» del menú, pedía un proyecto si no había uno activo y la tecla `c` cambiaba de proyecto.)
 
 #### Scenario: La opción Backlog da acceso a la gestión
-- **GIVEN** que la TUI muestra el menú inicial
-- **WHEN** el usuario se mueve a la opción «Backlog» y la confirma
-- **THEN** la TUI deja de mostrar el marcador de posición TUI-03 y presenta el flujo de gestión del backlog
+- **GIVEN** que el espacio de trabajo de un proyecto está abierto
+- **WHEN** el usuario abre la pestaña Backlog con `2` o `Tab`
+- **THEN** la TUI consulta `GET /projects/{pid}/stories` y presenta la lista del backlog
 - **AND** la pantalla activa conserva el nombre `backlog`
 
 #### Scenario: Acceder sin proyecto activo abre el selector
-- **GIVEN** que en la sesión aún no se eligió ningún proyecto
-- **WHEN** el usuario confirma la opción «Backlog»
-- **THEN** la TUI presenta el selector de proyectos con el catálogo de la API
-- **AND** no consulta el backlog hasta que el usuario confirme un proyecto
+- **GIVEN** que la TUI muestra el navegador de proyectos y todavía no se abrió ningún proyecto
+- **WHEN** el usuario mira la pantalla
+- **THEN** la pestaña Backlog no está disponible y no se consulta ningún backlog
+- **AND** la TUI consulta el backlog solo después de que el usuario abre un proyecto con `Enter`
 
 #### Scenario: Crear y modificar historias desde el navegador
 - **GIVEN** que la lista del backlog está cargada
@@ -240,23 +189,31 @@ La TUI DEBERÁ permitir consultar, crear y modificar historias de usuario de un 
 
 #### Scenario: Cambiar de proyecto desde el navegador
 - **GIVEN** que la lista del backlog está cargada
-- **WHEN** el usuario presiona `c`
-- **THEN** la TUI abre el selector de proyectos para reemplazar el proyecto activo
+- **WHEN** el usuario presiona `Esc` sin filtro aplicado
+- **THEN** la TUI vuelve al navegador de proyectos, donde puede abrir otro proyecto
+- **AND** `c` no cambia de proyecto
 
 ### Requirement: Listar y elegir proyectos con un buscador
-La TUI DEBERÁ obtener el catálogo de proyectos con `GET /projects` y presentarlo en un navegador buscable, de modo que el usuario NO necesite recordar ni escribir identificadores. El navegador se abre desde la opción «Proyectos» del menú y también sirve de selector a Backlog y Sprints. DEBERÁ permitir filtrar por nombre o identificador (la búsqueda se activa con `/` y cualquier otro carácter la inicia ya escrito), navegar con las teclas de flecha, fijar el proyecto activo con `Enter`, abrir la creación con `n`, abrir la modificación del proyecto resaltado con `e`, y volver con `Esc` sin cambiar el proyecto. Cada fila DEBERÁ mostrar el nombre, el estado derivado con una etiqueta en español (`planificado`, `en curso` o `atrasado`), una forma corta del identificador, y `✓ activo` en el proyecto de la sesión. La palabra «activo» queda reservada al proyecto de la sesión; el estado `active` de la API se muestra como «en curso». Si el catálogo está vacío o la búsqueda no arroja coincidencias, la TUI DEBERÁ informarlo sin cerrarse.
+La TUI DEBERÁ obtener el catálogo de proyectos con `GET /projects` y presentarlo en un navegador buscable, de modo que el usuario NO necesite recordar ni escribir identificadores. El navegador es la pantalla inicial de la TUI y el punto desde el que se entra al espacio de trabajo de un proyecto. DEBERÁ permitir filtrar por nombre o identificador (la búsqueda se activa con `/` y cualquier otro carácter la inicia ya escrito), navegar con las teclas de flecha, abrir el proyecto resaltado con `Enter`, abrir la creación con `n`, abrir la modificación del proyecto resaltado con `e` y refrescar con `r`. `Esc` limpia el filtro aplicado; sin filtro no hace nada. Cada fila DEBERÁ mostrar el nombre, el estado derivado con una etiqueta en español (`planificado`, `en curso` o `atrasado`) y una forma corta del identificador, y marcar con `✓` el último proyecto abierto en la sesión. El estado `active` de la API se muestra como «en curso». Si el catálogo está vacío o la búsqueda no arroja coincidencias, la TUI DEBERÁ informarlo sin cerrarse.
+(Previously: el navegador se abría desde la opción «Proyectos» del menú, servía de selector a las demás secciones y `Esc` volvía a la pantalla previa.)
 
 #### Scenario: Abrir el navegador desde Proyectos
-- **GIVEN** que el menú está activo en la opción «Proyectos»
-- **WHEN** el usuario la confirma
-- **THEN** la TUI emite `GET /projects` y muestra el navegador
+- **GIVEN** que la TUI arranca
+- **WHEN** la API responde `GET /projects`
+- **THEN** la TUI muestra el navegador con el título «Proyectos»
 - **AND** cada fila muestra el nombre, el estado y la forma corta del identificador
 
 #### Scenario: Abrir el selector desde el backlog
-- **GIVEN** que no hay proyecto activo
-- **WHEN** el usuario confirma «Backlog»
-- **THEN** la TUI emite `GET /projects` y muestra el selector
+- **GIVEN** que la pestaña Backlog muestra su lista sin filtro aplicado
+- **WHEN** el usuario presiona `Esc`
+- **THEN** la TUI emite `GET /projects` y muestra el navegador
 - **AND** cada fila muestra el nombre, el estado y la forma corta del identificador
+
+#### Scenario: Volver sin cambiar de proyecto
+- **GIVEN** que el usuario volvió al navegador desde el espacio de trabajo de un proyecto
+- **WHEN** presiona `Esc` sin filtro aplicado
+- **THEN** la TUI permanece en el navegador
+- **AND** ese proyecto sigue marcado con `✓` como el último abierto
 
 #### Scenario: Filtrar el catálogo
 - **GIVEN** que el navegador muestra el catálogo
@@ -274,15 +231,10 @@ La TUI DEBERÁ obtener el catálogo de proyectos con `GET /projects` y presentar
 - **WHEN** el usuario presiona `n`
 - **THEN** la TUI abre el formulario de creación vacío
 
-#### Scenario: Volver sin cambiar de proyecto
-- **GIVEN** que el selector está abierto sobre un proyecto ya activo
-- **WHEN** el usuario presiona `Esc`
-- **THEN** la TUI vuelve a la pantalla previa conservando el proyecto activo
-
 #### Scenario: Catálogo vacío
 - **GIVEN** que la API responde `GET /projects` con una lista vacía
 - **WHEN** la TUI presenta el resultado
-- **THEN** muestra un mensaje que indica que todavía no hay proyectos
+- **THEN** muestra un mensaje que indica que todavía no hay proyectos y que se crea uno con `n`
 - **AND** permanece abierta
 
 #### Scenario: Búsqueda sin coincidencias
@@ -292,7 +244,8 @@ La TUI DEBERÁ obtener el catálogo de proyectos con `GET /projects` y presentar
 - **AND** el usuario puede borrar el filtro
 
 ### Requirement: Precargar la modificación de proyecto y resolver el resultado
-El formulario de modificación DEBERÁ abrirse precargado con el nombre, la fecha de inicio y la fecha fin planificada del proyecto resaltado en el navegador, para no reescribirlos. Tras una creación o modificación exitosa, la TUI DEBERÁ volver al navegador recargando el catálogo. Ante un rechazo de la API, la TUI DEBERÁ volver al formulario conservando los valores escritos y mostrando el motivo informado por la API.
+El formulario de modificación DEBERÁ abrirse precargado con el nombre, la fecha de inicio y la fecha fin planificada del proyecto resaltado en el navegador, para no reescribirlos. Tras una creación o modificación exitosa, la TUI DEBERÁ volver al navegador recargando el catálogo y mostrar un aviso efímero de éxito. Ante un rechazo de la API, la TUI DEBERÁ permanecer en el formulario conservando los valores escritos y mostrando el motivo informado por la API.
+(Previously: el éxito y el rechazo pasaban por una pantalla de resultado que había que cerrar con una tecla.)
 
 #### Scenario: Formulario de modificación precargado
 - **GIVEN** que el navegador muestra un proyecto con nombre y fechas
@@ -301,33 +254,13 @@ El formulario de modificación DEBERÁ abrirse precargado con el nombre, la fech
 
 #### Scenario: Vuelta al navegador tras el éxito
 - **GIVEN** que una creación o modificación responde con éxito
-- **WHEN** el usuario cierra la pantalla de resultado
-- **THEN** la TUI vuelve al navegador y recarga `GET /projects`
+- **WHEN** la TUI procesa la respuesta
+- **THEN** vuelve al navegador, recarga `GET /projects` y muestra un aviso que empieza con `✓`
 
 #### Scenario: Vuelta al formulario tras el rechazo
 - **GIVEN** que la API rechaza los datos con un error
-- **WHEN** el usuario cierra la pantalla de resultado
-- **THEN** la TUI vuelve al formulario con los valores escritos y muestra el motivo informado por la API
-
-### Requirement: Proyecto activo único por sesión
-La TUI DEBERÁ fijar el proyecto elegido en el selector como proyecto activo de la sesión, conservarlo para todas las operaciones del backlog y los sprints, y ofrecer la tecla `c` (desde las listas) y el atajo `p` (global) para reemplazarlo. La TUI NO validará localmente el identificador; la validación queda en la API.
-
-#### Scenario: El proyecto se elige una sola vez
-- **GIVEN** que el usuario ya eligió un proyecto en la sesión
-- **WHEN** vuelve al menú, elige nuevamente «Backlog» y accede a la gestión
-- **THEN** la TUI no vuelve a abrir el selector
-- **AND** consulta el backlog del proyecto conservado
-
-#### Scenario: Cambiar el proyecto activo
-- **GIVEN** que el usuario está en la lista del backlog con un proyecto activo
-- **WHEN** presiona `c` y confirma otro proyecto en el selector
-- **THEN** la TUI reemplaza el proyecto activo por el nuevo
-- **AND** las operaciones siguientes usan el nuevo proyecto
-
-#### Scenario: El proyecto activo se refleja en la navegación
-- **GIVEN** que hay un proyecto activo
-- **WHEN** el usuario navega entre el menú y las pantallas del backlog
-- **THEN** el encabezado de ruta y el menú muestran el nombre del proyecto activo
+- **WHEN** la TUI procesa la respuesta
+- **THEN** permanece en el formulario con los valores escritos y muestra el motivo informado por la API
 
 ### Requirement: Listar el backlog del proyecto
 La TUI DEBERÁ consultar el backlog del proyecto activo y presentar las historias en el mismo orden que informa la API, sin reordenarlas. Cada historia DEBERÁ mostrar al menos su título, prioridad y estado, y `story_points` solo como lectura. Cuando `story_points` sea nulo la TUI DEBERÁ mostrar «—». La lista DEBERÁ ser seleccionable.
@@ -380,13 +313,14 @@ La lista del backlog DEBERÁ ofrecer una búsqueda por título activada con `/` 
 - **THEN** la TUI vuelve a consultar `GET /projects/{pid}/stories`
 
 ### Requirement: Crear historias mediante la TUI
-La TUI DEBERÁ permitir crear una historia con título, descripción, prioridad y criterios de aceptación, y enviarla al endpoint HTTP de creación del proyecto activo. La prioridad se ingresa como texto libre y la TUI NO validará sus valores permitidos. Los criterios de aceptación se ingresan en una sola línea separada por `;`; la TUI DEBERÁ recortar los espacios de cada elemento, descartar los elementos vacíos y enviarlos como lista. El cuerpo enviado DEBERÁ contener solo las claves `title`, `description`, `priority` y `acceptance_criteria`.
+La TUI DEBERÁ permitir crear una historia con título, descripción, prioridad y criterios de aceptación, y enviarla al endpoint HTTP de creación del proyecto del espacio de trabajo. La prioridad se ingresa como texto libre y la TUI NO validará sus valores permitidos. Los criterios de aceptación se ingresan en una sola línea separada por `;`; la TUI DEBERÁ recortar los espacios de cada elemento, descartar los elementos vacíos y enviarlos como lista. El cuerpo enviado DEBERÁ contener solo las claves `title`, `description`, `priority` y `acceptance_criteria`. El éxito y el rechazo se resuelven según Requirement: Avisos efímeros en lugar de pantallas de resultado.
+(Previously: el resultado de la API se presentaba en una pantalla de resultado.)
 
 #### Scenario: Crear una historia
 - **GIVEN** que el usuario completa título, descripción, prioridad y criterios de aceptación
 - **WHEN** confirma la creación
 - **THEN** la TUI envía `POST /projects/{pid}/stories` con `title`, `description`, `priority` y `acceptance_criteria`
-- **AND** presenta el resultado de la API en la pantalla de resultado
+- **AND** ante el éxito vuelve a la lista del backlog recargada con un aviso «✓ Historia creada» seguido del título devuelto por la API
 
 #### Scenario: Criterios de aceptación separados por `;`
 - **GIVEN** que el usuario escribe en la línea de criterios el texto `  Inicia sesión ; Cierra sesión ;; `
@@ -467,12 +401,13 @@ La TUI DEBERÁ interpretar `estimated_hours` como número únicamente para compo
 - **AND** el rechazo, si corresponde, proviene de la API
 
 ### Requirement: Presentar los errores de la API del backlog
-La TUI DEBERÁ presentar el resultado de cada operación del backlog sin cerrarse. Ante HTTP 422 DEBERÁ mostrar el detalle de `fields` como una lista formateada. Ante HTTP 404 DEBERÁ mostrar un mensaje genérico de recurso inexistente más el detalle informado por la API. Las respuestas de error que no sean JSON (por ejemplo, HTTP 404 o 405 del enrutador cuando las rutas de historias no están registradas) DEBERÁN presentarse como error de la API con el código de estado, sin cerrar la TUI. Los errores de transporte DEBERÁN informar el problema de conexión sin cerrar la TUI. Nunca se comunicará éxito ante un error.
+La TUI DEBERÁ presentar el resultado de cada operación del backlog sin cerrarse. Los errores de creación y modificación se muestran en el formulario, que conserva los valores escritos; los errores de la consulta de la lista se muestran en la lista del backlog. Ante HTTP 422 DEBERÁ mostrar el detalle de `fields` como una lista formateada. Ante HTTP 404 DEBERÁ mostrar un mensaje genérico de recurso inexistente más el detalle informado por la API. Las respuestas de error que no sean JSON (por ejemplo, HTTP 404 o 405 del enrutador cuando las rutas de historias no están registradas) DEBERÁN presentarse como error de la API con el código de estado, sin cerrar la TUI. Los errores de transporte DEBERÁN informar el problema de conexión sin cerrar la TUI. Nunca se comunicará éxito ante un error.
+(Previously: los errores y los éxitos se mostraban en una pantalla de resultado desde la que se volvía al formulario, a la lista o al selector de proyectos.)
 
 #### Scenario: HTTP 422 con campos inválidos
 - **GIVEN** que la API responde HTTP 422 con un `fields` que detalla al menos dos campos inválidos
 - **WHEN** la TUI presenta el resultado
-- **THEN** muestra cada campo y su motivo como un elemento de lista formateada
+- **THEN** el formulario muestra cada campo y su motivo como un elemento de lista formateada
 - **AND** no comunica éxito
 
 #### Scenario: HTTP 404 proyecto o historia inexistente
@@ -490,8 +425,8 @@ La TUI DEBERÁ presentar el resultado de cada operación del backlog sin cerrars
 #### Scenario: HTTP 422 al consultar la lista del proyecto activo
 - **GIVEN** que la API rechaza la consulta del backlog con HTTP 422
 - **WHEN** la TUI presenta el resultado de la consulta
-- **THEN** muestra el detalle de `fields` como lista formateada
-- **AND** permite volver al selector para cambiar de proyecto
+- **THEN** la lista del backlog muestra el detalle de `fields` como lista formateada
+- **AND** `Esc` vuelve al navegador de proyectos
 
 #### Scenario: Error de transporte
 - **GIVEN** que no se puede establecer conexión con la API
@@ -500,9 +435,8 @@ La TUI DEBERÁ presentar el resultado de cada operación del backlog sin cerrars
 
 #### Scenario: Resultado exitoso de creación o modificación
 - **GIVEN** que la API responde HTTP 201 (creación) o HTTP 200 (modificación) con la historia
-- **WHEN** la TUI presenta el resultado
-- **THEN** comunica el éxito mostrando la historia informada por la API
-- **AND** permite volver a la lista y al menú
+- **WHEN** la TUI procesa la respuesta
+- **THEN** vuelve a la lista del backlog, la recarga y muestra un aviso que empieza con `✓` y nombra la historia informada por la API
 
 ### Requirement: Los campos de texto aceptan espacios
 Los campos de entrada de texto de todas las pantallas con formulario (proyectos y backlog) DEBERÁN aceptar la barra espaciadora como un carácter de espacio y reflejarlo en el valor del campo.
@@ -544,11 +478,12 @@ Los campos de entrada de texto de todas las pantallas con formulario (proyectos 
 
 ### Requirement: Listas navegables con teclas uniformes
 
-Las pantallas que muestran colecciones (proyectos, historias y Sprints) DEBERÁN comportarse como un navegador con el mismo patrón de interacción: la búsqueda se activa con `/` y cualquier otro carácter la inicia ya escrito; `↑`/`↓` mueven la selección; `Enter` ejecuta la acción primaria de la fila resaltada; `n` inicia la creación; `e` modifica el elemento resaltado en las listas donde editar no es la acción primaria (por ejemplo, Proyectos); `r` refresca el listado; `x` ejecuta una acción destructiva sobre la fila resaltada (pidiendo confirmación); `h` abre una vista relacionada de solo lectura; y `Esc` primero limpia el filtro y luego vuelve a la pantalla anterior. Cada fila DEBERÁ mostrar el contenido y sus etiquetas, con un marcador inicial cuando corresponda (por ejemplo `✓` en el proyecto activo de la sesión) y una forma corta del identificador en las listas que lo necesiten para distinguir elementos (por ejemplo, proyectos y Sprints). Ninguna lista DEBERÁ pedir un identificador escrito a mano. Las pantallas de formulario y de resultado NO adoptan este patrón.
+Las pantallas que muestran colecciones (proyectos, historias y Sprints) DEBERÁN comportarse como un navegador con el mismo patrón de interacción: la búsqueda se activa con `/` y cualquier otro carácter la inicia ya escrito, salvo las teclas reservadas de la pantalla y, en las pantallas raíz del espacio de trabajo, los dígitos `1` a `6`; `↑`/`↓` mueven la selección; `Enter` ejecuta la acción primaria de la fila resaltada; `n` inicia la creación; `e` modifica el elemento resaltado en las listas donde editar no es la acción primaria (por ejemplo, Proyectos); `r` refresca el listado; `x` ejecuta una acción destructiva sobre la fila resaltada (pidiendo confirmación); `h` abre una vista relacionada de solo lectura; y `Esc` primero limpia el filtro y luego vuelve a la pantalla anterior. Cada fila DEBERÁ mostrar el contenido y sus etiquetas, con un marcador inicial cuando corresponda (por ejemplo `✓` en el proyecto abierto) y una forma corta del identificador en las listas que lo necesiten para distinguir elementos (por ejemplo, proyectos y Sprints). Ninguna lista DEBERÁ pedir un identificador escrito a mano. Las pantallas de formulario NO adoptan este patrón.
+(Previously: cualquier carácter no reservado iniciaba la búsqueda, incluidos los dígitos.)
 
 #### Scenario: Buscar en cualquier colección
 - **GIVEN** que una colección está visible (proyectos, backlog, Sprints abiertos, historias de un Sprint o Sprints cerrados)
-- **WHEN** el usuario presiona `/` o empieza a escribir
+- **WHEN** el usuario presiona `/` o empieza a escribir una letra
 - **THEN** la lista se reduce a las coincidencias sin emitir requests
 
 #### Scenario: Acción primaria con Enter
@@ -595,38 +530,45 @@ Luego de revisar la ronda, el facilitador DEBERÁ elegir explícitamente un Stor
 - **THEN** muestra el motivo informado por la API sin comunicar éxito ni alterar el Story Points local
 
 ### Requirement: Operar los Sprints mediante la TUI
-
-La TUI DEBERÁ permitir operar los Sprints del proyecto activo desde la opción «Sprints», que abre directamente el navegador de Sprints abiertos en lugar de un menú de operaciones. Desde el navegador el usuario abre las historias de un Sprint (`Enter`), asigna historias del backlog al Sprint resaltado (`a`), cierra el Sprint resaltado (`x`, con confirmación), crea un Sprint (`n`) y consulta los Sprints cerrados con `h`. Las pantallas de asignación (multiselección con `Space`), de historias del Sprint, de creación de tareas y de resultado reutilizan el patrón navegable (Requirement: Listas navegables con teclas uniformes) y consumen la API existente sin incorporar reglas de negocio.
+La TUI DEBERÁ permitir operar los Sprints del proyecto del espacio de trabajo desde la pestaña Sprints, que muestra el navegador de Sprints abiertos. Desde el navegador el usuario abre las historias de un Sprint (`Enter`), asigna historias del backlog al Sprint resaltado (`a`), cierra el Sprint resaltado (`x`, con confirmación), crea un Sprint (`n`) y consulta los Sprints cerrados con `h`. Las pantallas de asignación (multiselección con `Space`) y de historias del Sprint reutilizan el patrón navegable (Requirement: Listas navegables con teclas uniformes) y consumen la API existente sin incorporar reglas de negocio. El éxito y el rechazo de cada escritura se resuelven según Requirement: Avisos efímeros en lugar de pantallas de resultado; los errores de las consultas se muestran en la pantalla que las pidió.
+(Previously: los Sprints se abrían desde la opción «Sprints» del menú, pedían un proyecto si no había uno activo y cada operación terminaba en una pantalla de resultado.)
 
 #### Scenario: La opción Sprints abre el navegador
-- **GIVEN** que hay un proyecto activo
-- **WHEN** el usuario confirma la opción «Sprints»
+- **GIVEN** que el espacio de trabajo de un proyecto está abierto
+- **WHEN** el usuario abre la pestaña Sprints
 - **THEN** la TUI emite `GET /projects/{pid}/sprints/open` y presenta el navegador de Sprints abiertos
 - **AND** no pide ningún identificador a mano
 
 #### Scenario: Sin proyecto activo abre el selector
-- **GIVEN** que en la sesión aún no se eligió ningún proyecto
-- **WHEN** el usuario confirma la opción «Sprints»
-- **THEN** la TUI presenta el selector de proyectos con el catálogo de la API
-- **AND** no consulta los Sprints hasta que el usuario confirme un proyecto
+- **GIVEN** que en la sesión aún no se abrió ningún proyecto y la API devuelve varios
+- **WHEN** la TUI arranca
+- **THEN** presenta el navegador de proyectos con el catálogo de la API
+- **AND** no consulta los Sprints hasta que el usuario abra un proyecto y su pestaña Sprints
+
+#### Scenario: Crear un Sprint vuelve a la lista con un aviso
+- **GIVEN** que el usuario escribió el objetivo «Meta» en el formulario de un Sprint nuevo
+- **WHEN** confirma y la API responde con éxito
+- **THEN** la TUI vuelve a la lista de Sprints abiertos, la recarga y muestra «✓ Sprint creado: Meta»
 
 #### Scenario: Asignar historias al Sprint resaltado
 - **GIVEN** que el navegador de Sprints muestra un Sprint abierto resaltado
 - **WHEN** el usuario presiona `a`, marca historias con `Space` y confirma con `Enter`
 - **THEN** la TUI envía `POST /projects/{pid}/sprints/{sid}/stories` con los identificadores marcados
-- **AND** presenta el resultado de la API sin cerrarse
+- **AND** ante el éxito vuelve a la lista de Sprints recargada con un aviso que empieza con `✓`
 
 #### Scenario: Cerrar un Sprint pide confirmación
 - **GIVEN** que el navegador de Sprints muestra un Sprint abierto resaltado
 - **WHEN** el usuario presiona `x`
 - **THEN** la TUI pide confirmación antes de emitir `POST /projects/{pid}/sprints/{sid}/closure`
 - **AND** si el usuario cancela no se emite ningún request
+- **AND** si la API rechaza el cierre la confirmación permanece con el motivo informado
 
 #### Scenario: Crear tareas y completar historias desde el Sprint
 - **GIVEN** que el usuario abrió las historias de un Sprint abierto
 - **WHEN** resalta una historia y presiona `Enter` o `c`
 - **THEN** `Enter` abre el formulario de tareas de esa historia
 - **AND** `c` envía `POST /projects/{pid}/sprints/{sid}/stories/{story_id}/completion`
+- **AND** ante el éxito de cualquiera de las dos la TUI vuelve a las historias del Sprint recargadas con un aviso que empieza con `✓`
 
 #### Scenario: Consultar los Sprints cerrados
 - **GIVEN** que el navegador de Sprints está activo
@@ -635,31 +577,9 @@ La TUI DEBERÁ permitir operar los Sprints del proyecto activo desde la opción 
 - **AND** `Enter` despliega las historias del Sprint resaltado sin emitir requests
 
 #### Scenario: Backlog vacío en la asignación
-- **GIVEN** que el proyecto activo no tiene historias en el backlog
+- **GIVEN** que el proyecto no tiene historias en el backlog
 - **WHEN** el usuario intenta asignar historias a un Sprint
 - **THEN** la TUI lo informa y no emite ningún request de asignación
-
-### Requirement: Abrir las secciones del Sprint 3 desde el menú
-La TUI DEBERÁ exponer las secciones Planning Poker, Esfuerzo, Defectos, Métricas y Dashboard como destinos directos del menú. Cada sección DEBERÁ abrir su pantalla principal en el primer nivel, sin un submenú de operaciones, y DEBERÁ reutilizar el panel, la barra superior, la miga de pan y el pie con wrapping del rediseño de #98. Si no hay proyecto activo, la sección DEBERÁ abrir primero el navegador de proyectos y, al confirmarlo, continuar en la sección elegida.
-
-#### Scenario: Sección sin proyecto activo
-- **GIVEN** que no hay proyecto activo en la sesión
-- **WHEN** el usuario confirma una sección nueva del menú
-- **THEN** la TUI abre el navegador de proyectos
-- **AND** al confirmar un proyecto abre la pantalla principal de esa sección
-- **AND** no pide ningún identificador a mano
-
-#### Scenario: Sección con proyecto activo
-- **GIVEN** que hay un proyecto activo en la sesión
-- **WHEN** el usuario confirma una sección nueva del menú
-- **THEN** la TUI abre directamente su pantalla principal y consulta la colección correspondiente
-- **AND** el encabezado, la miga y el pie reflejan la sección activa
-
-#### Scenario: API no disponible en una sección
-- **GIVEN** que la API no responde al cargar una sección
-- **WHEN** la TUI presenta el resultado
-- **THEN** muestra el motivo del fallo dentro de la pantalla
-- **AND** permanece abierta y permite reintentar con `r` o volver con `Esc`
 
 ### Requirement: Elegir integrantes, historias, tareas y Sprints con selectores navegables
 La TUI DEBERÁ ofrecer selectores de integrante, historia, tarea y Sprint como listas navegables con el mismo patrón de las colecciones existentes: la búsqueda se activa con `/` o al empezar a escribir, `↑`/`↓` mueven la selección, `Enter` ejecuta la acción primaria, `Esc` limpia el filtro y luego vuelve, `r` refresca y `?` abre la ayuda. Ningún selector DEBERÁ pedir un identificador escrito a mano. Los selectores DEBERÁN mostrar un estado de carga, un estado vacío y el error de la API sin cerrar la TUI. El selector de tareas de Esfuerzo es la excepción del estado vacío: antepone la fila «Toda la historia (sin tarea)» (Requirement: Elegir historia, tarea e integrante para registrar esfuerzo), por lo que ante una historia sin tareas muestra esa fila e indica que la historia no tiene tareas, en lugar de un estado vacío bloqueante.
@@ -701,30 +621,9 @@ La TUI DEBERÁ ofrecer selectores de integrante, historia, tarea y Sprint como l
 - **THEN** cada colección se presenta como una lista navegable con las teclas comunes
 - **AND** la selección de una fila no emite requests que modifiquen datos
 
-### Requirement: Avisar el límite de las pantallas de navegación
-Las pantallas de navegación de TUI-06 NO implementan los flujos de negocio de las secciones que todavía no tienen su historia de TUI integrada. Desde este cambio, Dashboard (TUI-11) tiene su propio flujo y la TUI MUST NOT mostrar el aviso de TUI-11. La consolidación de Defectos (TUI-09) sigue pendiente de su propio cambio; hasta entonces, el aviso de esa sección se conserva tal como estaba especificado. Planning Poker (TUI-07), Esfuerzo (TUI-08) y Métricas tienen su propio flujo y NO DEBERÁN mostrar este aviso. Cuando el usuario completa la selección de navegación de una sección que todavía lo requiera, la TUI DEBERÁ mostrar un aviso que indique en qué historia estará disponible el flujo, sin comunicar que la operación se guardó.
-(Previously: el aviso cubría Defectos (TUI-09) y Dashboard (TUI-11); Dashboard deja de mostrarlo con TUI-11 y la mención de Defectos queda pendiente de la consolidación de TUI-09.)
-
-#### Scenario: Aviso al completar una selección
-- **GIVEN** que el usuario eligió los elementos de navegación de una sección que todavía usa el aviso de TUI-06
-- **WHEN** la TUI alcanza el final del flujo disponible
-- **THEN** muestra un aviso con la historia que implementará el flujo
-- **AND** no comunica éxito de una operación de negocio
-- **AND** permite volver con `Enter` o `Esc`
-
-#### Scenario: Esfuerzo ya no muestra el aviso
-- **GIVEN** que el usuario eligió una historia, una tarea (o «Toda la historia») y un integrante en Esfuerzo
-- **WHEN** la TUI alcanza el final del flujo de selección
-- **THEN** abre el formulario de esfuerzo
-- **AND** no muestra ningún aviso que mencione TUI-08 ni «No se guardó ningún dato»
-
-#### Scenario: Dashboard ya no muestra el aviso
-- **GIVEN** que el usuario confirma Dashboard en el menú
-- **WHEN** la TUI abre la pantalla del proyecto activo
-- **THEN** no muestra ningún aviso que mencione TUI-11 ni «No se guardó ningún dato»
-- **AND** presenta el estado y las métricas del proyecto
 ### Requirement: Elegir historia, tarea e integrante para registrar esfuerzo
-La sección Esfuerzo DEBERÁ guiar el registro con los selectores navegables existentes, en este orden: historia del backlog del proyecto activo, tarea de esa historia (o la historia completa) e integrante del proyecto activo. Una vez cargadas las tareas de la historia elegida, el selector de tareas DEBERÁ anteponer, como primera fila, la fila sintética «Toda la historia (sin tarea)», seguida de las tareas en el orden informado por la API; la fila sintética DEBERÁ estar presente también cuando la historia no tiene tareas. Elegir una tarea registra el esfuerzo sobre esa tarea; elegir la fila sintética lo registra sobre la historia completa. Elegir cualquiera de las dos filas DEBERÁ abrir el selector de integrantes del proyecto activo, que en Esfuerzo es de selección simple: `Enter` elige el integrante resaltado y abre el formulario de esfuerzo (Requirement: Completar el formulario de esfuerzo), y `Space` no marca integrantes. Ningún paso DEBERÁ pedir un identificador escrito a mano. El avance entre selectores y la apertura del formulario NO DEBERÁN emitir requests que modifiquen datos. Si el proyecto no tiene integrantes, el selector de integrantes DEBERÁ mostrar un estado vacío propio que informe que el proyecto no tiene integrantes registrados, que NO remita a ninguna opción del menú principal y que permita volver con `Esc` y refrescar con `r`.
+La sección Esfuerzo DEBERÁ guiar el registro con los selectores navegables existentes, en este orden: historia del backlog del proyecto activo, tarea de esa historia (o la historia completa) e integrante del proyecto activo. Una vez cargadas las tareas de la historia elegida, el selector de tareas DEBERÁ anteponer, como primera fila, la fila sintética «Toda la historia (sin tarea)», seguida de las tareas en el orden informado por la API; la fila sintética DEBERÁ estar presente también cuando la historia no tiene tareas. Elegir una tarea registra el esfuerzo sobre esa tarea; elegir la fila sintética lo registra sobre la historia completa. Elegir cualquiera de las dos filas DEBERÁ abrir el selector de integrantes del proyecto activo, que en Esfuerzo es de selección simple: `Enter` elige el integrante resaltado y abre el formulario de esfuerzo (Requirement: Completar el formulario de esfuerzo), y `Space` no marca integrantes. Ningún paso DEBERÁ pedir un identificador escrito a mano. El avance entre selectores y la apertura del formulario NO DEBERÁN emitir requests que modifiquen datos. Si el proyecto no tiene integrantes, el selector de integrantes DEBERÁ mostrar un estado vacío propio que informe que el proyecto no tiene integrantes registrados, que indique que los integrantes se dan de alta mediante la API y que permita volver con `Esc` y refrescar con `r`.
+(Previously: el estado vacío de integrantes se definía como un mensaje que NO remitía a ninguna opción del menú principal.)
 
 #### Scenario: Flujo completo hasta el formulario
 - **GIVEN** un proyecto activo con la historia «Login», que tiene la tarea «Diseñar», y el integrante «Ana Pérez»
@@ -768,7 +667,7 @@ La sección Esfuerzo DEBERÁ guiar el registro con los selectores navegables exi
 - **GIVEN** que la API responde HTTP 200 con una lista de integrantes vacía
 - **WHEN** la TUI presenta el selector de integrantes de Esfuerzo
 - **THEN** muestra un mensaje que indica que el proyecto no tiene integrantes registrados
-- **AND** el mensaje no remite a ninguna opción del menú principal
+- **AND** el mensaje indica que los integrantes se dan de alta mediante la API y no remite a otra pantalla
 - **AND** `Esc` vuelve al selector de tareas y `r` vuelve a consultar los integrantes
 
 #### Scenario: Falla la consulta de integrantes
@@ -899,7 +798,8 @@ Antes de emitir cualquier request, la TUI DEBERÁ validar únicamente que (a) la
 - **THEN** la TUI emite la request con `description` vacía y esa fecha, sin rechazarla localmente
 
 ### Requirement: Enviar el registro de esfuerzo y presentar los errores de la API
-Al confirmar con datos válidos, la TUI DEBERÁ emitir exactamente una request `POST /projects/{pid}/stories/{sid}/effort-records`, con el proyecto activo y la historia elegida, y un cuerpo JSON cuyas claves son `member_id`, `work_date` (normalizada como `YYYY-MM-DD`), `description` (tal como fue escrita, sin recortar ni validar), `hours` (número JSON) y `task_id` únicamente cuando se eligió una tarea; al elegir «Toda la historia (sin tarea)» la clave `task_id` DEBERÁ omitirse por completo, no enviarse como `null`. Mientras el `POST` está en curso la TUI DEBERÁ indicar que está guardando e ignorar `Enter` y `Esc`, de modo que no se emita una segunda request ni se abandone el formulario antes de conocer el resultado. Solo la respuesta HTTP 201 comunica éxito (Requirement: Mostrar el esfuerzo registrado y las métricas del proyecto). Ante cualquier otra respuesta de error o ante un error de transporte, la TUI DEBERÁ permanecer en el formulario con todos los valores escritos, dejar de indicar el guardado, mostrar el motivo y NO comunicar éxito. Los errores de la API (HTTP 400, 404, 422 con `fields`, 500 y cualquier otro código no exitoso, incluido 409 si alguna vez se devolviera) DEBERÁN presentarse con las reglas del Requirement: Presentar los errores de la API del backlog. Un error de transporte DEBERÁ informar el problema de conexión y que no se pudo confirmar el registro, y aconsejar verificar antes de reintentar, porque la API no es idempotente. Tras un error el usuario puede corregir y confirmar de nuevo, lo que emite una nueva request.
+Al confirmar con datos válidos, la TUI DEBERÁ emitir exactamente una request `POST /projects/{pid}/stories/{sid}/effort-records`, con el proyecto del espacio de trabajo y la historia elegida, y un cuerpo JSON cuyas claves son `member_id`, `work_date` (normalizada como `YYYY-MM-DD`), `description` (tal como fue escrita, sin recortar ni validar), `hours` (número JSON) y `task_id` únicamente cuando se eligió una tarea; al elegir «Toda la historia (sin tarea)» la clave `task_id` DEBERÁ omitirse por completo, no enviarse como `null`. Mientras el `POST` está en curso la TUI DEBERÁ indicar que está guardando e ignorar `Enter` y `Esc`, de modo que no se emita una segunda request ni se abandone el formulario antes de conocer el resultado. Solo la respuesta HTTP 201 comunica éxito: la TUI vuelve al selector de historias de la pestaña Esfuerzo, lo recarga y muestra un aviso con las horas y la fecha devueltas por la API (o las enviadas si el cuerpo no se puede interpretar), la historia, la tarea («toda la historia» si no se eligió una) y el integrante (Requirement: Avisos efímeros en lugar de pantallas de resultado). Ante cualquier otra respuesta de error o ante un error de transporte, la TUI DEBERÁ permanecer en el formulario con todos los valores escritos, dejar de indicar el guardado, mostrar el motivo y NO comunicar éxito. Los errores de la API (HTTP 400, 404, 422 con `fields`, 500 y cualquier otro código no exitoso, incluido 409 si alguna vez se devolviera) DEBERÁN presentarse con las reglas del Requirement: Presentar los errores de la API del backlog. Un error de transporte DEBERÁ informar el problema de conexión y que no se pudo confirmar el registro, y aconsejar verificar antes de reintentar, porque la API no es idempotente. Tras un error el usuario puede corregir y confirmar de nuevo, lo que emite una nueva request.
+(Previously: el HTTP 201 abría una pantalla de resultado con el registro y las métricas del proyecto.)
 
 #### Scenario: Registrar esfuerzo sobre una tarea
 - **GIVEN** el formulario del integrante «Ana Pérez» (`member_id` `m-1`) para la tarea `t-1` de la historia `s-1` del proyecto `p-1`, con fecha 2026-10-05, «Actividad» «Implementar login» y «Horas» `3.5`
@@ -928,7 +828,7 @@ Al confirmar con datos válidos, la TUI DEBERÁ emitir exactamente una request `
 - **GIVEN** un `POST` de esfuerzo en curso
 - **WHEN** el usuario presiona `Esc`
 - **THEN** la TUI permanece en el formulario con el indicador de guardado
-- **AND** al llegar la respuesta se presenta su resultado
+- **AND** al llegar la respuesta se aplica su resultado
 
 #### Scenario: HTTP 422 con campos inválidos
 - **GIVEN** que la API responde HTTP 422 con `fields` que detalla `hours` y `description`
@@ -971,162 +871,7 @@ Al confirmar con datos válidos, la TUI DEBERÁ emitir exactamente una request `
 - **GIVEN** el formulario mostrando el error de un HTTP 422 con los valores conservados
 - **WHEN** el usuario corrige «Horas» y confirma de nuevo
 - **THEN** la TUI emite una nueva request de registro con los valores corregidos
-- **AND** si la API responde HTTP 201 se presenta la pantalla de resultado
-
-### Requirement: Mostrar el esfuerzo registrado y las métricas del proyecto
-Ante HTTP 201 la TUI DEBERÁ pasar a una pantalla de resultado propia que comunique que el esfuerzo quedó registrado y muestre el registro devuelto por la API (fecha de trabajo, horas y actividad tal como los devolvió la API) junto con la historia, la tarea (o «Toda la historia») y el integrante elegidos. De inmediato DEBERÁ consultar `GET /projects/{pid}/metrics` del proyecto activo y mostrar «Horas reales» (`actual_hours`) y «Desviación» (`deviation`) tal como los devuelve la API, con «sin datos» cuando el valor es nulo y con el mismo formato de la vista de métricas de la sección. La TUI NO DEBERÁ sumar, calcular ni derivar horas ni desvíos. Mientras la consulta está en curso la pantalla DEBERÁ mostrar un estado de carga de las métricas. La tecla `r` DEBERÁ volver a consultar las métricas y DEBERÁ ignorarse mientras una consulta está en curso. Si la consulta de métricas falla (HTTP no exitoso, incluido 404 cuando el esquema de la base no habilita la ruta, error de transporte o cuerpo no interpretable), la pantalla DEBERÁ indicar que el esfuerzo quedó registrado y que las métricas no están disponibles, con el motivo, y NO DEBERÁ mostrar un error de registro; `r` reintenta. La pantalla de resultado DEBERÁ tratar `q` como salida, `?` como ayuda, `p` como cambio de proyecto activo y `Esc` como vuelta (Requirement: Recorrer hacia atrás el flujo de esfuerzo y descartar respuestas tardías), y su pie y ayuda DEBERÁN mostrar solo esas teclas más `r`.
-
-#### Scenario: Registro exitoso con métricas
-- **GIVEN** que la API responde HTTP 201 con un registro de fecha `2026-10-05`, horas `3.5` y actividad `Implementar login`
-- **AND** que `GET /projects/p-1/metrics` responde HTTP 200 con `actual_hours` 7.5 y `deviation` -2.5
-- **WHEN** la TUI presenta el resultado
-- **THEN** la pantalla comunica que el esfuerzo quedó registrado y muestra fecha `2026-10-05`, horas 3.5 y actividad `Implementar login`
-- **AND** muestra la historia, la tarea o «Toda la historia» y el integrante elegidos
-- **AND** muestra «Horas reales» 7.5 h y «Desviación» -2.5
-- **AND** no muestra ningún error
-
-#### Scenario: Estado de carga de las métricas
-- **GIVEN** que la API respondió HTTP 201 y la consulta de métricas aún no respondió
-- **WHEN** la TUI presenta el resultado
-- **THEN** la pantalla muestra el registro y un estado de carga de las métricas
-
-#### Scenario: Los valores del registro son los de la API
-- **GIVEN** un formulario enviado con «Actividad» `  Implementar login  ` y que la API responde HTTP 201 con `description` `Implementar login`
-- **WHEN** la TUI presenta el resultado
-- **THEN** la actividad mostrada es `Implementar login`
-
-#### Scenario: La TUI no calcula horas ni desvíos
-- **GIVEN** que se registraron 3.5 horas y que la API de métricas responde `actual_hours` 10 y `deviation` 4
-- **WHEN** la TUI presenta el resultado
-- **THEN** muestra «Horas reales» 10 h y «Desviación» 4 exactamente como los devolvió la API
-- **AND** no muestra ninguna suma ni diferencia calculada por la TUI
-
-#### Scenario: Métricas nulas
-- **GIVEN** que la API de métricas responde HTTP 200 con `actual_hours` y `deviation` nulos
-- **WHEN** la TUI presenta el resultado
-- **THEN** «Horas reales» y «Desviación» muestran «sin datos»
-
-#### Scenario: Refrescar las métricas con `r`
-- **GIVEN** la pantalla de resultado con `actual_hours` 7.5 mostrado y la consulta terminada
-- **WHEN** el usuario presiona `r` y la API de métricas responde ahora `actual_hours` 9
-- **THEN** la TUI emite otra `GET /projects/p-1/metrics`
-- **AND** la pantalla muestra «Horas reales» 9 h
-- **AND** no se emite ningún `POST`
-
-#### Scenario: `r` se ignora mientras hay una consulta en curso
-- **GIVEN** la pantalla de resultado con la consulta de métricas en curso
-- **WHEN** el usuario presiona `r`
-- **THEN** la TUI no emite otra consulta de métricas
-
-#### Scenario: Las métricas fallan con HTTP 404 tras un registro exitoso
-- **GIVEN** que `POST .../effort-records` respondió HTTP 201 y `GET /projects/p-1/metrics` responde HTTP 404
-- **WHEN** la TUI presenta el resultado
-- **THEN** la pantalla indica que el esfuerzo quedó registrado y que las métricas no están disponibles, con el motivo de la API
-- **AND** no muestra un error de registro ni sugiere volver a registrar
-- **AND** `r` permite reintentar la consulta
-
-#### Scenario: Las métricas fallan por error de conexión o HTTP 500
-- **GIVEN** que el registro respondió HTTP 201 y la consulta de métricas falla por error de conexión (o responde HTTP 500)
-- **WHEN** la TUI presenta el resultado
-- **THEN** indica que el esfuerzo quedó registrado y que las métricas no están disponibles
-- **AND** no muestra un error de registro
-
-#### Scenario: Reintentar las métricas con éxito
-- **GIVEN** la pantalla de resultado indicando métricas no disponibles
-- **WHEN** el usuario presiona `r` y la API de métricas responde HTTP 200
-- **THEN** la pantalla muestra «Horas reales» y «Desviación» y deja de indicar que no están disponibles
-
-#### Scenario: Respuesta 201 con cuerpo no interpretable
-- **GIVEN** que la API responde HTTP 201 con un cuerpo que no es un registro de esfuerzo interpretable
-- **WHEN** la TUI presenta el resultado
-- **THEN** la pantalla comunica que el esfuerzo quedó registrado y muestra el cuerpo recibido tal cual
-- **AND** no muestra un error de registro y consulta las métricas
-
-#### Scenario: Teclas de la pantalla de resultado
-- **GIVEN** la pantalla de resultado de esfuerzo
-- **WHEN** el usuario presiona `q`
-- **THEN** la TUI se cierra con código 0
-- **AND** el pie y la ayuda muestran `r`, `Esc`, `p`, `?` y `q`, y no muestran teclas de edición del formulario
-
-### Requirement: Recorrer hacia atrás el flujo de esfuerzo y descartar respuestas tardías
-`Esc` DEBERÁ retroceder un nivel por vez en el flujo de Esfuerzo: del formulario al selector de integrantes, del selector de integrantes al de tareas, del selector de tareas al de historias y del selector de historias al menú. Cada retroceso DEBERÁ restaurar el selector anterior tal como estaba al elegir su fila (filas, cursor y filtro), sin emitir requests; en un selector con filtro aplicado, el primer `Esc` limpia el filtro y el siguiente retrocede. Desde la pantalla de resultado, `Esc` DEBERÁ volver al selector de tareas de la misma historia, restaurado del mismo modo, para registrar otro esfuerzo. Salir del formulario con `Esc` descarta lo escrito. Cambiar el proyecto activo desde un selector o desde la pantalla de resultado DEBERÁ descartar el estado del flujo (historia, tarea, integrante, formulario, registro y métricas) y reabrir Esfuerzo en el selector de historias del nuevo proyecto. La TUI DEBERÁ descartar sin efecto toda respuesta que ya no corresponda a la pantalla, el paso o la consulta activos: una respuesta de tareas o de integrantes tras haber retrocedido, un resultado de guardado sin un guardado en curso y una respuesta de métricas que no sea la de la consulta más reciente de la pantalla de resultado activa.
-
-#### Scenario: `Esc` recorre formulario, integrantes, tareas e historias
-- **GIVEN** el formulario de esfuerzo abierto desde los selectores de historia, tarea e integrante
-- **WHEN** el usuario presiona `Esc` tres veces
-- **THEN** la TUI pasa sucesivamente al selector de integrantes, al selector de tareas y al selector de historias
-- **AND** no emite ninguna request en esos retrocesos
-- **AND** un cuarto `Esc` vuelve al menú
-
-#### Scenario: El filtro del selector de tareas se conserva
-- **GIVEN** que el usuario filtró las tareas con `dis` y eligió «Diseñar»
-- **WHEN** retrocede desde el formulario al selector de integrantes y de allí al selector de tareas
-- **THEN** el selector de tareas muestra el filtro `dis` y el cursor sobre «Diseñar», sin consultar de nuevo
-- **AND** el siguiente `Esc` limpia el filtro y recién el que sigue vuelve al selector de historias
-
-#### Scenario: Tras el éxito, `Esc` vuelve a las tareas de la misma historia
-- **GIVEN** la pantalla de resultado de un esfuerzo registrado sobre la historia «Login»
-- **WHEN** el usuario presiona `Esc`
-- **THEN** la TUI muestra el selector de tareas de «Login» con la fila «Toda la historia (sin tarea)» y sus tareas
-- **AND** no emite ninguna request
-- **AND** otro `Esc` lleva al selector de historias
-
-#### Scenario: Un segundo registro empieza con el formulario inicial
-- **GIVEN** que el usuario volvió al selector de tareas tras un registro exitoso
-- **WHEN** elige otra fila y un integrante
-- **THEN** el formulario se abre con la fecha de hoy y «Actividad» y «Horas» vacías
-
-#### Scenario: Respuesta tardía de integrantes tras retroceder
-- **GIVEN** que el usuario eligió una tarea y la consulta de integrantes sigue en curso
-- **WHEN** presiona `Esc` y después llega la respuesta de integrantes
-- **THEN** la TUI sigue mostrando el selector de tareas sin cambios
-- **AND** la respuesta se descarta
-
-#### Scenario: Respuesta tardía de tareas tras retroceder
-- **GIVEN** que el usuario eligió una historia y la consulta de tareas sigue en curso
-- **WHEN** presiona `Esc` y después llega la respuesta de tareas
-- **THEN** la TUI sigue mostrando el selector de historias sin cambios
-- **AND** la respuesta se descarta
-
-#### Scenario: Respuesta de métricas tardía tras salir del resultado
-- **GIVEN** la pantalla de resultado con la consulta de métricas en curso
-- **WHEN** el usuario presiona `Esc` y después llega la respuesta de métricas
-- **THEN** la TUI sigue mostrando el selector de tareas sin cambios
-- **AND** la respuesta se descarta
-
-#### Scenario: Respuesta de métricas de un registro anterior
-- **GIVEN** que el usuario registró un esfuerzo, volvió con `Esc` antes de que respondieran las métricas y registró un segundo esfuerzo cuya consulta de métricas está en curso
-- **WHEN** llega la respuesta de la primera consulta con `actual_hours` 3 y después la de la segunda con `actual_hours` 8
-- **THEN** la pantalla de resultado nunca muestra «Horas reales» 3 h
-- **AND** termina mostrando «Horas reales» 8 h
-
-#### Scenario: Resultado de guardado sin guardado en curso
-- **GIVEN** que no hay un `POST` de esfuerzo en curso
-- **WHEN** llega un resultado de guardado
-- **THEN** la TUI lo descarta sin cambiar de pantalla ni de contenido
-
-#### Scenario: Cambiar el proyecto descarta el flujo
-- **GIVEN** la pantalla de resultado de un esfuerzo registrado en el proyecto `p-1`
-- **WHEN** el usuario presiona `p` y confirma el proyecto `p-2`
-- **THEN** la TUI abre Esfuerzo en el selector de historias de `p-2`
-- **AND** la pantalla no conserva el registro, las métricas ni las selecciones de `p-1`
-
-### Requirement: Abrir el Dashboard desde el menú
-La TUI MUST ofrecer una pantalla Dashboard que se abra directamente desde el menú para el proyecto activo, sin pedir identificadores ni obligar a elegir un Sprint. Si no hay proyecto activo, DEBERÁ abrir primero el navegador de proyectos y, al confirmarlo, continuar en Dashboard. La pantalla DEBERÁ consultar el estado del proyecto mediante `GET /projects/{project_id}` y mostrar el nombre del proyecto y su estado derivado con una etiqueta textual.
-
-#### Scenario: Abrir Dashboard con proyecto activo
-- **GIVEN** que hay un proyecto activo con estado `active`
-- **WHEN** el usuario confirma Dashboard en el menú
-- **THEN** la TUI abre la pantalla Dashboard y consulta `GET /projects/{project_id}`
-- **AND** muestra el nombre del proyecto y el estado «en curso»
-- **AND** no muestra el aviso de TUI-11 ni pide un identificador escrito a mano
-
-#### Scenario: Abrir Dashboard sin proyecto activo
-- **GIVEN** que no hay proyecto activo en la sesión
-- **WHEN** el usuario confirma Dashboard en el menú
-- **THEN** la TUI abre el navegador de proyectos
-- **AND** al confirmar un proyecto abre Dashboard y carga su estado y sus métricas
-- **AND** no pide ningún identificador escrito a mano
+- **AND** si la API responde HTTP 201 vuelve al selector de historias de Esfuerzo con el aviso de éxito
 
 ### Requirement: Presentar los valores de las métricas sin recalcularlos
 El Dashboard MUST consultar `GET /projects/{project_id}/metrics` con el sobre de US-19 y mostrar los valores exactos devueltos por la API, sin recalcular el porcentaje de historias, la velocidad ni la desviación. Una métrica ausente (`null`) DEBERÁ mostrarse como «sin datos», nunca como cero; un cero devuelto por la API se conserva como cero.
@@ -1192,3 +937,252 @@ El Dashboard MUST ser de solo lectura: todas sus consultas DEBERÁN ser `GET` y 
 - **THEN** todas las requests son `GET`
 - **AND** no se crea, modifica ni elimina ningún dato
 
+### Requirement: Iniciar en el navegador de proyectos
+La TUI MUST arrancar en el navegador de proyectos y emitir `GET /projects` al iniciar, sin una pantalla intermedia. Si la primera carga devuelve exactamente un proyecto, la TUI DEBERÁ abrir directamente el espacio de trabajo de ese proyecto en la pestaña Dashboard. Con cero o más de un proyecto, la TUI DEBERÁ quedarse en el navegador. La apertura automática ocurre solo en la primera carga de la sesión.
+(Previously: el requisito decía «sin un menú intermedio»; solo cambia la redacción.)
+
+#### Scenario: Arranque con varios proyectos
+- **GIVEN** que la API devuelve dos o más proyectos
+- **WHEN** la TUI arranca
+- **THEN** muestra el navegador de proyectos con el título «Proyectos»
+- **AND** no muestra una lista de secciones previa a los proyectos
+
+#### Scenario: Arranque con un único proyecto
+- **GIVEN** que la API devuelve exactamente un proyecto
+- **WHEN** la TUI termina la primera carga
+- **THEN** abre el espacio de trabajo de ese proyecto en la pestaña Dashboard
+
+#### Scenario: Volver al navegador no reabre el proyecto único
+- **GIVEN** que la TUI abrió automáticamente el único proyecto
+- **WHEN** el usuario vuelve al navegador con `Esc` y la lista se recarga
+- **THEN** la TUI permanece en el navegador
+
+### Requirement: Espacio de trabajo del proyecto con pestañas
+Elegir un proyecto en el navegador con `Enter` DEBERÁ fijarlo como proyecto de la sesión y abrir su espacio de trabajo. El espacio de trabajo DEBERÁ mostrar, debajo de la barra superior, una línea con el nombre y el estado del proyecto y una barra de pestañas con, en este orden: Dashboard, Backlog, Sprints, Estimación, Esfuerzo y Defectos, resaltando la pestaña activa. La pestaña Estimación es el flujo de Planning Poker. En la pantalla raíz de una pestaña, y sin un filtro en edición, `Tab` y `Shift+Tab` DEBERÁN pasar a la pestaña siguiente y anterior (en forma circular), y las teclas `1` a `6` DEBERÁN abrir la pestaña de esa posición. `Esc` en la pantalla raíz de una pestaña, sin filtro aplicado, DEBERÁ volver al navegador de proyectos. Todas las pestañas DEBERÁN operar sobre el proyecto del espacio de trabajo sin volver a pedirlo. La miga de pan DEBERÁ empezar con «Proyectos», seguir con el nombre del proyecto y la pestaña activa, y terminar en el paso actual del flujo.
+
+#### Scenario: Elegir un proyecto abre el Dashboard
+- **GIVEN** que el navegador muestra varios proyectos
+- **WHEN** el usuario resalta uno y presiona `Enter`
+- **THEN** la TUI abre el espacio de trabajo de ese proyecto en la pestaña Dashboard
+- **AND** la barra de pestañas muestra Dashboard, Backlog, Sprints, Estimación, Esfuerzo y Defectos
+
+#### Scenario: Cambiar de pestaña con Tab y con números
+- **GIVEN** que la pestaña Dashboard está activa
+- **WHEN** el usuario presiona `Tab`
+- **THEN** se abre la pestaña Backlog y se carga su lista
+- **AND** al presionar `6` se abre la pestaña Defectos
+- **AND** al presionar `Shift+Tab` se abre la pestaña Esfuerzo
+
+#### Scenario: Shift+Tab desde la primera pestaña
+- **GIVEN** que la pestaña Dashboard está activa
+- **WHEN** el usuario presiona `Shift+Tab`
+- **THEN** se abre la pestaña Defectos
+
+#### Scenario: Los números se escriben dentro de un filtro
+- **GIVEN** que el usuario está escribiendo un filtro en la lista del backlog
+- **WHEN** presiona `3`
+- **THEN** el carácter se agrega al filtro y la pestaña no cambia
+
+#### Scenario: Esc en la raíz vuelve a Proyectos
+- **GIVEN** que una pestaña muestra su pantalla raíz sin filtro aplicado
+- **WHEN** el usuario presiona `Esc`
+- **THEN** la TUI vuelve al navegador de proyectos y recarga el catálogo
+
+#### Scenario: Esc dentro de un flujo retrocede un paso
+- **GIVEN** que el usuario abrió el formulario de una historia desde la pestaña Backlog
+- **WHEN** presiona `Esc`
+- **THEN** la TUI vuelve a la lista del backlog sin salir del espacio de trabajo
+
+#### Scenario: Cambiar de proyecto
+- **GIVEN** que el usuario trabaja en el proyecto A
+- **WHEN** vuelve al navegador con `Esc` y elige el proyecto B
+- **THEN** el espacio de trabajo muestra el proyecto B y todas las pestañas usan B
+
+### Requirement: Dashboard con las métricas del proyecto y de un Sprint
+La pestaña Dashboard DEBERÁ integrar la consulta de métricas: muestra el estado del proyecto y las métricas del ámbito elegido, que por defecto es el proyecto completo. La tecla `s` DEBERÁ abrir un selector con la fila «Proyecto completo» seguida de los Sprints abiertos del proyecto; elegir un Sprint DEBERÁ consultar `GET /projects/{project_id}/sprints/{sprint_id}/metrics` y mostrar sus métricas con las mismas barras, indicando el ámbito en el título del bloque. `Esc` en el selector DEBERÁ volver al Dashboard sin cambiar el ámbito. `d` DEBERÁ descargar el reporte PDF del ámbito mostrado (proyecto o Sprint). `r` DEBERÁ recargar el ámbito mostrado. La TUI MUST NOT ofrecer una sección Métricas separada.
+
+#### Scenario: Ver las métricas de un Sprint en el Dashboard
+- **GIVEN** que el Dashboard muestra las métricas del proyecto
+- **WHEN** el usuario presiona `s` y elige un Sprint abierto
+- **THEN** la TUI consulta las métricas de ese Sprint
+- **AND** el Dashboard las muestra bajo el título «Métricas del Sprint» con el objetivo del Sprint
+
+#### Scenario: Volver al proyecto completo
+- **GIVEN** que el Dashboard muestra las métricas de un Sprint
+- **WHEN** el usuario presiona `s` y elige «Proyecto completo»
+- **THEN** el Dashboard vuelve a mostrar las métricas del proyecto
+
+#### Scenario: PDF del ámbito mostrado
+- **GIVEN** que el Dashboard muestra las métricas de un Sprint
+- **WHEN** el usuario presiona `d`
+- **THEN** la TUI descarga el reporte PDF de ese Sprint
+
+### Requirement: Avisos efímeros en lugar de pantallas de resultado
+Cuando una operación de escritura termina con éxito (crear o modificar un proyecto, crear o modificar una historia, crear un Sprint, asignar historias, completar una historia, crear una tarea, cerrar un Sprint, registrar esfuerzo, registrar un defecto o cambiar su estado), la TUI DEBERÁ volver a la pantalla desde la que se inició el flujo, recargar su colección y mostrar un aviso de éxito con el prefijo `✓` al inicio del panel. Los destinos son: el navegador de proyectos (recargando `GET /projects`, sin abrir automáticamente un proyecto único) para los proyectos; la lista del backlog para las historias; la lista de Sprints abiertos para crear un Sprint, asignar historias y cerrar un Sprint; las historias del Sprint para completar una historia y crear una tarea; el selector de historias de la pestaña Esfuerzo para el registro de esfuerzo, con un aviso que resume horas, fecha, historia, tarea e integrante; la lista de defectos para registrar un defecto; y el detalle del defecto, actualizado con la respuesta de la API, para el cambio de estado. El aviso DEBERÁ desaparecer con la siguiente tecla, que conserva su efecto normal; no se usan temporizadores. Mientras una escritura está en curso, la pantalla DEBERÁ mostrar un indicador de envío e ignorar las repeticiones del envío. Cuando la API rechaza la operación, la TUI DEBERÁ permanecer en el formulario o la pantalla de confirmación, conservar los valores escritos y mostrar el motivo informado por la API. Una respuesta de escritura que llega sin un envío en curso DEBERÁ descartarse sin cambiar de pantalla. La TUI MUST NOT mostrar pantallas de resultado que exijan una tecla adicional para continuar.
+
+#### Scenario: Crear una historia vuelve al backlog con un aviso
+- **GIVEN** que el formulario de una historia nueva está completo
+- **WHEN** la API responde la creación con éxito
+- **THEN** la TUI vuelve a la lista del backlog, la recarga y muestra un aviso que empieza con `✓`
+- **AND** el aviso desaparece con la siguiente tecla
+
+#### Scenario: Un rechazo conserva el formulario
+- **GIVEN** que el formulario de un proyecto tiene valores escritos
+- **WHEN** la API rechaza la operación con un error
+- **THEN** la TUI permanece en el formulario con los valores escritos
+- **AND** muestra el motivo informado por la API
+
+#### Scenario: Registrar esfuerzo vuelve a la pestaña Esfuerzo
+- **GIVEN** que el formulario de esfuerzo de «Ada Lovelace» sobre la tarea «Diseñar» de la historia «Login» está completo
+- **WHEN** la API responde HTTP 201 con `hours` 3.5 y `work_date` 2026-10-05
+- **THEN** la TUI vuelve al selector de historias de la pestaña Esfuerzo y lo recarga
+- **AND** muestra el aviso «✓ Esfuerzo registrado: 3.5 h el 2026-10-05 · Login · Diseñar · Ada Lovelace»
+- **AND** no consulta las métricas del proyecto
+
+#### Scenario: Cambiar el estado de un defecto vuelve a su detalle
+- **GIVEN** que el usuario eligió un nuevo estado para un defecto
+- **WHEN** la API responde con éxito
+- **THEN** la TUI muestra el detalle de ese defecto con el estado devuelto por la API y un aviso que empieza con `✓`
+
+#### Scenario: El envío en curso ignora repeticiones
+- **GIVEN** que el usuario confirmó la creación de un Sprint
+- **WHEN** presiona `Enter` de nuevo antes de que responda la API
+- **THEN** la TUI no emite otra request y muestra «Guardando…»
+
+### Requirement: Pie de teclas acotado y ayuda agrupada
+El pie DEBERÁ mostrar como máximo cinco atajos, los principales de la pantalla y el paso activos, y agregar `? más` cuando la pantalla tenga más atajos disponibles y `?` abra la ayuda en ese paso. La ayuda abierta con `?` DEBERÁ listar todos los atajos válidos de la pantalla activa agrupados en «Navegación», «Acciones» y «General», omitiendo los grupos vacíos. Las teclas de cambio de pestaña DEBERÁN figurar en la ayuda de las pantallas raíz del espacio de trabajo.
+
+#### Scenario: Pie de la lista de Sprints
+- **GIVEN** que la pestaña Sprints muestra su lista
+- **WHEN** la TUI dibuja el pie
+- **THEN** muestra como máximo cinco atajos y `? más`
+
+#### Scenario: La ayuda lista todos los atajos agrupados
+- **GIVEN** que la pestaña Sprints muestra su lista
+- **WHEN** el usuario presiona `?`
+- **THEN** la ayuda muestra los grupos «Navegación», «Acciones» y «General»
+- **AND** incluye los atajos de cerrar Sprint, ver los cerrados y descargar el PDF
+
+#### Scenario: Pantalla con pocos atajos
+- **GIVEN** que el formulario del objetivo del Sprint está abierto
+- **WHEN** la TUI dibuja el pie
+- **THEN** muestra todos sus atajos y no agrega `? más`
+
+#### Scenario: Filtro o campo de texto activo
+- **GIVEN** que el usuario escribe en un filtro o en un campo de texto
+- **WHEN** la TUI dibuja el pie
+- **THEN** el pie no ofrece `?`, porque ahí `?` es un carácter
+
+#### Scenario: Teclas de pestaña en la ayuda
+- **GIVEN** que la pantalla activa es la raíz de una pestaña del espacio de trabajo
+- **WHEN** el usuario presiona `?`
+- **THEN** la ayuda lista `Tab/Shift+Tab` y `1–6` en «Navegación»
+
+### Requirement: Atajos contextuales de estimación y esfuerzo
+En la lista del backlog, `P` DEBERÁ abrir la pestaña Estimación con la historia resaltada ya elegida, mostrando el selector de participantes, y `E` DEBERÁ abrir la pestaña Esfuerzo con la historia resaltada ya elegida, mostrando el selector de tareas. `Esc` desde ese primer selector DEBERÁ volver a la lista del backlog y recargarla. Los atajos se listan en la ayuda, grupo «Acciones», sin ocupar el pie.
+
+#### Scenario: Estimar desde el backlog
+- **GIVEN** que el backlog tiene una historia resaltada
+- **WHEN** el usuario presiona `P`
+- **THEN** la pestaña Estimación queda activa con esa historia elegida y muestra el selector de participantes
+
+#### Scenario: Registrar esfuerzo desde el backlog
+- **GIVEN** que el backlog tiene una historia resaltada
+- **WHEN** el usuario presiona `E`
+- **THEN** la pestaña Esfuerzo queda activa con esa historia elegida y muestra el selector de tareas
+
+#### Scenario: Volver al backlog desde la historia preelegida
+- **GIVEN** que el usuario abrió Estimación o Esfuerzo con `P` o `E`
+- **WHEN** presiona `Esc` en el primer selector
+- **THEN** la TUI vuelve a la lista del backlog y la recarga
+
+#### Scenario: Backlog vacío
+- **GIVEN** que el backlog no tiene historias
+- **WHEN** el usuario presiona `P` o `E`
+- **THEN** la pantalla no cambia, no se emite ninguna consulta y la ayuda no ofrece esos atajos
+
+#### Scenario: Un paso posterior retrocede de a uno
+- **GIVEN** que el usuario abrió Esfuerzo con `E` y eligió una tarea
+- **WHEN** presiona `Esc` en el selector de integrantes
+- **THEN** la TUI vuelve al selector de tareas de esa historia, no al backlog
+
+#### Scenario: Los atajos solo leen
+- **WHEN** el usuario recorre `P` o `E` y vuelve al backlog
+- **THEN** la TUI solo emite consultas `GET`
+
+#### Scenario: Las minúsculas siguen buscando
+- **GIVEN** que la lista del backlog está activa
+- **WHEN** el usuario presiona `p` o `e`
+- **THEN** la TUI inicia la búsqueda con ese carácter ya escrito
+
+### Requirement: Salir limpiamente desde el navegador y las pestañas
+El usuario DEBERÁ poder salir limpiamente con `Ctrl+C` desde cualquier pantalla y con `q` desde el navegador de proyectos, las listas, los selectores, las confirmaciones y las pantallas raíz de las pestañas. Dentro de un campo de entrada de texto, `q` (y `Q`) DEBERÁ tratarse como un carácter más y NO cerrará la TUI.
+
+#### Scenario: Salida limpia
+- **WHEN** el usuario pide salir
+- **THEN** la TUI termina con código 0 sin traza de error
+
+#### Scenario: `q` sale desde el navegador de proyectos
+- **GIVEN** que el navegador de proyectos está activo
+- **WHEN** el usuario presiona `q`
+- **THEN** la TUI se cierra con código 0
+
+#### Scenario: `q` sale desde una lista
+- **GIVEN** que una lista seleccionable está activa (por ejemplo, el backlog)
+- **WHEN** el usuario presiona `q`
+- **THEN** la TUI se cierra con código 0
+
+#### Scenario: `q` en un campo de texto no sale
+- **GIVEN** que el foco está en un campo de texto de un formulario o en el buscador
+- **WHEN** el usuario presiona `q` o `Q`
+- **THEN** la TUI permanece abierta
+- **AND** el carácter se agrega al valor del campo
+
+#### Scenario: `Ctrl+C` sale desde cualquier pantalla
+- **GIVEN** que cualquier pantalla está activa, incluidos los formularios y los buscadores
+- **WHEN** el usuario presiona `Ctrl+C`
+- **THEN** la TUI se cierra con código 0 sin traza de error
+
+### Requirement: Retroceder en el flujo de esfuerzo y descartar respuestas tardías
+`Esc` DEBERÁ retroceder un nivel por vez en el flujo de Esfuerzo: del formulario al selector de integrantes, del selector de integrantes al de tareas, del selector de tareas al de historias y del selector de historias al navegador de proyectos. Cada retroceso DEBERÁ restaurar el selector anterior tal como estaba al elegir su fila (filas, cursor y filtro), sin emitir requests; en un selector con filtro aplicado, el primer `Esc` limpia el filtro y el siguiente retrocede. Salir del formulario con `Esc` descarta lo escrito. Tras un registro exitoso la TUI vuelve al selector de historias y el siguiente registro empieza con el formulario inicial. Cambiar de proyecto desde el navegador DEBERÁ descartar el estado del flujo (historia, tarea, integrante y formulario) y abrir Esfuerzo en el selector de historias del nuevo proyecto. La TUI DEBERÁ descartar sin efecto toda respuesta que ya no corresponda a la pantalla, el paso o la consulta activos: una respuesta de tareas o de integrantes tras haber retrocedido y un resultado de guardado sin un guardado en curso.
+
+#### Scenario: `Esc` recorre formulario, integrantes, tareas e historias
+- **GIVEN** el formulario de esfuerzo abierto desde los selectores de historia, tarea e integrante
+- **WHEN** el usuario presiona `Esc` tres veces
+- **THEN** la TUI pasa sucesivamente al selector de integrantes, al selector de tareas y al selector de historias
+- **AND** no emite ninguna request en esos retrocesos
+- **AND** un cuarto `Esc` vuelve al navegador de proyectos
+
+#### Scenario: El filtro del selector de tareas se conserva
+- **GIVEN** que el usuario filtró las tareas con `dis` y eligió «Diseñar»
+- **WHEN** retrocede desde el formulario al selector de integrantes y de allí al selector de tareas
+- **THEN** el selector de tareas muestra el filtro `dis` y el cursor sobre «Diseñar», sin consultar de nuevo
+- **AND** el siguiente `Esc` limpia el filtro y recién el que sigue vuelve al selector de historias
+
+#### Scenario: Un segundo registro empieza con el formulario inicial
+- **GIVEN** que la TUI volvió al selector de historias tras un registro exitoso
+- **WHEN** el usuario elige una historia, otra fila de tareas y un integrante
+- **THEN** el formulario se abre con la fecha de hoy y «Actividad» y «Horas» vacías
+
+#### Scenario: Respuesta tardía de integrantes tras retroceder
+- **GIVEN** que el usuario eligió una tarea y la consulta de integrantes sigue en curso
+- **WHEN** presiona `Esc` y después llega la respuesta de integrantes
+- **THEN** la TUI sigue mostrando el selector de tareas sin cambios
+- **AND** la respuesta se descarta
+
+#### Scenario: Respuesta tardía de tareas tras retroceder
+- **GIVEN** que el usuario eligió una historia y la consulta de tareas sigue en curso
+- **WHEN** presiona `Esc` y después llega la respuesta de tareas
+- **THEN** la TUI sigue mostrando el selector de historias sin cambios
+- **AND** la respuesta se descarta
+
+#### Scenario: Resultado de guardado sin guardado en curso
+- **GIVEN** que no hay un `POST` de esfuerzo en curso
+- **WHEN** llega un resultado de guardado
+- **THEN** la TUI lo descarta sin cambiar de pantalla ni de contenido
+
+#### Scenario: Cambiar el proyecto descarta el flujo
+- **GIVEN** que el usuario registró un esfuerzo en el proyecto `p-1`
+- **WHEN** vuelve al navegador, elige el proyecto `p-2` y abre la pestaña Esfuerzo
+- **THEN** la TUI abre Esfuerzo en el selector de historias de `p-2`
+- **AND** la pantalla no conserva el aviso, el registro ni las selecciones de `p-1`

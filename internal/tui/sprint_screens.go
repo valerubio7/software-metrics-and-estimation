@@ -42,6 +42,7 @@ func (m Model) updateSprintTaskForm(key tea.KeyMsg) (Model, tea.Cmd) {
 			hours = parsed
 		}
 		client, projectID, sprintID, storyID, title := m.taskClient, m.activeProjectID, m.selectedSprintID, m.taskStoryID, m.taskTitle
+		m.sprintSaving, m.sprintMessage, m.sprintSavingLabel = true, "", title
 		return m, func() tea.Msg {
 			response, err := client.Create(context.Background(), projectID, sprintID, storyID, []TaskInput{{Title: title, EstimatedHours: hours}})
 			return SprintResultMsg{Op: "tasks", Response: response, Err: err}
@@ -58,6 +59,7 @@ func (m Model) viewSprints() string {
 	b.WriteString("\n")
 	b.WriteString(hintStyle.Render("Enter historias · d PDF · a asignar · x cerrar · h cerrados · / busca."))
 	b.WriteString("\n\n")
+	b.WriteString(m.sprintStatusLines())
 	if m.sprintFiltering || m.sprintFilter != "" {
 		b.WriteString(searchLine(m.sprintFilter, m.sprintFiltering))
 		b.WriteString("\n\n")
@@ -107,7 +109,9 @@ func (m Model) viewSprintConfirm() string {
 	b.WriteString(hintStyle.Render("¿Cerrar este Sprint? Las historias planificadas y completadas quedarán en el historial."))
 	b.WriteString("\n")
 	b.WriteString(hintStyle.Render("s confirma · n o Esc cancela."))
-	return b.String()
+	b.WriteString("\n\n")
+	b.WriteString(m.sprintStatusLines())
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // sprintGoalByID resolves the goal of an open Sprint for the confirmation screen.
@@ -133,6 +137,7 @@ func (m Model) viewSprintHistory() string {
 	b.WriteString("\n")
 	b.WriteString(hintStyle.Render("Enter despliega las historias · / busca · Esc vuelve."))
 	b.WriteString("\n\n")
+	b.WriteString(m.sprintStatusLines())
 	if m.sprintFiltering || m.sprintFilter != "" {
 		b.WriteString(searchLine(m.sprintFilter, m.sprintFiltering))
 		b.WriteString("\n\n")
@@ -204,6 +209,9 @@ func (m Model) viewSprintGoal() string {
 	b.WriteString(hintStyle.Render("Proyecto: " + m.projectLabel()))
 	b.WriteString("\n\n")
 	b.WriteString(m.formRow(true, "Objetivo", m.sprintGoal))
+	if lines := m.sprintStatusLines(); lines != "" {
+		b.WriteString("\n\n" + strings.TrimRight(lines, "\n"))
+	}
 	return b.String()
 }
 
@@ -214,6 +222,7 @@ func (m Model) viewSprintStorySelect() string {
 	b.WriteString("\n")
 	b.WriteString(hintStyle.Render("Space marca o desmarca · Enter confirma · / busca · Esc vuelve."))
 	b.WriteString("\n\n")
+	b.WriteString(m.sprintStatusLines())
 	if m.sprintFiltering || m.sprintFilter != "" {
 		b.WriteString(searchLine(m.sprintFilter, m.sprintFiltering))
 		b.WriteString("\n\n")
@@ -253,6 +262,7 @@ func (m Model) viewAssignedStories() string {
 	b.WriteString("\n")
 	b.WriteString(hintStyle.Render("Enter crea tareas · c completa la historia · / busca · Esc vuelve."))
 	b.WriteString("\n\n")
+	b.WriteString(m.sprintStatusLines())
 	if m.sprintFiltering || m.sprintFilter != "" {
 		b.WriteString(searchLine(m.sprintFilter, m.sprintFiltering))
 		b.WriteString("\n\n")
@@ -291,12 +301,21 @@ func (m Model) viewSprintTaskForm() string {
 	b.WriteString("\n\n")
 	b.WriteString(m.formRow(m.taskField == 0, "Título", m.taskTitle) + "\n")
 	b.WriteString(m.formRow(m.taskField == 1, "Horas estimadas (opcional)", m.taskHours) + "\n")
-	if m.sprintMessage != "" {
-		b.WriteString("\n" + m.errorBlock(m.sprintMessage) + "\n")
+	if lines := m.sprintStatusLines(); lines != "" {
+		b.WriteString("\n" + lines)
 	}
 	return b.String()
 }
 
-func (m Model) viewSprintResult() string {
-	return screenTitleStyle.Render("Resultado") + "\n\n" + m.resultBlock(m.sprintMessage, m.sprintOK)
+// sprintStatusLines renders the in-flight indicator of a Sprint write and the
+// last API error of the Sprint screens, each followed by a blank line.
+func (m Model) sprintStatusLines() string {
+	var b strings.Builder
+	if m.sprintSaving {
+		b.WriteString(statusMutedStyle.Render("Guardando…") + "\n\n")
+	}
+	if m.sprintMessage != "" {
+		b.WriteString(m.errorBlock(m.sprintMessage) + "\n\n")
+	}
+	return b.String()
 }

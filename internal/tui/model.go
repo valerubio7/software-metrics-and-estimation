@@ -15,18 +15,18 @@ import (
 
 // Model is the Bubble Tea model for the TUI.
 type Model struct {
-	APIURL  string
-	Choices []string
-	Cursor  int
-	Screen  string
-	APIErr  error
+	APIURL string
+	Screen string
+	APIErr error
 
 	width, height int
 	showHelp      bool
+	toast         string // last success notice, cleared by the next key
 
 	// Session context shared by every screen.
-	activeProjectID   string
-	activeProjectName string
+	activeProjectID     string
+	activeProjectName   string
+	activeProjectStatus string
 
 	// Project browser (the searchable project list).
 	projects         []ProjectSummary
@@ -34,21 +34,19 @@ type Model struct {
 	projectFilter    string
 	projectFiltering bool
 	projectCursor    int
-	pickerReturn     string
-	pickerPurpose    string
+	autoOpen         bool // open the only project on the first load
 
-	projectID        string
-	formField        int
-	formSegment      int
-	form             ProjectInput
-	formStart        dateField
-	formFinish       dateField
-	formErr          string
-	formReturn       string
-	projectResultOK  bool
-	resultFormScreen string
-	message          string
-	client           *ProjectClient
+	projectID     string
+	formField     int
+	formSegment   int
+	form          ProjectInput
+	formStart     dateField
+	formFinish    dateField
+	formErr       string
+	formReturn    string
+	projectSaving bool
+	message       string
+	client        *ProjectClient
 
 	backlogCursor        int
 	backlogStories       []Story
@@ -57,7 +55,6 @@ type Model struct {
 	backlogFiltering     bool
 	backlogForm          storyForm
 	backlogMessage       string
-	backlogReturn        string
 	backlogClient        *BacklogClient
 	storyPointsClient    *StoryPointsClient
 	sprintClient         *SprintClient
@@ -69,8 +66,8 @@ type Model struct {
 	historyExpanded      string
 	sprintGoal           string
 	sprintMessage        string
-	sprintOK             bool
-	sprintReturn         string
+	sprintSaving         bool
+	sprintSavingLabel    string
 	sprintFilter         string
 	sprintFiltering      bool
 	sprintLoading        bool
@@ -112,7 +109,6 @@ type Model struct {
 	defectStorySelector   selector
 	defectSprintSelector  selector
 	defectCreateLoading   bool
-	defectCreateOK        bool
 	defectCreateMessage   string
 	defectRequestSequence uint64
 	defectStoryRequestID  uint64
@@ -126,7 +122,7 @@ type Model struct {
 	defectStatusLoading          bool
 	defectStatusRequestID        uint64
 	defectStatusMessage          string
-	defectStatusOK               bool
+	defectStatusPending          string
 	now                          func() time.Time
 }
 
@@ -149,13 +145,11 @@ func (m Model) today() string {
 // NewModel creates the base navigation model.
 func NewModel(apiURL string) Model {
 	return Model{
-		APIURL: apiURL,
-		Choices: []string{
-			"Proyectos", "Backlog", "Sprints", "Planning Poker",
-			"Esfuerzo", "Defectos", "Métricas", "Dashboard", "Salir",
-		},
-		Screen: "menu",
-		client: NewProjectClient(apiURL),
+		APIURL:          apiURL,
+		Screen:          "project-picker",
+		projectsLoading: true,
+		autoOpen:        true,
+		client:          NewProjectClient(apiURL),
 
 		backlogClient:     NewBacklogClient(apiURL),
 		storyPointsClient: NewStoryPointsClient(apiURL), sprintClient: NewSprintClient(apiURL),
@@ -168,8 +162,8 @@ func NewModel(apiURL string) Model {
 	}
 }
 
-// Init implements tea.Model.
-func (m Model) Init() tea.Cmd { return nil }
+// Init implements tea.Model: the TUI starts loading the project browser.
+func (m Model) Init() tea.Cmd { return m.listProjectsCmd() }
 
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -198,11 +192,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if result, ok := msg.(effortSaveResult); ok {
 		return m.applyEffortSave(result)
 	}
-	if result, ok := msg.(effortMetricsResult); ok {
-		return m.applyEffortMetrics(result)
-	}
 	if result, ok := msg.(dashboardResultMsg); ok {
 		return m.applyDashboardResult(result)
+	}
+	if result, ok := msg.(dashboardScopesMsg); ok {
+		return m.applyDashboardScopes(result)
 	}
 	if result, ok := msg.(ReportResultMsg); ok {
 		return m.applyReportResult(result)
@@ -226,6 +220,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !isKey {
 		return m, nil
 	}
+	m.toast = ""
 	if key.Type == tea.KeyCtrlC {
 		return m, tea.Quit
 	}
@@ -235,34 +230,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if key.Type == tea.KeyRunes && string(key.Runes) == "?" && !entersText(m.Screen) && !m.filtering() && !(m.Screen == "planning-poker" && m.pokerPhase == "vote") {
+	if key.Type == tea.KeyRunes && string(key.Runes) == "?" && m.helpAvailable() {
 		m.showHelp = true
 		return m, nil
 	}
-	if key.Type == tea.KeyRunes && string(key.Runes) == "p" && quitsOnQ(m.Screen) && m.Screen != "project-picker" && m.Screen != "sprint-confirm" && !m.filtering() && !m.defectSubmissionInFlight() {
-		return m.openProjectPicker("project")
+	if m.tabRoot() && !m.filtering() {
+		if t, ok := tabForKey(key, m.currentTab()); ok {
+			return m.openTab(t)
+		}
 	}
 	if isQuitRune(key) && quitsOnQ(m.Screen) && !m.filtering() && !m.defectSubmissionInFlight() {
 		return m, tea.Quit
 	}
+	if m.sprintSaving && isSprintScreen(m.Screen) {
+		// A Sprint write is in flight: no key may send it again or leave.
+		return m, nil
+	}
 	switch m.Screen {
-	case "menu":
-		return m.updateMenu(key)
 	case "project-picker":
 		return m.updateProjectPicker(key)
 	case "create-project", "edit-project":
 		return m.updateProjectForm(key)
-	case "project-result":
-		if key.Type == tea.KeyEsc || key.Type == tea.KeyEnter {
-			return m.leaveProjectResult()
-		}
-		return m, nil
 	case "backlog":
 		return m.updateBacklog(key)
 	case "backlog-form":
 		return m.updateBacklogForm(key)
-	case "backlog-result":
-		return m.updateBacklogResult(key)
 	case "sprints":
 		return m.updateSprints(key)
 	case "sprint-goal":
@@ -277,25 +269,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateAssignedStories(key)
 	case "sprint-task-form":
 		return m.updateSprintTaskForm(key)
-	case "sprint-result":
-		if key.Type == tea.KeyEsc || key.Type == tea.KeyEnter {
-			m.sprintMessage = ""
-			if m.sprintReturn == "sprint-assigned-list" && m.selectedSprintID != "" {
-				return m.openAssignedStories(m.selectedSprintID)
-			}
-			return m.enterSprints()
-		}
-		return m, nil
 	case "section":
 		return m.updateSection(key)
 	case "dashboard":
 		return m.updateDashboard(key)
+	case "dashboard-sprint-select":
+		return m.updateDashboardScopes(key)
 	case "planning-poker":
 		return m.updatePlanningPoker(key)
 	case "effort-form":
 		return m.updateEffortForm(key)
-	case "effort-result":
-		return m.updateEffortResult(key)
 	case "defects":
 		return m.updateDefects(key)
 	case "defect-detail":
@@ -309,8 +292,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateDefectStatusSelect(key)
 	case "defect-resolution-select":
 		return m.updateDefectResolutionSelect(key)
-	case "defect-status-result":
-		return m.updateDefectStatusResult(key)
 	case "defect-create-form":
 		return m.updateDefectCreateForm(key)
 	case "defect-story-select":
@@ -319,12 +300,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateDefectSprintSelect(key)
 	case "defect-create-confirm":
 		return m.updateDefectCreateConfirm(key)
-	case "defect-create-result":
-		return m.updateDefectCreateResult(key)
 	default:
 		if key.Type == tea.KeyEsc {
-			m.Screen = "menu"
-			m.Cursor = 0
+			return m.leaveWorkspace()
 		}
 		return m, nil
 	}
@@ -344,7 +322,7 @@ func entersText(screen string) bool {
 // listed, so q is a plain character there; Ctrl+C always quits.
 func quitsOnQ(screen string) bool {
 	switch screen {
-	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "dashboard", "planning-poker", "effort-result", "defects", "defect-detail", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-create-result", "defect-status-select", "defect-resolution-select", "defect-status-result":
+	case "project-picker", "backlog", "sprints", "sprint-history", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "dashboard", "dashboard-sprint-select", "planning-poker", "defects", "defect-detail", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-status-select", "defect-resolution-select":
 		return true
 	}
 	return false
@@ -364,12 +342,13 @@ func (m Model) filtering() bool {
 		(m.Screen == "defect-resolution-select" && m.defectResolutionSelector.filtering) ||
 		(m.Screen == "project-picker" && m.projectFiltering) ||
 		(m.Screen == "section" && m.section.selector.filtering) ||
+		(m.Screen == "dashboard-sprint-select" && m.dashboard.scopes.filtering) ||
 		(isSprintScreen(m.Screen) && m.sprintFiltering)
 }
 
 func (m Model) defectSubmissionInFlight() bool {
-	return (m.Screen == "defect-status-result" && m.defectStatusLoading) ||
-		(m.Screen == "defect-create-result" && m.defectCreateLoading)
+	return ((m.Screen == "defect-status-select" || m.Screen == "defect-resolution-select") && m.defectStatusLoading) ||
+		(m.Screen == "defect-create-confirm" && m.defectCreateLoading)
 }
 
 // editText applies a text-editing key to value: runes and the space bar are
@@ -386,41 +365,6 @@ func editText(value string, key tea.KeyMsg) (string, bool) {
 		return value[:len(value)-size], true
 	}
 	return value, false
-}
-
-func (m Model) updateMenu(key tea.KeyMsg) (Model, tea.Cmd) {
-	switch key.Type {
-	case tea.KeyUp:
-		if m.Cursor > 0 {
-			m.Cursor--
-		}
-	case tea.KeyDown:
-		if m.Cursor < len(m.Choices)-1 {
-			m.Cursor++
-		}
-	case tea.KeyEnter:
-		switch m.Cursor {
-		case 0:
-			return m.openProjectPicker("projects")
-		case 1:
-			return m.openBacklog()
-		case 2:
-			return m.enterSprints()
-		case 3:
-			return m.openSection(sectionPlanningPoker)
-		case 4:
-			return m.openSection(sectionEffort)
-		case 5:
-			return m.openDefects()
-		case 6:
-			return m.openSection(sectionMetrics)
-		case 7:
-			return m.openDashboard()
-		default:
-			return m, tea.Quit
-		}
-	}
-	return m, nil
 }
 
 // projectFormFields is the number of rows in the create/edit project form:
@@ -462,37 +406,25 @@ func (m Model) editSelectedProject() (Model, tea.Cmd) {
 	return m.openProjectForm("edit", list[m.projectCursor])
 }
 
-// leaveProjectResult returns to the form on a failed request so it can be
-// corrected, or to the freshly reloaded browser on success.
-func (m Model) leaveProjectResult() (Model, tea.Cmd) {
-	if m.projectResultOK {
-		m.message = ""
-		return m.reopenProjectPicker()
-	}
-	m.formErr = strings.TrimSpace(m.message)
-	m.message = ""
-	m.Screen = m.resultFormScreen
-	if m.Screen == "" {
-		m.Screen = "project-picker"
-	}
-	return m, nil
-}
-
 // reopenProjectPicker reloads the project list, used after a create or edit so
-// the browser shows the change.
+// the browser shows the change. It never auto-opens the only project.
 func (m Model) reopenProjectPicker() (Model, tea.Cmd) {
 	m.Screen = "project-picker"
 	m.projectFilter, m.projectFiltering, m.projectCursor = "", false, 0
-	m.projectsLoading = true
+	m.projectsLoading, m.autoOpen, m.message = true, false, ""
 	return m, m.listProjectsCmd()
 }
 
 func (m Model) updateProjectForm(key tea.KeyMsg) (Model, tea.Cmd) {
+	if m.projectSaving {
+		// The request is in flight: no key may send it again or leave the form.
+		return m, nil
+	}
 	if key.Type == tea.KeyEsc {
 		m.formErr = ""
 		m.Screen = m.formReturn
 		if m.Screen == "" {
-			m.Screen = "menu"
+			m.Screen = "project-picker"
 		}
 		return m, nil
 	}
@@ -567,7 +499,7 @@ func (m Model) submitProjectForm() (Model, tea.Cmd) {
 		m.formErr = "La fecha fin planificada debe ser igual o posterior a la de inicio."
 		return m, nil
 	}
-	m.formErr = ""
+	m.formErr, m.projectSaving = "", true
 	input := ProjectInput{Name: m.form.Name, StartDate: start, PlannedFinishDate: finish}
 	if m.Screen == "create-project" {
 		return m, m.createCmd(input)
@@ -597,35 +529,39 @@ func (m Model) updateCmd(id string, input ProjectInput) tea.Cmd {
 	}
 }
 
+// applyProjectResult returns to the reloaded browser with a toast on success.
+// A rejection stays on the form with the typed values and the API reason.
 func (m Model) applyProjectResult(result ProjectResultMsg) (Model, tea.Cmd) {
-	m.resultFormScreen = m.Screen
-	m.Screen = "project-result"
-	m.projectResultOK = false
+	if !m.projectSaving || (m.Screen != "create-project" && m.Screen != "edit-project") {
+		return m, nil // an answer nobody is waiting for
+	}
+	m.projectSaving = false
 	if result.Err != nil {
-		m.message = "Error de conexión: " + result.Err.Error()
+		m.formErr = "Error de conexión: " + result.Err.Error()
 		return m, nil
 	}
 	if result.Response.StatusCode < 200 || result.Response.StatusCode >= 300 {
 		detail := strings.TrimSpace(string(result.Response.Body))
 		if result.Response.StatusCode == 404 {
-			m.message = "El proyecto no existe (404): " + detail
+			m.formErr = "El proyecto no existe (404): " + detail
 		} else {
-			m.message = fmt.Sprintf("Error HTTP %d: %s", result.Response.StatusCode, detail)
+			m.formErr = fmt.Sprintf("Error HTTP %d: %s", result.Response.StatusCode, detail)
 		}
 		return m, nil
 	}
-	m.projectResultOK = true
-	var status struct {
-		ID     string `json:"id"`
-		Name   string `json:"name"`
-		Status string `json:"status"`
+	name := m.form.Name
+	var project struct {
+		Name string `json:"name"`
 	}
-	if json.Unmarshal(result.Response.Body, &status) == nil && status.Name != "" {
-		m.message = fmt.Sprintf("Proyecto %s: %s", status.Name, status.ID)
-	} else {
-		m.message = strings.TrimSpace(string(result.Response.Body))
+	if json.Unmarshal(result.Response.Body, &project) == nil && project.Name != "" {
+		name = project.Name
 	}
-	return m, nil
+	verb := "creado"
+	if m.Screen == "edit-project" {
+		verb = "modificado"
+	}
+	m.toast = fmt.Sprintf("Proyecto %s: %s", verb, name)
+	return m.reopenProjectPicker()
 }
 
 // View implements tea.Model.
@@ -634,6 +570,10 @@ func (m Model) View() string {
 	if m.showHelp {
 		content.WriteString(m.viewHelp())
 	} else {
+		if m.toast != "" {
+			content.WriteString(m.okBlock("✓ " + m.toast))
+			content.WriteString("\n\n")
+		}
 		if m.APIErr != nil {
 			content.WriteString(m.errorBlock("API no disponible: " + m.APIErr.Error()))
 			content.WriteString("\n")
@@ -652,20 +592,14 @@ func (m Model) View() string {
 }
 func (m Model) viewBody() string {
 	switch m.Screen {
-	case "menu":
-		return m.viewMenu()
 	case "project-picker":
 		return m.viewProjectPicker()
 	case "create-project", "edit-project":
 		return m.viewProjectForm()
-	case "project-result":
-		return m.viewProjectResult()
 	case "backlog":
 		return m.viewBacklog()
 	case "backlog-form":
 		return m.viewBacklogForm()
-	case "backlog-result":
-		return m.viewBacklogResult()
 	case "sprints":
 		return m.viewSprints()
 	case "sprint-goal":
@@ -680,18 +614,16 @@ func (m Model) viewBody() string {
 		return m.viewAssignedStories()
 	case "sprint-task-form":
 		return m.viewSprintTaskForm()
-	case "sprint-result":
-		return m.viewSprintResult()
 	case "section":
 		return m.viewSection()
 	case "dashboard":
 		return m.viewDashboard()
+	case "dashboard-sprint-select":
+		return m.viewDashboardScopes()
 	case "planning-poker":
 		return m.viewPlanningPoker()
 	case "effort-form":
 		return m.viewEffortForm()
-	case "effort-result":
-		return m.viewEffortResult()
 	case "defects":
 		return m.viewDefects()
 	case "defect-detail":
@@ -699,9 +631,7 @@ func (m Model) viewBody() string {
 	case "defect-status-select":
 		return m.viewDefectStatusSelect()
 	case "defect-resolution-select":
-		return m.viewSelector(&m.defectResolutionSelector, "Defecto · Sprint de resolución", "Elegí un Sprint abierto o cerrado del proyecto.", "No hay Sprints disponibles.", "Creá un Sprint desde Sprints y volvé a intentar.")
-	case "defect-status-result":
-		return m.viewDefectStatusResult()
+		return strings.TrimRight(m.viewSelector(&m.defectResolutionSelector, "Defecto · Sprint de resolución", "Elegí un Sprint abierto o cerrado del proyecto.", "No hay Sprints disponibles.", "Creá un Sprint desde Sprints y volvé a intentar."), "\n") + m.defectStatusLines()
 	case "defect-create-form":
 		return m.viewDefectCreateForm()
 	case "defect-story-select":
@@ -710,27 +640,9 @@ func (m Model) viewBody() string {
 		return m.viewSelector(&m.defectSprintSelector, "Defecto · Sprint de detección", "Elegí un Sprint abierto del proyecto.", "No hay Sprints abiertos.", "Creá un Sprint desde Sprints y volvé a intentar.")
 	case "defect-create-confirm":
 		return m.viewDefectCreateConfirm()
-	case "defect-create-result":
-		return m.viewDefectCreateResult()
 	default:
-		return screenTitleStyle.Render(m.Choices[m.Cursor])
+		return ""
 	}
-}
-
-func (m Model) viewMenu() string {
-	var b strings.Builder
-	b.WriteString(screenTitleStyle.Render("Panel de control"))
-	b.WriteString("\n")
-	context := "Sin proyecto activo · elegí uno en Proyectos"
-	if m.activeProjectID != "" {
-		context = "Proyecto activo: " + m.activeProjectName
-	}
-	b.WriteString(hintStyle.Render(context))
-	b.WriteString("\n\n")
-	for i, choice := range m.Choices {
-		b.WriteString(m.row(i == m.Cursor, choice) + "\n")
-	}
-	return b.String()
 }
 
 func (m Model) viewProjectForm() string {
@@ -754,6 +666,11 @@ func (m Model) viewProjectForm() string {
 	}
 	b.WriteString(m.projectDateRow(1, startLabel, m.formStart) + "\n")
 	b.WriteString(m.projectDateRow(2, finishLabel, m.formFinish) + "\n")
+	if m.projectSaving {
+		b.WriteString("\n")
+		b.WriteString(statusMutedStyle.Render("Guardando…"))
+		b.WriteString("\n")
+	}
 	if m.formErr != "" {
 		b.WriteString("\n")
 		b.WriteString(m.errorBlock(m.formErr))
@@ -762,14 +679,6 @@ func (m Model) viewProjectForm() string {
 	b.WriteString(hintStyle.Render("Tab/↑/↓ cambia de campo · ←/→ mueve entre año, mes y día."))
 	b.WriteString("\n")
 	b.WriteString(hintStyle.Render("Enter en el último campo envía · Esc vuelve."))
-	return b.String()
-}
-
-func (m Model) viewProjectResult() string {
-	var b strings.Builder
-	b.WriteString(screenTitleStyle.Render("Resultado"))
-	b.WriteString("\n\n")
-	b.WriteString(m.resultBlock(m.message, m.projectResultOK))
 	return b.String()
 }
 
@@ -784,6 +693,10 @@ func (m Model) chrome() string {
 	var b strings.Builder
 	b.WriteString(m.appBar(statusStyle, status))
 	b.WriteString("\n")
+	if m.inWorkspace() {
+		b.WriteString(m.workspaceHeader())
+		b.WriteString("\n")
+	}
 	b.WriteString(ansi.Truncate(breadcrumb(m.crumbParts()...), width, "…"))
 	b.WriteString("\n")
 	b.WriteString(ruleStyle.Render(strings.Repeat("─", width)))
@@ -814,43 +727,21 @@ func (m Model) appBar(statusStyle lipgloss.Style, status string) string {
 func (m Model) crumbParts() []string {
 	var parts []string
 	switch m.Screen {
-	case "menu":
-		return []string{"Panel de control"}
-	case "create-project", "edit-project", "project-result":
+	case "create-project", "edit-project":
 		parts = append(parts, "Proyectos")
-		switch m.Screen {
-		case "create-project":
+		if m.Screen == "create-project" {
 			parts = append(parts, "Crear")
-		case "edit-project":
+		} else {
 			parts = append(parts, "Modificar")
-		case "project-result":
-			parts = append(parts, "Resultado")
 		}
 	case "project-picker":
-		switch {
-		case m.pickerReturn == "backlog":
-			parts = append(parts, "Backlog")
-		case m.pickerPurpose == "dashboard" || m.pickerReturn == "dashboard":
-			parts = append(parts, "Dashboard")
-		case m.pickerReturn == "sprints" || isSprintScreen(m.pickerReturn) || m.pickerPurpose == "sprints":
-			parts = append(parts, "Sprints")
-		case m.pickerReturn == "section" || strings.HasPrefix(m.pickerPurpose, "section:"):
-			parts = append(parts, m.section.kind.title())
-		default:
-			parts = append(parts, "Proyectos")
-		}
-		if m.pickerPurpose != "projects" {
-			parts = append(parts, "Elegir proyecto")
-		}
-	case "backlog", "backlog-form", "backlog-result":
+		return []string{"Proyectos"}
+	case "backlog", "backlog-form":
 		parts = append(parts, "Backlog")
-		switch m.Screen {
-		case "backlog-form":
+		if m.Screen == "backlog-form" {
 			parts = append(parts, "Historia")
-		case "backlog-result":
-			parts = append(parts, "Resultado")
 		}
-	case "sprints", "sprint-goal", "sprint-story-select", "sprint-assigned-list", "sprint-task-form", "sprint-history", "sprint-confirm", "sprint-result":
+	case "sprints", "sprint-goal", "sprint-story-select", "sprint-assigned-list", "sprint-task-form", "sprint-history", "sprint-confirm":
 		parts = append(parts, "Sprints")
 		switch m.Screen {
 		case "sprint-goal":
@@ -865,8 +756,6 @@ func (m Model) crumbParts() []string {
 			parts = append(parts, "Historial")
 		case "sprint-confirm":
 			parts = append(parts, "Cerrar")
-		case "sprint-result":
-			parts = append(parts, "Resultado")
 		}
 	case "section", "planning-poker":
 		parts = append(parts, m.section.kind.title())
@@ -881,16 +770,14 @@ func (m Model) crumbParts() []string {
 			parts = append(parts, "Tareas")
 		case sectionStepSprints:
 			parts = append(parts, "Sprint")
-		case sectionStepNotice:
-			parts = append(parts, "Próximamente")
 		}
 	case "effort-form":
 		parts = append(parts, sectionEffort.title(), "Registrar")
-	case "effort-result":
-		parts = append(parts, sectionEffort.title(), "Resultado")
 	case "dashboard":
 		parts = append(parts, "Dashboard")
-	case "defects", "defect-detail", "defect-create-form", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-create-result", "defect-status-select", "defect-resolution-select", "defect-status-result":
+	case "dashboard-sprint-select":
+		parts = append(parts, "Dashboard", "Elegir ámbito")
+	case "defects", "defect-detail", "defect-create-form", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-status-select", "defect-resolution-select":
 		parts = append(parts, sectionDefects.title())
 		switch m.Screen {
 		case "defect-detail":
@@ -903,277 +790,26 @@ func (m Model) crumbParts() []string {
 			parts = append(parts, "Elegir Sprint de detección")
 		case "defect-create-confirm":
 			parts = append(parts, "Confirmar registro")
-		case "defect-create-result":
-			parts = append(parts, "Resultado del registro")
 		case "defect-status-select":
 			parts = append(parts, "Cambiar estado")
 		case "defect-resolution-select":
 			parts = append(parts, "Elegir Sprint de resolución")
-		case "defect-status-result":
-			parts = append(parts, "Resultado del estado")
 		}
 	default:
 		parts = append(parts, "")
 	}
-	if m.activeProjectID != "" && !isProjectScreen(m.Screen) {
-		name := m.activeProjectName
-		if name == "" {
-			name = shortID(m.activeProjectID)
-		}
-		parts = append(parts, "Proyecto: "+name)
+	if m.inWorkspace() {
+		parts = append([]string{"Proyectos", m.projectLabel()}, parts...)
 	}
 	return parts
 }
 
 func isProjectScreen(screen string) bool {
 	switch screen {
-	case "project-picker", "create-project", "edit-project", "project-result":
+	case "project-picker", "create-project", "edit-project":
 		return true
 	}
 	return false
-}
-
-func (m Model) footer() string {
-	if m.showHelp {
-		return m.keyHints("Esc", "cerrar ayuda", "?", "cerrar", "Ctrl+C", "salir")
-	}
-	switch m.Screen {
-	case "menu":
-		return m.keyHints("↑/↓", "mover", "Enter", "elegir", "?", "ayuda", "q", "salir")
-	case "project-picker":
-		if m.projectFiltering {
-			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "elegir", "Esc", "limpiar")
-		}
-		return m.keyHints("↑/↓", "mover", "Enter", "usar", "e", "editar", "n", "crear", "r", "refrescar", "/", "buscar", "Esc", "volver")
-	case "create-project", "edit-project":
-		return m.keyHints("Tab/↑/↓", "campo", "Enter", "continuar", "Esc", "volver", "Ctrl+C", "salir")
-	case "project-result":
-		return m.keyHints("Enter/Esc", "volver", "q", "salir")
-	case "backlog":
-		if m.backlogFiltering {
-			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
-		}
-		return m.keyHints("↑/↓", "mover", "Enter", "editar", "n", "crear", "c", "proyecto", "r", "refrescar", "/", "buscar", "Esc", "menú", "q", "salir")
-	case "backlog-form":
-		return m.keyHints("Tab/↑/↓", "campo", "Enter", "siguiente/enviar", "Esc", "volver", "Ctrl+C", "salir")
-	case "backlog-result", "sprint-result":
-		return m.keyHints("Enter/Esc", "volver", "q", "salir")
-	case "sprints":
-		if m.sprintFiltering {
-			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
-		}
-		return m.keyHints("↑/↓", "mover", "Enter", "historias", "d", "PDF", "a", "asignar", "x", "cerrar", "h", "cerrados", "n", "nuevo", "r", "refrescar", "/", "buscar", "Esc", "menú", "q", "salir")
-	case "sprint-goal":
-		return m.keyHints("Enter", "enviar", "Esc", "volver", "Ctrl+C", "salir")
-	case "sprint-confirm":
-		return m.keyHints("s", "confirmar", "n/Esc", "cancelar", "q", "salir")
-	case "sprint-assigned-list":
-		if m.sprintFiltering {
-			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
-		}
-		return m.keyHints("↑/↓", "mover", "Enter", "tareas", "c", "completar", "r", "refrescar", "/", "buscar", "Esc", "volver", "q", "salir")
-	case "sprint-story-select":
-		if m.sprintFiltering {
-			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
-		}
-		return m.keyHints("↑/↓", "mover", "Space", "marcar", "Enter", "asignar", "/", "buscar", "Esc", "volver", "q", "salir")
-	case "sprint-task-form":
-		return m.keyHints("Tab", "campo", "Enter", "continuar/enviar", "Esc", "volver", "Ctrl+C", "salir")
-	case "sprint-history":
-		if m.sprintFiltering {
-			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
-		}
-		return m.keyHints("↑/↓", "mover", "Enter", "desplegar", "r", "refrescar", "/", "buscar", "Esc", "volver", "q", "salir")
-	case "section":
-		return m.sectionFooter()
-	case "dashboard":
-		return m.dashboardFooter()
-	case "planning-poker":
-		return m.planningPokerFooter()
-	case "effort-form":
-		return m.effortFormFooter()
-	case "effort-result":
-		return m.effortResultFooter()
-	case "defects":
-		if m.defectFiltering {
-			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar", "Ctrl+C", "salir")
-		}
-		pairs := []string{"↑/↓", "mover"}
-		if len(m.visibleDefects()) > 0 {
-			pairs = append(pairs, "Enter", "detalle", "u", "actualizar estado")
-		}
-		pairs = append(pairs, "n", "nuevo defecto", "r", "refrescar", "/", "buscar", "?", "ayuda", "p", "proyecto", "Esc", "menú", "q", "salir", "Ctrl+C", "salir")
-		return m.keyHints(pairs...)
-	case "defect-detail":
-		return m.keyHints("u", "cambiar estado", "Esc", "volver al listado", "?", "ayuda", "p", "proyecto", "q", "salir", "Ctrl+C", "salir")
-	case "defect-story-select":
-		return m.defectSelectorFooter(&m.defectStorySelector, "historia")
-	case "defect-sprint-select":
-		return m.defectSelectorFooter(&m.defectSprintSelector, "Sprint")
-	case "defect-resolution-select":
-		return m.defectSelectorFooter(&m.defectResolutionSelector, "Sprint")
-	case "defect-status-select":
-		return m.keyHints("↑/↓", "elegir estado", "Enter", "confirmar estado", "Esc", "cancelar", "?", "ayuda", "p", "proyecto", "q", "salir", "Ctrl+C", "salir")
-	case "defect-status-result":
-		if m.defectStatusLoading {
-			return m.keyHints("?", "ayuda", "Ctrl+C", "salir")
-		}
-		return m.keyHints("Enter/Esc", "volver", "?", "ayuda", "p", "proyecto", "q", "salir", "Ctrl+C", "salir")
-	case "defect-create-form":
-		return m.keyHints("Tab/↑/↓", "campo", "←/→", "opción", "Enter", "continuar", "Esc", "cancelar", "Ctrl+C", "salir")
-	case "defect-create-confirm":
-		return m.keyHints("s", "confirmar registro", "n", "cancelar", "Esc", "volver", "?", "ayuda", "p", "proyecto", "q", "salir", "Ctrl+C", "salir")
-	case "defect-create-result":
-		if m.defectCreateLoading {
-			return m.keyHints("?", "ayuda", "Ctrl+C", "salir")
-		}
-		return m.keyHints("Enter/Esc", "volver", "?", "ayuda", "p", "proyecto", "q", "salir", "Ctrl+C", "salir")
-	default:
-		return m.keyHints("Esc", "volver", "?", "ayuda", "q", "salir")
-	}
-}
-
-func (m Model) defectSelectorFooter(s *selector, noun string) string {
-	if m.filtering() {
-		return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar", "Ctrl+C", "salir")
-	}
-	if s.loading || m.defectStatusOptionsLoading && m.Screen == "defect-resolution-select" {
-		return m.keyHints("Esc", "cancelar", "p", "proyecto", "q", "salir", "?", "ayuda", "Ctrl+C", "salir")
-	}
-	if s.err != "" {
-		return m.keyHints("r", "reintentar", "Esc", "volver", "p", "proyecto", "q", "salir", "?", "ayuda", "Ctrl+C", "salir")
-	}
-	pairs := []string{"↑/↓", "mover"}
-	if len(s.visible()) > 0 {
-		pairs = append(pairs, "Enter", "elegir "+noun)
-	}
-	pairs = append(pairs, "r", "refrescar", "/", "buscar", "Esc", "volver", "p", "proyecto", "q", "salir", "?", "ayuda", "Ctrl+C", "salir")
-	return m.keyHints(pairs...)
-}
-
-func (m Model) viewHelp() string {
-	var b strings.Builder
-	b.WriteString(screenTitleStyle.Render("Atajos de teclado"))
-	b.WriteString("\n\n")
-	for _, row := range m.helpRows() {
-		b.WriteString("  " + helpKeyStyle.Render(padRight(row[0], 18)) + hintStyle.Render(row[1]) + "\n")
-	}
-	return b.String()
-}
-
-// helpRows returns the keys that are actually available on the active screen.
-// Sections get their own list so the overlay never advertises actions that do
-// not exist there.
-func (m Model) helpRows() [][2]string {
-	if strings.HasPrefix(m.Screen, "defect-") || m.Screen == "defects" {
-		return m.defectHelpRows()
-	}
-	if m.Screen == "planning-poker" && m.pokerPhase == "vote" {
-		return [][2]string{{"0–100 / ?", "Registrar el voto privado"}, {"Enter", "Confirmar voto y pasar al siguiente participante"}, {"Esc", "Volver"}, {"Ctrl+C", "Salir desde cualquier pantalla"}}
-	}
-	if m.Screen == "section" {
-		return m.sectionHelpRows()
-	}
-	if m.Screen == "dashboard" {
-		return dashboardHelpRows()
-	}
-	if m.Screen == "effort-result" {
-		return effortResultHelpRows()
-	}
-	if m.Screen == "sprints" {
-		return sprintsHelpRows()
-	}
-	return [][2]string{
-		{"↑ / ↓", "Mover la selección"},
-		{"Enter", "Elegir / confirmar la fila resaltada"},
-		{"n", "Crear un elemento nuevo"},
-		{"e", "Editar el elemento resaltado"},
-		{"Space", "Marcar historias (multiselección)"},
-		{"/", "Buscar o filtrar en una lista"},
-		{"r", "Refrescar el listado actual"},
-		{"x", "Cerrar el Sprint resaltado (pide confirmación)"},
-		{"h", "Ver los Sprints cerrados"},
-		{"p", "Cambiar el proyecto activo"},
-		{"Esc", "Limpiar el filtro y volver un nivel (nunca pierde el contexto)"},
-		{"Tab / ↑ / ↓", "Cambiar de campo en un formulario"},
-		{"?", "Mostrar u ocultar esta ayuda"},
-		{"q", "Salir (no dentro de un campo de texto)"},
-		{"Ctrl+C", "Salir desde cualquier pantalla"},
-	}
-}
-
-func sprintsHelpRows() [][2]string {
-	return [][2]string{
-		{"↑ / ↓", "Mover la selección"},
-		{"Enter", "Ver las historias del Sprint resaltado"},
-		{"d", "Descargar el reporte PDF del Sprint resaltado"},
-		{"a", "Asignar historias del backlog"},
-		{"x", "Cerrar el Sprint resaltado (pide confirmación)"},
-		{"h", "Ver los Sprints cerrados"},
-		{"n", "Crear un Sprint"},
-		{"/", "Buscar o filtrar Sprints"},
-		{"r", "Refrescar el listado"},
-		{"p", "Cambiar el proyecto activo"},
-		{"Esc", "Limpiar el filtro y volver al menú"},
-		{"?", "Mostrar u ocultar esta ayuda"},
-		{"q / Q", "Salir"},
-		{"Ctrl+C", "Salir desde cualquier pantalla"},
-	}
-}
-
-func (m Model) defectHelpRows() [][2]string {
-	rows := [][2]string{}
-	switch m.Screen {
-	case "defects":
-		rows = append(rows, [2]string{"↑ / ↓", "Mover la selección"})
-		if len(m.visibleDefects()) > 0 {
-			rows = append(rows, [2]string{"Enter", "Ver el detalle del defecto"}, [2]string{"u", "Actualizar el estado del defecto resaltado"})
-		}
-		rows = append(rows, [2]string{"n", "Crear un defecto"}, [2]string{"/", "Buscar o filtrar defectos"}, [2]string{"r", "Refrescar el listado"})
-	case "defect-detail":
-		rows = append(rows, [2]string{"u", "Cambiar el estado del defecto"}, [2]string{"Esc", "Volver al listado"})
-	case "defect-create-form":
-		rows = append(rows, [2]string{"Tab / ↑ / ↓", "Cambiar de campo"}, [2]string{"← / →", "Cambiar severidad o estado"}, [2]string{"Enter", "Continuar al selector o confirmar"}, [2]string{"Esc", "Cancelar el borrador"})
-	case "defect-story-select", "defect-sprint-select", "defect-resolution-select":
-		var options *selector
-		switch m.Screen {
-		case "defect-story-select":
-			options = &m.defectStorySelector
-		case "defect-sprint-select":
-			options = &m.defectSprintSelector
-		default:
-			options = &m.defectResolutionSelector
-		}
-		rows = append(rows, [2]string{"↑ / ↓", "Mover la selección"})
-		if options.filtering {
-			rows = append(rows, [2]string{"Enter", "Dejar de filtrar"}, [2]string{"Esc", "Borrar el filtro"})
-			break
-		}
-		if !options.loading && options.err == "" && len(options.visible()) > 0 {
-			rows = append(rows, [2]string{"Enter", "Elegir la opción resaltada"})
-		}
-		rows = append(rows, [2]string{"/", "Buscar o filtrar"}, [2]string{"r", "Refrescar las opciones"}, [2]string{"Esc", "Limpiar filtro o volver"})
-	case "defect-create-confirm":
-		rows = append(rows, [2]string{"s", "Confirmar y registrar el defecto"}, [2]string{"n", "Cancelar el registro"}, [2]string{"Esc", "Volver al borrador"})
-	case "defect-create-result":
-		if !m.defectCreateLoading {
-			rows = append(rows, [2]string{"Enter / Esc", "Volver al listado"})
-		}
-	case "defect-status-select":
-		rows = append(rows, [2]string{"↑ / ↓", "Elegir un estado"}, [2]string{"Enter", "Confirmar el estado elegido"}, [2]string{"Esc", "Cancelar sin cambios"})
-	case "defect-status-result":
-		if !m.defectStatusLoading {
-			rows = append(rows, [2]string{"Enter / Esc", "Volver al detalle"})
-		}
-	}
-	if m.Screen != "defect-create-form" && !m.filtering() && !m.defectSubmissionInFlight() {
-		rows = append(rows, [2]string{"p", "Cambiar el proyecto activo"}, [2]string{"q / Q", "Salir"})
-	}
-	if !m.filtering() {
-		rows = append(rows, [2]string{"?", "Mostrar u ocultar esta ayuda"})
-	}
-	rows = append(rows, [2]string{"Ctrl+C", "Salir desde cualquier pantalla"})
-	return rows
 }
 
 func padRight(s string, width int) string {

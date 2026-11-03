@@ -22,13 +22,11 @@ func TestDefectFlowFootersAdvertiseOnlyAvailableActions(t *testing.T) {
 		{name: "filtered story selector", screen: "defect-story-select", filtering: true, want: []string{"escribí", "para filtrar"}, mustNot: []string{"refrescar", "proyecto"}},
 		{name: "detection Sprint selector", screen: "defect-sprint-select", want: []string{"r", "refrescar", "Enter", "elegir"}},
 		{name: "create confirmation", screen: "defect-create-confirm", want: []string{"s", "confirmar registro", "n", "cancelar"}},
-		{name: "create loading", screen: "defect-create-result", loading: true, want: []string{"Ctrl+C", "salir"}, mustNot: []string{"Enter", "volver", "q", "proyecto"}},
-		{name: "create result", screen: "defect-create-result", want: []string{"Enter/Esc", "volver"}},
+		{name: "create loading", screen: "defect-create-confirm", loading: true, want: []string{"Ctrl+C", "salir"}, mustNot: []string{"confirmar", "volver", "q", "proyecto"}},
 		{name: "status selection", screen: "defect-status-select", want: []string{"Enter", "elegir estado"}},
 		{name: "resolution Sprint selector", screen: "defect-resolution-select", want: []string{"r", "refrescar", "Enter", "elegir"}},
 		{name: "filtered resolution selector", screen: "defect-resolution-select", filtering: true, want: []string{"escribí", "para filtrar"}, mustNot: []string{"refrescar", "proyecto"}},
-		{name: "status loading", screen: "defect-status-result", loading: true, want: []string{"Ctrl+C", "salir"}, mustNot: []string{"Enter", "volver", "q", "proyecto"}},
-		{name: "status result", screen: "defect-status-result", want: []string{"Enter/Esc", "volver"}},
+		{name: "status loading", screen: "defect-status-select", loading: true, want: []string{"Ctrl+C", "salir"}, mustNot: []string{"Enter", "cancelar", "q", "proyecto"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -71,10 +69,8 @@ func TestDefectSelectorFooterDoesNotOfferChooseWhenEmpty(t *testing.T) {
 				t.Errorf("empty selector footer advertises choosing an unavailable option: %q", footer)
 			}
 			m.showHelp = true
-			for _, row := range m.helpRows() {
-				if row[0] == "Enter" {
-					t.Errorf("empty selector help advertises choosing an unavailable option: %#v", row)
-				}
+			if help := helpDescription(m.bindings(), "Enter"); help != "" {
+				t.Errorf("empty selector help advertises choosing an unavailable option: %q", help)
 			}
 		})
 	}
@@ -125,16 +121,15 @@ func TestDefectFlowBreadcrumbsUseSpanishLabels(t *testing.T) {
 	labels := map[string]string{
 		"defects": "Defectos", "defect-detail": "Detalle", "defect-create-form": "Registrar defecto",
 		"defect-story-select": "Historia", "defect-sprint-select": "Sprint de detección",
-		"defect-create-confirm": "Confirmar registro", "defect-create-result": "Resultado del registro",
-		"defect-status-select": "Cambiar estado", "defect-resolution-select": "Sprint de resolución",
-		"defect-status-result": "Resultado del estado",
+		"defect-create-confirm": "Confirmar registro",
+		"defect-status-select":  "Cambiar estado", "defect-resolution-select": "Sprint de resolución",
 	}
 	for screen, label := range labels {
 		t.Run(screen, func(t *testing.T) {
 			m := NewModel("http://localhost:8080")
 			m.Screen, m.activeProjectID, m.activeProjectName = screen, "p-1", "Proyecto Alfa"
 			view := stripANSI(m.View())
-			if !strings.Contains(view, label) || !strings.Contains(view, "Proyecto: Proyecto Alfa") {
+			if !strings.Contains(view, label) || !strings.Contains(view, "Proyectos › Proyecto Alfa › Defectos") {
 				t.Errorf("breadcrumb %q does not contain %q and the project context: %q", view, label, view)
 			}
 			for _, raw := range []string{"status-select", "status-result", "create-result", "resolution-select", "sprint-select", "story-select", "create-confirm", "create-form"} {
@@ -147,7 +142,7 @@ func TestDefectFlowBreadcrumbsUseSpanishLabels(t *testing.T) {
 }
 
 func TestDefectHelpDescribesSupportedActionsOnly(t *testing.T) {
-	for _, screen := range []string{"defects", "defect-detail", "defect-create-form", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-create-result", "defect-status-select", "defect-resolution-select", "defect-status-result"} {
+	for _, screen := range []string{"defects", "defect-detail", "defect-create-form", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-status-select", "defect-resolution-select"} {
 		t.Run(screen, func(t *testing.T) {
 			m := NewModel("http://localhost:8080")
 			m.Screen, m.showHelp = screen, true
@@ -187,7 +182,7 @@ func TestDefectSelectorHelpDistinguishesFilteringFromChoosing(t *testing.T) {
 					selector := defectSelectorForScreen(&m, screen)
 					selector.items = []selectorItem{{ID: "option-1", Label: "Option"}}
 					selector.filtering = filtering
-					rows := m.helpRows()
+					rows := m.bindings()
 					enterAction := helpDescription(rows, "Enter")
 					if filtering {
 						if strings.Contains(enterAction, "Elegir") || enterAction != "Dejar de filtrar" {
@@ -240,10 +235,10 @@ func TestDefectListItemActionsRequireVisibleDefects(t *testing.T) {
 	}
 }
 
-func helpDescription(rows [][2]string, key string) string {
+func helpDescription(rows []binding, key string) string {
 	for _, row := range rows {
-		if row[0] == key {
-			return row[1]
+		if row.key == key {
+			return row.helpText()
 		}
 	}
 	return ""

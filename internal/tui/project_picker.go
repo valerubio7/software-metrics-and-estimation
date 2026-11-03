@@ -8,12 +8,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// openProjectPicker shows the searchable project list (the "browser").
-// purpose selects what Enter does with the confirmed project, so the same
-// screen serves the Projects menu, Backlog and Sprints.
-func (m Model) openProjectPicker(purpose string) (Model, tea.Cmd) {
-	m.pickerReturn = m.Screen
-	m.pickerPurpose = purpose
+// openProjectPicker shows the searchable project list (the "browser"), the
+// start screen and the parent of every workspace tab.
+func (m Model) openProjectPicker() (Model, tea.Cmd) {
 	m.Screen = "project-picker"
 	m.projectFilter = ""
 	m.projectFiltering = false
@@ -38,6 +35,8 @@ func (m Model) applyProjectsResult(result ProjectsResultMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.projectsLoading = false
+	autoOpen := m.autoOpen
+	m.autoOpen = false
 	if result.Err != nil {
 		m.message = "Error de conexión: " + result.Err.Error()
 		return m, nil
@@ -54,6 +53,9 @@ func (m Model) applyProjectsResult(result ProjectsResultMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.projects = listing.Projects
+	if autoOpen && len(m.projects) == 1 {
+		return m.selectProject(m.projects[0])
+	}
 	return m, nil
 }
 
@@ -108,11 +110,6 @@ func (m Model) updateProjectPicker(key tea.KeyMsg) (Model, tea.Cmd) {
 			m.projectFilter, m.projectCursor = "", 0
 			return m, nil
 		}
-		m.message = ""
-		m.Screen = m.pickerReturn
-		if m.Screen == "" {
-			m.Screen = "menu"
-		}
 	case tea.KeyUp:
 		if m.projectCursor > 0 {
 			m.projectCursor--
@@ -132,9 +129,6 @@ func (m Model) updateProjectPicker(key tea.KeyMsg) (Model, tea.Cmd) {
 		case "r":
 			m.projectsLoading = true
 			return m, m.listProjectsCmd()
-		case "p":
-			// p is the global «change project» shortcut; the browser already is
-			// that changer, so keep it inert instead of seeding a search.
 		default:
 			// Any other character starts a search seeded with it, so typing
 			// still feels immediate while e and n stay reserved for actions.
@@ -153,67 +147,26 @@ func (m Model) updateProjectPicker(key tea.KeyMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// selectProject stores the session context and resumes the flow that opened the
-// picker. Sprint flows always land on the Sprints browser, which is the single
-// entry point for every Sprint operation.
+// selectProject opens the workspace of project on its Dashboard tab.
 func (m Model) selectProject(project ProjectSummary) (Model, tea.Cmd) {
 	m.activeProjectID = project.ID
 	m.activeProjectName = project.Name
-	returnTo, purpose := m.pickerReturn, m.pickerPurpose
+	m.activeProjectStatus = project.Status
 	m.message = ""
-
-	switch {
-	case purpose == "dashboard" || returnTo == "dashboard":
-		return m.openDashboard()
-	case purpose == "backlog":
-		m.Screen = "backlog"
-		m.backlogFilter, m.backlogFiltering = "", false
-		return m.startBacklogLoad()
-	case purpose == "defects" || returnTo == "defects" || strings.HasPrefix(returnTo, "defect-"):
-		return m.openDefects()
-	case purpose == "sprints" || isSprintScreen(returnTo):
-		return m.enterSprints()
-	case strings.HasPrefix(purpose, "section:"):
-		return m.openSection(sectionKind(strings.TrimPrefix(purpose, "section:")))
-	case returnTo == "section" && m.section.kind != "":
-		return m.openSection(m.section.kind)
-	case returnTo == "effort-result":
-		// The result belongs to the project that was just left: drop the flow and
-		// start Esfuerzo again on the stories of the new one.
-		return m.openSection(sectionEffort)
-	default:
-		m.Screen = returnTo
-		if m.Screen == "" {
-			m.Screen = "menu"
-		}
-		if m.Screen == "menu" {
-			m.Cursor = 0
-		}
-		return m, nil
-	}
+	return m.openDashboard()
 }
 
 // isSprintScreen reports whether screen belongs to the Sprints flow.
 func isSprintScreen(screen string) bool {
 	switch screen {
-	case "sprints", "sprint-goal", "sprint-history", "sprint-confirm", "sprint-story-select", "sprint-assigned-list", "sprint-task-form", "sprint-result":
+	case "sprints", "sprint-goal", "sprint-history", "sprint-confirm", "sprint-story-select", "sprint-assigned-list", "sprint-task-form":
 		return true
 	}
 	return false
 }
 
 func (m Model) viewProjectPicker() string {
-	title, hint := "Elegí un proyecto", "Enter usa el proyecto para Backlog y Sprints."
-	if m.pickerPurpose == "projects" {
-		title = "Proyectos"
-		hint = "✓ = proyecto activo · Enter usa · e edita · n crea · / busca por nombre o ID."
-	}
-	if strings.HasPrefix(m.pickerPurpose, "section:") {
-		hint = "Enter continúa en " + m.section.kind.title() + " con el proyecto elegido."
-	}
-	if m.pickerPurpose == "dashboard" {
-		hint = "Enter abre el Dashboard del proyecto elegido."
-	}
+	title, hint := "Proyectos", "Enter abre el proyecto · n crea · e edita · / busca por nombre o ID."
 	var b strings.Builder
 	b.WriteString(screenTitleStyle.Render(title))
 	b.WriteString("\n")

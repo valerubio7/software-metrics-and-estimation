@@ -21,6 +21,11 @@ func (m Model) openDefectCreateConfirm() (Model, tea.Cmd) {
 }
 
 func (m Model) updateDefectCreateConfirm(key tea.KeyMsg) (Model, tea.Cmd) {
+	if m.defectCreateLoading {
+		// The POST is not idempotent: no key may send it again or leave before
+		// the answer is known.
+		return m, nil
+	}
 	if key.Type == tea.KeyEsc {
 		m.Screen = "defect-create-form"
 		return m, nil
@@ -36,8 +41,10 @@ func (m Model) updateDefectCreateConfirm(key tea.KeyMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
+// submitDefectCreate sends the confirmed draft and stays on the confirmation
+// until the API answers.
 func (m Model) submitDefectCreate() (Model, tea.Cmd) {
-	m.Screen, m.defectCreateLoading, m.defectCreateOK = "defect-create-result", true, false
+	m.Screen, m.defectCreateLoading, m.defectCreateMessage = "defect-create-confirm", true, ""
 	m.defectRequestSequence++
 	requestID := m.defectRequestSequence
 	m.defectCreateRequestID = requestID
@@ -53,8 +60,10 @@ func (m Model) submitDefectCreate() (Model, tea.Cmd) {
 	}
 }
 
+// applyDefectCreateResult returns to the reloaded defect list with a toast on
+// success; a rejection stays on the confirmation with the API reason.
 func (m Model) applyDefectCreateResult(result defectCreateResult) (Model, tea.Cmd) {
-	if result.ProjectID != m.activeProjectID || m.Screen != "defect-create-result" || !m.defectCreateLoading || result.RequestID != m.defectCreateRequestID {
+	if result.ProjectID != m.activeProjectID || m.Screen != "defect-create-confirm" || !m.defectCreateLoading || result.RequestID != m.defectCreateRequestID {
 		return m, nil
 	}
 	m.defectCreateLoading = false
@@ -66,35 +75,20 @@ func (m Model) applyDefectCreateResult(result defectCreateResult) (Model, tea.Cm
 		m.defectCreateMessage = fmt.Sprintf("Error HTTP %d: %s", result.Response.StatusCode, string(result.Response.Body))
 		return m, nil
 	}
-	m.defectCreateOK = true
-	m.defectCreateMessage = fmt.Sprintf("Defecto registrado (HTTP %d):\n%s", result.Response.StatusCode, string(result.Response.Body))
-	return m, nil
-}
-
-func (m Model) updateDefectCreateResult(key tea.KeyMsg) (Model, tea.Cmd) {
-	if m.defectCreateLoading || (key.Type != tea.KeyEnter && key.Type != tea.KeyEsc) {
-		return m, nil
-	}
-	if m.defectCreateOK {
-		return m.openDefects()
-	}
-	m.Screen = "defect-create-form"
-	return m, nil
+	m.toast = "Defecto registrado: " + m.defectCreateForm.description
+	return m.openDefects()
 }
 
 func (m Model) viewDefectCreateConfirm() string {
 	f := m.defectCreateForm
-	return screenTitleStyle.Render("Confirmar defecto") + "\n\n" +
+	view := screenTitleStyle.Render("Confirmar defecto") + "\n\n" +
 		fmt.Sprintf("Descripción: %s\nSeveridad: %s\nEstado: %s\nHistoria: %s\nSprint de detección: %s\n\n", f.description, f.severity(), f.status(), f.storyLabel, f.sprintLabel) +
 		hintStyle.Render("s confirma y registra · n cancela · Esc vuelve al borrador.")
-}
-
-func (m Model) viewDefectCreateResult() string {
 	if m.defectCreateLoading {
-		return screenTitleStyle.Render("Registrar defecto") + "\n\n" + statusMutedStyle.Render("Registrando defecto…")
+		view += "\n\n" + statusMutedStyle.Render("Registrando defecto…")
 	}
-	if !m.defectCreateOK {
-		return screenTitleStyle.Render("Error al registrar el defecto") + "\n\n" + m.errorBlock(m.defectCreateMessage)
+	if m.defectCreateMessage != "" {
+		view += "\n\n" + strings.TrimRight(m.errorBlock(m.defectCreateMessage), "\n")
 	}
-	return screenTitleStyle.Render("Resultado") + "\n\n" + m.resultBlock(m.defectCreateMessage, true)
+	return view
 }

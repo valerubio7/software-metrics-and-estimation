@@ -13,7 +13,8 @@ var pokerEstimates = []int{0, 1, 2, 3, 5, 8, 13, 20, 40, 100}
 
 func (m Model) viewPokerParticipants() string {
 	var b strings.Builder
-	b.WriteString(screenTitleStyle.Render("Planning Poker · Participantes") + "\nElegí participantes con Space y confirmá con Enter.\n\n")
+	b.WriteString(screenTitleStyle.Render("Planning Poker · Participantes") + "\nHistoria: " + m.section.selected.Label +
+		"\nElegí participantes con Space y confirmá con Enter.\n\n")
 	if m.section.selector.err != "" {
 		b.WriteString(m.errorBlock(m.section.selector.err))
 		return b.String()
@@ -161,24 +162,6 @@ func (m Model) viewPlanningPoker() string {
 		b.WriteString(m.pokerMessage)
 	}
 	return b.String()
-}
-func (m Model) planningPokerFooter() string {
-	switch m.pokerPhase {
-	case "vote":
-		return m.keyHints("0–100/?", "votar", "↑/↓", "cambiar participante", "Enter", "siguiente", "Esc", "volver", "q", "salir")
-	case "reveal":
-		return m.keyHints("Enter/r", "revelar ronda", "Esc", "volver", "q", "salir")
-	case "revealed":
-		return m.keyHints("Enter", "elegir estimación", "n", "nueva ronda", "Esc", "volver", "q", "salir")
-	case "estimate":
-		return m.keyHints("↑/↓", "cambiar estimación", "Enter", "continuar", "Esc", "volver", "q", "salir")
-	case "confirm":
-		return m.keyHints("y/Enter", "confirmar envío", "Esc", "volver", "q", "salir")
-	case "result":
-		return m.keyHints("Esc", "volver", "q", "salir")
-	default:
-		return m.keyHints("Esc", "volver", "q", "salir")
-	}
 }
 func (m Model) setStoryPointsCmd() tea.Cmd {
 	client := m.storyPointsClient

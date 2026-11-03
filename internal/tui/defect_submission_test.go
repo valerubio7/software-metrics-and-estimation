@@ -74,7 +74,7 @@ func TestDefectCreationPostsOnceAfterExplicitConfirmationAndReloads(t *testing.T
 	}
 	updated, createCmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
 	model = updated.(Model)
-	if model.Screen != "defect-create-result" || !model.defectCreateLoading || createCmd == nil {
+	if model.Screen != "defect-create-confirm" || !model.defectCreateLoading || createCmd == nil {
 		t.Fatalf("confirmation state = screen %q loading=%v command nil=%v", model.Screen, model.defectCreateLoading, createCmd == nil)
 	}
 	updated, duplicate := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
@@ -82,20 +82,19 @@ func TestDefectCreationPostsOnceAfterExplicitConfirmationAndReloads(t *testing.T
 	if duplicate != nil || len(requests) != 2 {
 		t.Fatalf("pending duplicate confirmation sent another request: %q", requests)
 	}
-	model = updateDefectTestModel(model, createCmd())
+	updated, reloadCmd := model.Update(createCmd())
+	model = updated.(Model)
 	if posted["description"] != "Cache crash" || posted["severity"] != "media" || posted["status"] != "en_correccion" || posted["story_id"] != "story-2" || posted["sprint_id"] != "sprint-open" || len(posted) != 5 {
 		t.Fatalf("POST body = %#v", posted)
 	}
 	if got := strings.Join(requests, "|"); got != "GET /projects/p-1/stories|GET /projects/p-1/sprints/open|POST /projects/p-1/defects" {
 		t.Fatalf("post-confirmation requests = %q", got)
 	}
-	if !strings.Contains(model.View(), "Defecto registrado") || !strings.Contains(model.View(), "defect-new") {
-		t.Fatalf("success view missing created defect:\n%s", model.View())
+	if !strings.Contains(stripANSI(model.View()), "✓ Defecto registrado: Cache crash") {
+		t.Fatalf("success view missing the toast:\n%s", stripANSI(model.View()))
 	}
-	updated, reloadCmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
 	if model.Screen != "defects" || reloadCmd == nil {
-		t.Fatalf("success result return = %q, reload command nil %v", model.Screen, reloadCmd == nil)
+		t.Fatalf("success return = %q, reload command nil %v", model.Screen, reloadCmd == nil)
 	}
 	model = updateDefectTestModel(model, reloadCmd())
 	if len(model.defects) != 1 || model.defects[0].ID != "defect-new" {
@@ -127,23 +126,10 @@ func TestDefectCreationCancelAtConfirmationDoesNotPost(t *testing.T) {
 	}
 }
 
-func TestDefectCreateResultQuitsOnQ(t *testing.T) {
-	model := NewModel("http://example.invalid")
-	model.Screen, model.activeProjectID = "defect-create-result", "p-1"
-	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
-	if cmd == nil {
-		t.Fatal("q did not quit the creation result screen")
-	}
-	msg := cmd()
-	if _, ok := msg.(tea.QuitMsg); !ok {
-		t.Fatalf("q produced %T, want tea.QuitMsg", msg)
-	}
-}
-
-func TestDefectCreateResultPreservesAPIStatusAndBody(t *testing.T) {
+func TestDefectCreateRejectionPreservesAPIStatusAndBody(t *testing.T) {
 	const responseBody = `{"error":"validation_failed","message":"one or more fields are invalid","fields":{"description":"is required"}}`
 	model := NewModel("http://example.invalid")
-	model.Screen, model.activeProjectID, model.defectCreateLoading = "defect-create-result", "p-1", true
+	model.Screen, model.activeProjectID, model.defectCreateLoading = "defect-create-confirm", "p-1", true
 	updated, _ := model.Update(defectCreateResult{ProjectID: "p-1", Response: APIResponse{StatusCode: http.StatusUnprocessableEntity, Body: []byte(responseBody)}})
 	model = updated.(Model)
 	model.width = 240
@@ -153,13 +139,13 @@ func TestDefectCreateResultPreservesAPIStatusAndBody(t *testing.T) {
 			t.Errorf("result view does not preserve %q:\n%s", fragment, view)
 		}
 	}
-	if model.defectCreateOK {
-		t.Fatal("API validation failure was marked successful")
+	if model.Screen != "defect-create-confirm" || model.toast != "" {
+		t.Fatalf("API validation failure left the confirmation or reported success: screen=%q toast=%q", model.Screen, model.toast)
 	}
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	model = updated.(Model)
 	if cmd != nil || model.Screen != "defect-create-form" {
-		t.Fatalf("API error result did not return to editable draft: screen=%q command nil=%v", model.Screen, cmd == nil)
+		t.Fatalf("API error did not allow returning to the editable draft: screen=%q command nil=%v", model.Screen, cmd == nil)
 	}
 }
 
@@ -179,7 +165,7 @@ func TestStaleDefectCreateResultCannotCompleteNewerSubmission(t *testing.T) {
 	}
 	updated, _ = model.Update(secondResult)
 	model = updated.(Model)
-	if model.defectCreateLoading || !model.defectCreateOK || model.defectCreateMessage != "Defecto registrado (HTTP 201):\nnew result" {
-		t.Fatalf("newer submission result was not applied: loading=%v ok=%v message=%q", model.defectCreateLoading, model.defectCreateOK, model.defectCreateMessage)
+	if model.defectCreateLoading || model.Screen != "defects" || !strings.HasPrefix(model.toast, "Defecto registrado") {
+		t.Fatalf("newer submission result was not applied: loading=%v screen=%q toast=%q", model.defectCreateLoading, model.Screen, model.toast)
 	}
 }

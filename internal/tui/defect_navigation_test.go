@@ -8,7 +8,7 @@ import (
 )
 
 func TestDefectMutationLoadingBlocksProjectSwitchAndQuit(t *testing.T) {
-	for _, screen := range []string{"defect-create-result", "defect-status-result"} {
+	for _, screen := range []string{"defect-create-confirm", "defect-status-select", "defect-resolution-select"} {
 		t.Run(screen, func(t *testing.T) {
 			m := NewModel("http://localhost:8080")
 			m.Screen, m.defectCreateLoading, m.defectStatusLoading = screen, true, true
@@ -27,7 +27,7 @@ func TestDefectMutationLoadingBlocksProjectSwitchAndQuit(t *testing.T) {
 }
 
 func TestDefectStatusScreensSupportGlobalNavigationWhenIdle(t *testing.T) {
-	for _, screen := range []string{"defect-status-select", "defect-resolution-select", "defect-status-result"} {
+	for _, screen := range []string{"defect-status-select", "defect-resolution-select"} {
 		t.Run(screen, func(t *testing.T) {
 			m := NewModel("http://localhost:8080")
 			m.Screen, m.activeProjectID = screen, "p-1"
@@ -42,8 +42,8 @@ func TestDefectStatusScreensSupportGlobalNavigationWhenIdle(t *testing.T) {
 			m = NewModel("http://localhost:8080")
 			m.Screen, m.activeProjectID = screen, "p-1"
 			updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
-			if updated.(Model).Screen != "project-picker" || cmd == nil {
-				t.Fatalf("p = screen %q, cmd nil %v; want project picker and project load", updated.(Model).Screen, cmd == nil)
+			if updated.(Model).Screen != screen || cmd != nil {
+				t.Fatalf("p = screen %q, cmd nil %v; the removed project shortcut must not leave the screen", updated.(Model).Screen, cmd == nil)
 			}
 
 			m = NewModel("http://localhost:8080")

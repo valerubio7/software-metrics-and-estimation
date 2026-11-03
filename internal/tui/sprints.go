@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -136,11 +135,11 @@ type SprintResultMsg struct {
 // of the session project. Without a project it first asks for one.
 func (m Model) enterSprints() (Model, tea.Cmd) {
 	if m.activeProjectID == "" {
-		return m.openProjectPicker("sprints")
+		return m.leaveWorkspace()
 	}
 	m.Screen = "sprints"
 	m.sprintFilter, m.sprintFiltering, m.sprintCursor = "", false, 0
-	m.sprintMessage, m.sprintReturn = "", ""
+	m.sprintMessage = ""
 	m.sprintStoriesLoading, m.sprintHistoryLoading = false, false
 	m.sprintLoading = true
 	return m, m.openSprintsCmd()
@@ -150,13 +149,13 @@ func (m Model) enterSprints() (Model, tea.Cmd) {
 // tasks and c completes them.
 func (m Model) openAssignedStories(sprintID string) (Model, tea.Cmd) {
 	m.Screen, m.sprintStoriesLoading, m.sprintStories = "sprint-assigned-list", true, nil
-	m.sprintCursor, m.sprintFilter, m.sprintFiltering = 0, "", false
+	m.sprintCursor, m.sprintFilter, m.sprintFiltering, m.sprintMessage = 0, "", false, ""
 	return m, m.listAssignedSprintStoriesCmd(sprintID)
 }
 
 // openSprintHistory shows the closed Sprints of the session project, read-only.
 func (m Model) openSprintHistory() (Model, tea.Cmd) {
-	m.Screen, m.sprintHistoryLoading = "sprint-history", true
+	m.Screen, m.sprintHistoryLoading, m.sprintMessage = "sprint-history", true, ""
 	m.historyCursor, m.historyExpanded = 0, ""
 	m.sprintFilter, m.sprintFiltering = "", false
 	return m, m.historySprintsCmd()
@@ -198,7 +197,7 @@ func (m Model) updateSprints(key tea.KeyMsg) (Model, tea.Cmd) {
 			m.sprintFilter, m.sprintCursor = "", 0
 			return m, nil
 		}
-		m.Screen, m.Cursor = "menu", 0
+		return m.leaveWorkspace()
 	case tea.KeyUp:
 		if m.sprintCursor > 0 {
 			m.sprintCursor--
@@ -219,9 +218,9 @@ func (m Model) updateSprints(key tea.KeyMsg) (Model, tea.Cmd) {
 		case "/":
 			m.sprintFiltering = true
 		case "n":
-			m.Screen, m.sprintGoal = "sprint-goal", ""
+			m.Screen, m.sprintGoal, m.sprintMessage = "sprint-goal", "", ""
 		case "r":
-			m.sprintLoading = true
+			m.sprintLoading, m.sprintMessage = true, ""
 			return m, m.openSprintsCmd()
 		case "a":
 			sprint, ok := sprintAt(sprints, m.sprintCursor)
@@ -229,7 +228,7 @@ func (m Model) updateSprints(key tea.KeyMsg) (Model, tea.Cmd) {
 				return m, nil
 			}
 			m.selectedSprintID = sprint.ID
-			m.Screen, m.sprintStoriesLoading = "sprint-story-select", true
+			m.Screen, m.sprintStoriesLoading, m.sprintMessage = "sprint-story-select", true, ""
 			m.sprintStories, m.selectedStories = nil, map[string]bool{}
 			m.sprintCursor, m.sprintFilter, m.sprintFiltering = 0, "", false
 			return m, m.listAssignedBacklogCmd()
@@ -245,12 +244,9 @@ func (m Model) updateSprints(key tea.KeyMsg) (Model, tea.Cmd) {
 				return m, nil
 			}
 			m.selectedSprintID = sprint.ID
-			m.Screen = "sprint-confirm"
+			m.Screen, m.sprintMessage = "sprint-confirm", ""
 		case "h":
 			return m.openSprintHistory()
-		case "p":
-			// p is the global «change project» shortcut; keep it inert here so it
-			// does not seed a search.
 		default:
 			m.sprintFiltering = true
 			if value, ok := editText(m.sprintFilter, key); ok {
@@ -270,6 +266,7 @@ func (m Model) updateSprintConfirm(key tea.KeyMsg) (Model, tea.Cmd) {
 	if key.Type == tea.KeyRunes {
 		switch strings.ToLower(string(key.Runes)) {
 		case "s":
+			m.sprintSaving, m.sprintMessage = true, ""
 			return m, m.closeSprintCmd()
 		case "n":
 			m.Screen = "sprints"
@@ -339,8 +336,6 @@ func (m Model) updateSprintHistory(key tea.KeyMsg) (Model, tea.Cmd) {
 		case "r":
 			m.sprintHistoryLoading = true
 			return m, m.historySprintsCmd()
-		case "p":
-			// p is the global shortcut; keep it inert here.
 		default:
 			m.sprintFiltering = true
 			if value, ok := editText(m.sprintFilter, key); ok {
@@ -361,6 +356,7 @@ func (m Model) updateSprintForm(key tea.KeyMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if key.Type == tea.KeyEnter {
+		m.sprintSaving, m.sprintMessage = true, ""
 		return m, m.createSprintCmd()
 	}
 	return m, nil
@@ -422,8 +418,6 @@ func (m Model) updateAssignedStories(key tea.KeyMsg) (Model, tea.Cmd) {
 			return m, m.listAssignedSprintStoriesCmd(m.selectedSprintID)
 		case "c":
 			return m.completeSelectedStory(stories)
-		case "p":
-			// p is the global shortcut; keep it inert here.
 		default:
 			m.sprintFiltering = true
 			if value, ok := editText(m.sprintFilter, key); ok {
@@ -454,6 +448,7 @@ func (m Model) completeSelectedStory(stories []Story) (Model, tea.Cmd) {
 	}
 	storyID := stories[m.sprintCursor].ID
 	client, projectID, sprintID := m.sprintClient, m.activeProjectID, m.selectedSprintID
+	m.sprintSaving, m.sprintMessage, m.sprintSavingLabel = true, "", stories[m.sprintCursor].Title
 	return m, func() tea.Msg {
 		response, err := client.Complete(context.Background(), projectID, sprintID, storyID)
 		return SprintResultMsg{Op: "complete", Response: response, Err: err}
@@ -514,6 +509,7 @@ func (m Model) updateSprintStorySelection(key tea.KeyMsg) (Model, tea.Cmd) {
 		if len(stories) == 0 {
 			return m, nil
 		}
+		m.sprintSaving, m.sprintMessage = true, ""
 		return m, m.assignSprintStoriesCmd(m.selectedSprintID)
 	case tea.KeyRunes:
 		switch string(key.Runes) {
@@ -522,8 +518,6 @@ func (m Model) updateSprintStorySelection(key tea.KeyMsg) (Model, tea.Cmd) {
 		case "r":
 			m.sprintStoriesLoading = true
 			return m, m.listAssignedBacklogCmd()
-		case "p":
-			// p is the global shortcut; keep it inert here.
 		default:
 			m.sprintFiltering = true
 			if value, ok := editText(m.sprintFilter, key); ok {
@@ -597,21 +591,23 @@ func (m Model) closeSprintCmd() tea.Cmd {
 }
 
 // applySprintResult routes each Sprint response to the screen that owns it: the
-// list responses fill their collection and mutations land on the result screen.
+// list responses fill their collection (a failure stays on that screen with the
+// reason) and a write returns to the screen that started the flow, reloaded and
+// with a toast, or stays on its form with the API reason when rejected.
 func (m Model) applySprintResult(result SprintResultMsg) (Model, tea.Cmd) {
 	switch result.Op {
 	case "open":
 		m.sprintLoading = false
 		m.Screen = "sprints"
 		if message, failed := sprintFailure(result); failed {
-			m.Screen, m.sprintMessage, m.sprintOK = "sprint-result", message, false
+			m.sprintMessage = message
 			return m, nil
 		}
 		var listing struct {
 			Sprints []Sprint `json:"sprints"`
 		}
 		if err := json.Unmarshal(result.Response.Body, &listing); err != nil {
-			m.Screen, m.sprintMessage, m.sprintOK = "sprint-result", unreadableResponse(err), false
+			m.sprintMessage = unreadableResponse(err)
 			return m, nil
 		}
 		m.openSprints, m.sprintCursor = listing.Sprints, 0
@@ -620,79 +616,67 @@ func (m Model) applySprintResult(result SprintResultMsg) (Model, tea.Cmd) {
 		m.sprintHistoryLoading = false
 		m.Screen = "sprint-history"
 		if message, failed := sprintFailure(result); failed {
-			m.Screen, m.sprintMessage, m.sprintOK = "sprint-result", message, false
+			m.sprintMessage = message
 			return m, nil
 		}
 		var history SprintHistory
 		if err := json.Unmarshal(result.Response.Body, &history); err != nil {
-			m.Screen, m.sprintMessage, m.sprintOK = "sprint-result", unreadableResponse(err), false
+			m.sprintMessage = unreadableResponse(err)
 			return m, nil
 		}
 		m.sprintHistory, m.historyCursor, m.historyExpanded = history, 0, ""
 		return m, nil
-	case "backlog":
+	case "backlog", "assigned":
 		m.sprintStoriesLoading = false
 		m.Screen = "sprint-story-select"
+		if result.Op == "assigned" {
+			m.Screen = "sprint-assigned-list"
+		}
 		if message, failed := sprintFailure(result); failed {
-			m.Screen, m.sprintMessage, m.sprintOK = "sprint-result", message, false
+			m.sprintMessage = message
 			return m, nil
 		}
 		listed, ok := storyListing(result)
 		if !ok {
-			m.Screen, m.sprintMessage, m.sprintOK = "sprint-result", "No se pudo interpretar la respuesta de la API.", false
-			return m, nil
-		}
-		m.sprintStories, m.selectedStories, m.sprintCursor = listed, map[string]bool{}, 0
-		return m, nil
-	case "assigned":
-		m.sprintStoriesLoading = false
-		m.Screen = "sprint-assigned-list"
-		if message, failed := sprintFailure(result); failed {
-			m.Screen, m.sprintMessage, m.sprintOK = "sprint-result", message, false
-			return m, nil
-		}
-		listed, ok := storyListing(result)
-		if !ok {
-			m.Screen, m.sprintMessage, m.sprintOK = "sprint-result", "No se pudo interpretar la respuesta de la API.", false
+			m.sprintMessage = "No se pudo interpretar la respuesta de la API."
 			return m, nil
 		}
 		m.sprintStories, m.sprintCursor = listed, 0
+		if result.Op == "backlog" {
+			m.selectedStories = map[string]bool{}
+		}
 		return m, nil
 	}
 
-	m.Screen = "sprint-result"
+	if !m.sprintSaving {
+		return m, nil // an answer nobody is waiting for
+	}
+	m.sprintSaving = false
 	if message, failed := sprintFailure(result); failed {
-		m.sprintMessage, m.sprintOK = message, false
-		m.sprintReturn = "sprints"
-		if result.Op == "tasks" || result.Op == "complete" {
-			m.sprintReturn = "sprint-assigned-list"
-		}
+		m.sprintMessage = message
 		return m, nil
 	}
-	m.sprintOK = true
+	goal := m.sprintGoalByID(m.selectedSprintID)
 	switch result.Op {
 	case "close":
-		m.sprintReturn = "sprints"
-		m.sprintMessage = fmt.Sprintf("Sprint %s cerrado. Las historias planificadas y completadas siguen disponibles en el historial.", shortID(m.selectedSprintID))
+		m.toast = "Sprint cerrado: " + goal
 	case "assign":
-		m.sprintReturn = "sprints"
-		m.sprintMessage = "Historias asignadas al Sprint correctamente."
+		m.toast = "Historias asignadas al Sprint: " + goal
 	case "tasks":
-		m.sprintReturn = "sprint-assigned-list"
-		m.sprintMessage = fmt.Sprintf("Tareas creadas correctamente (%d).", result.Response.StatusCode)
+		m.toast = "Tarea creada: " + m.sprintSavingLabel
+		return m.openAssignedStories(m.selectedSprintID)
 	case "complete":
-		m.sprintReturn = "sprint-assigned-list"
-		m.sprintMessage = fmt.Sprintf("Historia completada (%d).", result.Response.StatusCode)
+		m.toast = "Historia completada: " + m.sprintSavingLabel
+		return m.openAssignedStories(m.selectedSprintID)
 	default:
-		m.sprintReturn = "sprints"
 		var sprint Sprint
-		if json.Unmarshal(result.Response.Body, &sprint) == nil && sprint.ID != "" {
-			m.sprintMessage = "Sprint creado: " + sprint.ID
+		if json.Unmarshal(result.Response.Body, &sprint) == nil && sprint.SprintGoal != "" {
+			m.toast = "Sprint creado: " + sprint.SprintGoal
 		} else {
-			m.sprintMessage = strings.TrimSpace(string(result.Response.Body))
+			m.toast = "Sprint creado: " + m.sprintGoal
 		}
 	}
-	return m, nil
+	return m.enterSprints()
 }
 
 // storyListing decodes a {"stories":[...]} response, reporting whether the body

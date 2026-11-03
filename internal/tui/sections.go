@@ -16,20 +16,17 @@ const (
 	sectionPlanningPoker sectionKind = "planning-poker"
 	sectionEffort        sectionKind = "effort"
 	sectionDefects       sectionKind = "defects"
-	sectionMetrics       sectionKind = "metrics"
 )
 
 // title returns the user-facing section name.
 func (k sectionKind) title() string {
 	switch k {
 	case sectionPlanningPoker:
-		return "Planning Poker"
+		return "Estimación"
 	case sectionEffort:
 		return "Esfuerzo"
 	case sectionDefects:
 		return "Defectos"
-	case sectionMetrics:
-		return "Métricas"
 	default:
 		return string(k)
 	}
@@ -42,6 +39,20 @@ func (k sectionKind) primaryUsesStories() bool {
 		return true
 	}
 	return false
+}
+
+// storyNextStep is the selector that follows choosing a story; an unknown
+// kind keeps the primary step, so choosing a story is a no-op.
+func (k sectionKind) storyNextStep() sectionStep {
+	switch k {
+	case sectionPlanningPoker:
+		return sectionStepMembers
+	case sectionEffort:
+		return sectionStepTasks
+	case sectionDefects:
+		return sectionStepSprints
+	}
+	return sectionStepPrimary
 }
 
 func (k sectionKind) primaryHint() string {
@@ -83,33 +94,22 @@ const (
 	sectionStepMembers
 	sectionStepTasks
 	sectionStepSprints
-	sectionStepScope
-	sectionStepMetrics
-	sectionStepNotice
-)
-
-type metricsScope string
-
-const (
-	metricsScopeProject metricsScope = "project"
-	metricsScopeSprint  metricsScope = "sprint"
 )
 
 // sectionState is the navigation state of a Sprint 3 section. The primary
 // selector is preserved while a secondary selector is displayed, so Esc can
 // restore the previous list without another request.
 type sectionState struct {
-	kind         sectionKind
-	step         sectionStep
-	metricsScope metricsScope
-	metrics      metricsPayload
-	selector     selector
-	primary      selector
-	tasks        selector // task list kept while Esfuerzo shows its members
-	selected     selectorItem
-	detail       selectorItem
-	notice       string
-	noticeReturn sectionStep
+	kind     sectionKind
+	step     sectionStep
+	selector selector
+	primary  selector
+	tasks    selector // task list kept while Esfuerzo shows its members
+	selected selectorItem
+	detail   selectorItem
+	// preselected marks a section opened from the backlog with P/E: the story
+	// came chosen, so Esc on its first selector returns to the backlog.
+	preselected bool
 }
 
 // SectionResultMsg is the asynchronous result of a section API read.
@@ -126,23 +126,16 @@ type SectionResultMsg struct {
 func (m Model) openSection(kind sectionKind) (Model, tea.Cmd) {
 	m.section.kind = kind
 	if m.activeProjectID == "" {
-		return m.openProjectPicker("section:" + string(kind))
+		return m.leaveWorkspace()
 	}
 	m.Screen = "section"
 	m.section.step = sectionStepPrimary
-	m.section.metricsScope = ""
-	m.section.metrics = metricsPayload{}
 	m.section.selected = selectorItem{}
 	m.section.detail = selectorItem{}
-	m.section.notice = ""
+	m.section.preselected = false
 	m.section.selector = selector{}
 	m.section.tasks = selector{}
 	m.effort = effortState{seq: m.effort.seq}
-	if kind == sectionMetrics {
-		m.section.step = sectionStepScope
-		m.section.selector.setItems(sectionMetricsScopeItems())
-		return m, nil
-	}
 	m.section.selector.startLoading()
 	m.section.primary = m.section.selector
 	return m, m.loadSectionStepCmd()
@@ -153,8 +146,6 @@ func (m Model) openSection(kind sectionKind) (Model, tea.Cmd) {
 func (m Model) loadSectionStepCmd() tea.Cmd {
 	kind, step, projectID := m.section.kind, m.section.step, m.activeProjectID
 	storyID := m.section.selected.ID
-	sprintID := m.section.selected.ID
-	scope := m.section.metricsScope
 
 	switch step {
 	case sectionStepPrimary:
@@ -188,16 +179,6 @@ func (m Model) loadSectionStepCmd() tea.Cmd {
 			response, err := client.ListOpen(context.Background(), projectID)
 			return SectionResultMsg{Kind: kind, Step: step, Response: response, Err: err}
 		}
-	case sectionStepMetrics:
-		client := m.metricsClient
-		return func() tea.Msg {
-			if scope == metricsScopeProject {
-				response, err := client.Project(context.Background(), projectID)
-				return SectionResultMsg{Kind: kind, Step: step, Response: response, Err: err}
-			}
-			response, err := client.Sprint(context.Background(), projectID, sprintID)
-			return SectionResultMsg{Kind: kind, Step: step, Response: response, Err: err}
-		}
 	}
 	return nil
 }
@@ -218,18 +199,6 @@ func (m Model) applySectionResult(result SectionResultMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if result.Step == sectionStepMetrics {
-		metrics, ok := parseMetricsPayload(result.Response.Body)
-		if !ok {
-			m.section.selector.fail("No se pudo interpretar la respuesta de la API.")
-			return m, nil
-		}
-		m.section.metrics = metrics
-		m.section.selector.loading = false
-		m.section.selector.err = ""
-		return m, nil
-	}
-
 	items, ok := sectionItems(result)
 	if !ok {
 		m.section.selector.fail("No se pudo interpretar la respuesta de la API.")
@@ -247,34 +216,6 @@ func (m Model) applySectionResult(result SectionResultMsg) (Model, tea.Cmd) {
 
 // updateSection drives the shared selector and the step transitions.
 func (m Model) updateSection(key tea.KeyMsg) (Model, tea.Cmd) {
-	if m.section.step == sectionStepNotice {
-		if key.Type == tea.KeyEsc || key.Type == tea.KeyEnter {
-			// The selector still holds the list that produced the notice, so
-			// returning restores the previous step without another request.
-			m.section.step = m.section.noticeReturn
-			m.section.notice = ""
-		}
-		return m, nil
-	}
-	if m.section.step == sectionStepMetrics {
-		if key.Type == tea.KeyEsc {
-			if m.section.metricsScope == metricsScopeSprint {
-				m.section.step = sectionStepPrimary
-				m.section.selector = m.section.primary
-			} else {
-				m.section.step = sectionStepScope
-				m.section.selector = selector{}
-				m.section.selector.setItems(sectionMetricsScopeItems())
-			}
-			return m, nil
-		}
-		if key.Type == tea.KeyRunes && string(key.Runes) == "r" {
-			m.section.selector.startLoading()
-			return m, m.loadSectionStepCmd()
-		}
-		return m, nil
-	}
-
 	if m.section.kind == sectionPlanningPoker && m.section.step == sectionStepMembers && key.Type == tea.KeySpace {
 		item, ok := m.section.selector.selected()
 		if ok {
@@ -292,19 +233,11 @@ func (m Model) updateSection(key tea.KeyMsg) (Model, tea.Cmd) {
 	action := m.section.selector.update(key)
 	switch action {
 	case selectorBack:
-		if m.section.step == sectionStepScope {
-			m.Screen, m.Cursor = "menu", 0
-			return m, nil
-		}
 		if m.section.step == sectionStepPrimary {
-			if m.section.kind == sectionMetrics && m.section.metricsScope == metricsScopeSprint {
-				m.section.step = sectionStepScope
-				m.section.selector = selector{}
-				m.section.selector.setItems(sectionMetricsScopeItems())
-				return m, nil
-			}
-			m.Screen, m.Cursor = "menu", 0
-			return m, nil
+			return m.leaveWorkspace()
+		}
+		if m.section.preselected && m.section.step == m.section.kind.storyNextStep() {
+			return m.openBacklog()
 		}
 		if m.section.kind == sectionEffort && m.section.step == sectionStepMembers {
 			m.section.step = sectionStepTasks
@@ -314,9 +247,6 @@ func (m Model) updateSection(key tea.KeyMsg) (Model, tea.Cmd) {
 		m.section.step = sectionStepPrimary
 		m.section.selector = m.section.primary
 	case selectorRefresh:
-		if m.section.step == sectionStepScope {
-			return m, nil
-		}
 		m.section.selector.startLoading()
 		if m.section.step == sectionStepPrimary {
 			m.section.primary = m.section.selector
@@ -328,43 +258,20 @@ func (m Model) updateSection(key tea.KeyMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// chooseSectionItem advances to the secondary selector or finishes the
-// navigation shell with the future-issue notice.
+// chooseSectionItem advances to the next selector or opens the section flow;
+// a step without a next one keeps the current list.
 func (m Model) chooseSectionItem() (Model, tea.Cmd) {
 	item, ok := m.section.selector.selected()
 	if !ok {
 		return m, nil
 	}
-	if m.section.step == sectionStepScope && m.section.kind == sectionMetrics {
-		if item.ID == string(metricsScopeProject) {
-			m.section.metricsScope = metricsScopeProject
-			m.section.selected = selectorItem{}
-			return m.beginSectionStep(sectionStepMetrics)
-		}
-		m.section.metricsScope = metricsScopeSprint
-		m.section.selected = selectorItem{}
-		return m.beginSectionStep(sectionStepPrimary)
-	}
-
 	if m.section.step == sectionStepPrimary {
 		m.section.selected = item
 		m.section.primary = m.section.selector
-		switch m.section.kind {
-		case sectionPlanningPoker:
-			return m.beginSectionStep(sectionStepMembers)
-		case sectionEffort:
-			return m.beginSectionStep(sectionStepTasks)
-		case sectionDefects:
-			return m.beginSectionStep(sectionStepSprints)
-		case sectionMetrics:
-			m.section.metricsScope = metricsScopeSprint
-			return m.beginSectionStep(sectionStepMetrics)
-		default:
-			m.section.noticeReturn = sectionStepPrimary
-			m.section.step = sectionStepNotice
-			m.section.notice = sectionNotice(m.section.kind, item, selectorItem{})
-			return m, nil
+		if next := m.section.kind.storyNextStep(); next != sectionStepPrimary {
+			return m.beginSectionStep(next)
 		}
+		return m, nil
 	}
 
 	if m.section.kind == sectionEffort && m.section.step == sectionStepTasks {
@@ -390,62 +297,22 @@ func (m Model) chooseSectionItem() (Model, tea.Cmd) {
 		m.pokerPhase, m.pokerCursor, m.Screen = "vote", 0, "planning-poker"
 		return m, nil
 	}
-	m.section.detail = item
-	m.section.noticeReturn = m.section.step
-	m.section.step = sectionStepNotice
-	m.section.notice = sectionNotice(m.section.kind, m.section.selected, item)
 	return m, nil
 }
 
 func (m Model) beginSectionStep(step sectionStep) (Model, tea.Cmd) {
 	m.section.step = step
 	m.section.selector = selector{}
-	if step == sectionStepScope {
-		m.section.selector.setItems(sectionMetricsScopeItems())
-		return m, nil
-	}
 	m.section.selector.startLoading()
 	return m, m.loadSectionStepCmd()
 }
 
-// sectionNotice explains the limit of the navigation shell and names the
-// future issue that will implement the business flow.
-func sectionNotice(kind sectionKind, primary, detail selectorItem) string {
-	switch kind {
-	case sectionPlanningPoker:
-		return fmt.Sprintf("Historia: %s\nParticipante: %s\n\nLa votación de Planning Poker estará disponible en TUI-07.\nNo se guardó ningún dato.", primary.Label, detail.Label)
-	case sectionDefects:
-		return fmt.Sprintf("Historia: %s\nSprint de detección: %s\n\nEl alta de defectos estará disponible en TUI-09.\nNo se guardó ningún dato.", primary.Label, detail.Label)
-	case sectionMetrics:
-		return fmt.Sprintf("Sprint: %s\n\nLas métricas estarán disponibles en TUI-10.\nNo se guardó ningún dato.", primary.Label)
-	default:
-		return "El flujo de negocio todavía no está disponible.\nNo se guardó ningún dato."
-	}
-}
-
-func sectionMetricsScopeItems() []selectorItem {
-	return []selectorItem{
-		{ID: string(metricsScopeProject), Label: "Proyecto", Meta: "Métricas consolidadas del proyecto activo"},
-		{ID: string(metricsScopeSprint), Label: "Sprint", Meta: "Métricas del Sprint abierto seleccionado"},
-	}
-}
-
 func (m Model) viewSection() string {
 	switch m.section.step {
-	case sectionStepScope:
-		return m.viewSelector(&m.section.selector, m.section.kind.title()+" · Ámbito",
-			"Elegí si querés ver métricas del proyecto o de un Sprint.",
-			"No hay ámbitos disponibles.", "")
 	case sectionStepPrimary:
 		title := m.section.kind.title()
 		hint := m.section.kind.primaryHint()
 		emptyTitle, emptyHint := m.section.kind.primaryEmptyTitle(), m.section.kind.primaryEmptyHint()
-		if m.section.kind == sectionMetrics {
-			title += " · Sprint"
-			hint = "Elegí un Sprint abierto para consultar métricas."
-			emptyTitle = "No hay Sprints abiertos."
-			emptyHint = "Creá un Sprint desde Sprints y volvé a intentar."
-		}
 		return m.viewSelector(&m.section.selector, title, hint, emptyTitle, emptyHint)
 	case sectionStepMembers:
 		if m.section.kind == sectionPlanningPoker {
@@ -471,57 +338,9 @@ func (m Model) viewSection() string {
 		return m.viewSelector(&m.section.selector, m.section.kind.title()+" · Sprint",
 			"Elegí el Sprint relacionado.", "No hay Sprints abiertos.",
 			"Creá un Sprint desde Sprints.")
-	case sectionStepMetrics:
-		return m.viewMetrics()
-	case sectionStepNotice:
-		return m.viewSectionNotice()
 	default:
 		return ""
 	}
-}
-
-func (m Model) viewMetrics() string {
-	var b strings.Builder
-	b.WriteString(screenTitleStyle.Render("Métricas"))
-	b.WriteString("\n")
-	if m.section.metricsScope == metricsScopeSprint {
-		b.WriteString(hintStyle.Render("Ámbito: Sprint · " + m.section.selected.Label))
-	} else {
-		b.WriteString(hintStyle.Render("Ámbito: Proyecto"))
-	}
-	b.WriteString("\n\n")
-
-	if m.section.selector.err != "" {
-		b.WriteString(m.errorBlock(m.section.selector.err))
-		b.WriteString("\n\n")
-		b.WriteString(hintStyle.Render("r para reintentar · Esc para volver."))
-		return strings.TrimRight(b.String(), "\n")
-	}
-	if m.section.selector.loading {
-		b.WriteString(statusMutedStyle.Render("Cargando…"))
-		return strings.TrimRight(b.String(), "\n")
-	}
-
-	rows := [][2]string{
-		{"Story Points planificados", formatMetric(m.section.metrics.StoryPointsPlanned, "")},
-		{"Story Points completados", formatMetric(m.section.metrics.StoryPointsCompleted, "")},
-		{"Velocidad", formatMetric(m.section.metrics.Velocity, "")},
-		{"Horas estimadas", formatMetric(m.section.metrics.EstimatedHours, " h")},
-		{"Horas reales", formatMetric(m.section.metrics.ActualHours, " h")},
-		{"Desviación", formatMetric(m.section.metrics.Deviation, "")},
-		{"Historias completadas", formatMetric(m.section.metrics.CompletedStoriesPercentage, "%")},
-		{"Defectos detectados", formatMetric(m.section.metrics.DefectsDetected, "")},
-		{"Defectos resueltos", formatMetric(m.section.metrics.DefectsResolved, "")},
-	}
-	width := m.innerWidth()
-	for _, row := range rows {
-		line := row[0] + ": " + row[1]
-		for _, wrapped := range wrapPlain(line, width) {
-			b.WriteString(wrapped)
-			b.WriteString("\n")
-		}
-	}
-	return strings.TrimRight(b.String(), "\n")
 }
 
 // viewSelector renders the shared navigable list with search, loading, error
@@ -566,16 +385,6 @@ func (m Model) viewSelector(s *selector, title, hint, emptyTitle, emptyHint stri
 		b.WriteString(m.row(i == s.cursor, text))
 		b.WriteString("\n")
 	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
-func (m Model) viewSectionNotice() string {
-	var b strings.Builder
-	b.WriteString(screenTitleStyle.Render(m.section.kind.title() + " · Próximamente"))
-	b.WriteString("\n")
-	b.WriteString(hintStyle.Render("Este flujo todavía no está implementado; la navegación ya está disponible."))
-	b.WriteString("\n\n")
-	b.WriteString(m.section.notice)
 	return strings.TrimRight(b.String(), "\n")
 }
 
@@ -684,89 +493,4 @@ func sectionFailure(err error, response APIResponse) string {
 		return describeBacklogFailure(response)
 	}
 	return ""
-}
-
-func (m Model) sectionFooter() string {
-	if m.section.step == sectionStepNotice {
-		return m.keyHints("Enter/Esc", "volver", "?", "ayuda", "q", "salir")
-	}
-	if m.section.step == sectionStepMetrics {
-		return m.keyHints("r", "refrescar", "p", "proyecto", "Esc", "volver", "?", "ayuda", "q", "salir")
-	}
-	if m.section.selector.filtering {
-		return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
-	}
-
-	action := "elegir"
-	switch m.section.step {
-	case sectionStepScope:
-		action = "elegir ámbito"
-	case sectionStepPrimary:
-		if m.section.kind.primaryUsesStories() {
-			action = "elegir historia"
-		} else {
-			action = "elegir Sprint"
-		}
-	case sectionStepMembers:
-		action = "elegir integrante"
-	case sectionStepTasks:
-		action = "elegir tarea"
-	case sectionStepSprints:
-		action = "elegir Sprint"
-	}
-	if m.section.kind == sectionPlanningPoker && m.section.step == sectionStepMembers {
-		return m.keyHints("↑/↓", "mover", "Space", "seleccionar", "Enter", "confirmar participantes", "/", "buscar", "Esc", "volver", "?", "ayuda", "q", "salir")
-	}
-	return m.keyHints("↑/↓", "mover", "Enter", action, "/", "buscar", "r", "refrescar",
-		"p", "proyecto", "Esc", "volver", "?", "ayuda", "q", "salir")
-}
-
-func (m Model) sectionHelpRows() [][2]string {
-	if m.section.step == sectionStepNotice {
-		return [][2]string{
-			{"Enter / Esc", "Volver a la lista de la sección"},
-			{"?", "Mostrar u ocultar esta ayuda"},
-			{"q", "Salir (no dentro de un filtro)"},
-			{"Ctrl+C", "Salir desde cualquier pantalla"},
-		}
-	}
-	if m.section.step == sectionStepMetrics {
-		return [][2]string{
-			{"r", "Refrescar las métricas del ámbito activo"},
-			{"p", "Cambiar el proyecto activo"},
-			{"Esc", "Volver al selector anterior"},
-			{"?", "Mostrar u ocultar esta ayuda"},
-			{"q", "Salir (no dentro de un filtro)"},
-			{"Ctrl+C", "Salir desde cualquier pantalla"},
-		}
-	}
-
-	action := "Elegir / confirmar la fila resaltada"
-	switch m.section.step {
-	case sectionStepScope:
-		action = "Elegir el ámbito de métricas"
-	case sectionStepPrimary:
-		if m.section.kind.primaryUsesStories() {
-			action = "Elegir la historia resaltada"
-		} else {
-			action = "Elegir el Sprint resaltado"
-		}
-	case sectionStepMembers:
-		action = "Elegir el integrante resaltado"
-	case sectionStepTasks:
-		action = "Elegir la tarea resaltada"
-	case sectionStepSprints:
-		action = "Elegir el Sprint resaltado"
-	}
-	return [][2]string{
-		{"↑ / ↓", "Mover la selección"},
-		{"Enter", action},
-		{"/", "Buscar o filtrar en la lista"},
-		{"r", "Refrescar el listado actual"},
-		{"p", "Cambiar el proyecto activo"},
-		{"Esc", "Limpiar el filtro y volver un nivel"},
-		{"?", "Mostrar u ocultar esta ayuda"},
-		{"q", "Salir (no dentro de un filtro)"},
-		{"Ctrl+C", "Salir desde cualquier pantalla"},
-	}
 }

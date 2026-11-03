@@ -120,7 +120,7 @@ func effortFlowServer(t *testing.T, opts effortFlowOptions) (*httptest.Server, *
 // its task list.
 func openEffortTasks(t *testing.T, url string, storyIndex int) tui.Model {
 	t.Helper()
-	m := openSectionWithProject(t, url, "p1", menuEffort)
+	m := openSectionWithProject(t, url, "p1", tabEffort)
 	for i := 0; i < storyIndex; i++ {
 		m = press(m, tea.KeyDown)
 	}
@@ -397,8 +397,8 @@ func TestEffortEscWalksBackThroughThreeLevels(t *testing.T) {
 	if after := len(rec.all()); after != before {
 		t.Fatalf("walking back emitted %d requests, want none", after-before)
 	}
-	if m = press(m, tea.KeyEsc); m.Screen != "menu" {
-		t.Fatalf("the fourth Esc should reach the menu, got screen %q", m.Screen)
+	if m = press(m, tea.KeyEsc); m.Screen != "project-picker" {
+		t.Fatalf("the fourth Esc should reach the project browser, got screen %q", m.Screen)
 	}
 }
 
@@ -475,7 +475,7 @@ func TestEffortLateMembersResponseAfterEscIsDropped(t *testing.T) {
 // [caracterización] born green, same reason as the members case.
 func TestEffortLateTasksResponseAfterEscIsDropped(t *testing.T) {
 	server, _ := effortFlowServer(t, effortFlowOptions{})
-	m := openSectionWithProject(t, server.URL, "p1", menuEffort)
+	m := openSectionWithProject(t, server.URL, "p1", tabEffort)
 	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // tasks query stays pending
 	if cmd == nil {
 		t.Fatal("choosing a story should start loading the tasks")
@@ -558,8 +558,8 @@ func TestEffortOnlyExplicitSubmitEmitsThePost(t *testing.T) {
 	}
 
 	m = stepRunning(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.Screen != "effort-result" {
-		t.Fatalf("Screen = %q, want effort-result after the confirmation", m.Screen)
+	if m.Screen != "section" {
+		t.Fatalf("Screen = %q, want the Esfuerzo root after the confirmation", m.Screen)
 	}
 	var posts int
 	for _, request := range rec.all() {

@@ -46,7 +46,7 @@ func TestPlanningPokerParticipantSelectorShowsLoadingAndAPIError(t *testing.T) {
 		}
 		return false
 	})
-	m := openSectionWithProject(t, server.URL, "p1", menuPlanning)
+	m := openSectionWithProject(t, server.URL, "p1", tabEstimation)
 	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("choosing a story should start loading participants")
@@ -64,7 +64,7 @@ func TestPlanningPokerParticipantSelectorShowsLoadingAndAPIError(t *testing.T) {
 
 func TestPlanningPokerFootersAdvertiseContextualSelectionAndVoteKeys(t *testing.T) {
 	server := planningServer(t)
-	m := openSectionWithProject(t, server.URL, "p1", menuPlanning)
+	m := openSectionWithProject(t, server.URL, "p1", tabEstimation)
 	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
 	m = run(t, m, cmd)
 	view := stripANSI(m.View())
@@ -74,7 +74,7 @@ func TestPlanningPokerFootersAdvertiseContextualSelectionAndVoteKeys(t *testing.
 	m, _ = apply(m, tea.KeyMsg{Type: tea.KeySpace})
 	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
 	view = stripANSI(m.View())
-	if strings.Contains(view, "?  ayuda") || strings.Contains(view, "? ayuda") {
+	if strings.Contains(view, "?  ayuda") || strings.Contains(view, "? ayuda") || strings.Contains(view, "?  más") {
 		t.Fatalf("vote footer must not advertise ? as help because it is a vote card: %q", view)
 	}
 	if !strings.Contains(view, "↑/↓") || !strings.Contains(view, "participante") {
@@ -84,7 +84,7 @@ func TestPlanningPokerFootersAdvertiseContextualSelectionAndVoteKeys(t *testing.
 
 func TestPlanningPokerCollectsHiddenVotesRevealsResetsAndSaves(t *testing.T) {
 	server := planningServer(t)
-	m := openSectionWithProject(t, server.URL, "p1", menuPlanning)
+	m := openSectionWithProject(t, server.URL, "p1", tabEstimation)
 	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
 	m = run(t, m, cmd)
 	m, _ = apply(m, tea.KeyMsg{Type: tea.KeySpace})
@@ -120,74 +120,6 @@ func TestPlanningPokerCollectsHiddenVotesRevealsResetsAndSaves(t *testing.T) {
 	}
 }
 
-func TestMetricsFlowShowsProjectAndSprintMetricsWithoutRecalculation(t *testing.T) {
-	server := metricsServer(t)
-	m := openSectionWithProject(t, server.URL, "p1", menuMetrics)
-
-	projectView := stripANSI(m.View())
-	for _, want := range []string{"Ámbito", "Proyecto", "Sprint"} {
-		if !strings.Contains(projectView, want) {
-			t.Fatalf("scope selector lacks %q: %q", want, projectView)
-		}
-	}
-
-	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // Proyecto
-	m = run(t, m, cmd)
-	projectView = stripANSI(m.View())
-	for _, want := range []string{"Métricas", "Story Points planificados: 21", "Story Points completados: 13", "Horas estimadas: 34.5 h", "Defectos resueltos: sin datos"} {
-		if !strings.Contains(projectView, want) {
-			t.Errorf("project metrics view lacks %q: %q", want, projectView)
-		}
-	}
-
-	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEsc}) // back to scope
-	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyDown})
-	m, cmd = apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // Sprint scope
-	m = run(t, m, cmd)
-	sprintList := stripANSI(m.View())
-	if !strings.Contains(sprintList, "Sprint de métricas") {
-		t.Fatalf("Sprint selector lacks open Sprint: %q", sprintList)
-	}
-
-	m, cmd = apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // choose Sprint
-	m = run(t, m, cmd)
-	sprintView := stripANSI(m.View())
-	for _, want := range []string{"Ámbito: Sprint", "Sprint de métricas", "Story Points planificados: 8", "Defectos resueltos: 1"} {
-		if !strings.Contains(sprintView, want) {
-			t.Errorf("sprint metrics view lacks %q: %q", want, sprintView)
-		}
-	}
-}
-
-func TestMetricsShowsAPIErrorWithoutClosingTheScreen(t *testing.T) {
-	server := sectionServer(t, map[string]string{
-		"/projects/p1/sprints/open": `{"project_id":"p1","sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Sprint de métricas","is_closed":false}]}`,
-	})
-	server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/projects" {
-			_, _ = w.Write([]byte(projectsBody(t, sampleProjects())))
-			return
-		}
-		if r.URL.Path == "/projects/p1/metrics" {
-			http.Error(w, `{"error":"service_unavailable","message":"metrics down"}`, http.StatusServiceUnavailable)
-			return
-		}
-		if r.URL.Path == "/projects/p1/sprints/open" {
-			_, _ = w.Write([]byte(`{"project_id":"p1","sprints":[{"id":"sp1","project_id":"p1","sprint_goal":"Sprint de métricas","is_closed":false}]}`))
-			return
-		}
-		_, _ = w.Write([]byte(`{}`))
-	})
-
-	m := openSectionWithProject(t, server.URL, "p1", menuMetrics)
-	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // Proyecto
-	m = run(t, m, cmd)
-	view := stripANSI(m.View())
-	if m.Screen != "section" || !strings.Contains(view, "503") || !strings.Contains(view, "metrics down") {
-		t.Fatalf("metrics error view = %q (screen %q)", view, m.Screen)
-	}
-}
-
 func TestSectionNavigationOnlyEmitsGetRequests(t *testing.T) {
 	rec := &recorder{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -208,7 +140,7 @@ func TestSectionNavigationOnlyEmitsGetRequests(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	m := openSectionWithProject(t, server.URL, "p1", menuPlanning)
+	m := openSectionWithProject(t, server.URL, "p1", tabEstimation)
 	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
 	m = run(t, m, cmd)
 	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})

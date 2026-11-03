@@ -14,12 +14,9 @@ import (
 func TestFooterWrapsInsteadOfClipping(t *testing.T) {
 	m := tui.NewModel("http://localhost:8080")
 	m, _ = apply(m, tea.WindowSizeMsg{Width: 44, Height: 24})
-	m = press(m, tea.KeyDown)
-	m = press(m, tea.KeyDown)
-	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // Sprints -> project picker
-	view := m.View()
+	view := m.View() // startup project browser
 
-	for _, want := range []string{"Esc", "volver"} {
+	for _, want := range []string{"?", "más"} { // the last footer pair
 		if !strings.Contains(view, want) {
 			t.Fatalf("narrow footer lost %q: %q", want, view)
 		}

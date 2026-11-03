@@ -2,7 +2,6 @@ package tui_test
 
 import (
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -76,15 +75,17 @@ func seedProjects(t *testing.T, m tui.Model, projects ...tui.ProjectSummary) tui
 	return updated.(tui.Model)
 }
 
+// fillerProject is seeded after the project under test so a fresh browser does
+// not auto-open a single project and the first row stays highlighted.
+var fillerProject = tui.ProjectSummary{ID: "pz", Name: "Zeta", StartDate: "2026-01-01", PlannedFinishDate: "2026-12-31", Status: "planned"}
+
 func toCreateProject(m tui.Model) tui.Model {
-	m = press(m, tea.KeyEnter) // menu -> project browser
-	return typeText(m, "n")    // n -> create form
+	return typeText(m, "n") // n on the startup browser -> create form
 }
 
 func toEditProject(t *testing.T, m tui.Model, project tui.ProjectSummary) tui.Model {
 	t.Helper()
-	m = press(m, tea.KeyEnter) // menu -> project browser
-	m = seedProjects(t, m, project)
+	m = seedProjects(t, m, project, fillerProject)
 	return typeText(m, "e") // e -> edit the highlighted project
 }
 
@@ -129,60 +130,10 @@ func capturingProjectServer(t *testing.T) (*httptest.Server, *[][]byte) {
 	return server, &bodies
 }
 
-func TestMenuShowsFourOptions(t *testing.T) {
-	m := tui.NewModel("http://localhost:8080")
-	view := m.View()
-
-	for _, want := range []string{"proyectos", "backlog", "sprints", "salir"} {
-		if !strings.Contains(strings.ToLower(view), want) {
-			t.Errorf("View() = %q, want option %q", view, want)
-		}
-	}
-	if strings.Contains(view, "Ayuda") {
-		t.Errorf("View() = %q, want no Ayuda menu option", view)
-	}
-}
-
-func TestCursorMovesDownAndUp(t *testing.T) {
-	m := tui.NewModel("http://localhost:8080")
-
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	m = updated.(tui.Model)
-	if m.Cursor != 1 {
-		t.Fatalf("Cursor = %d, want 1 after down", m.Cursor)
-	}
-
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
-	m = updated.(tui.Model)
-	if m.Cursor != 0 {
-		t.Fatalf("Cursor = %d, want 0 after up", m.Cursor)
-	}
-}
-
-func TestEnterProjectsAndBack(t *testing.T) {
-	m := tui.NewModel("http://localhost:8080")
-
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = updated.(tui.Model)
-	if m.Screen != "project-picker" {
-		t.Fatalf("Screen = %q after enter, want project-picker", m.Screen)
-	}
-	if !strings.Contains(m.View(), "Proyectos") {
-		t.Errorf("View() = %q, want the project browser", m.View())
-	}
-
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	m = updated.(tui.Model)
-	if m.Screen != "menu" {
-		t.Errorf("Screen = %q after esc, want menu", m.Screen)
-	}
-}
-
 func TestProjectBrowserOffersUseEditCreateAndSearch(t *testing.T) {
 	m := tui.NewModel("http://localhost:8080")
-	m = press(m, tea.KeyEnter) // menu -> project browser
 	view := strings.ToLower(m.View())
-	for _, want := range []string{"usar", "editar", "crear", "buscar"} {
+	for _, want := range []string{"abrir", "editar", "crear", "buscar"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("browser View() = %q, want %q", view, want)
 		}
@@ -195,9 +146,9 @@ func TestProjectBrowserOffersUseEditCreateAndSearch(t *testing.T) {
 func TestProjectBrowserMarksTheActiveProjectWithoutCallingItActivo(t *testing.T) {
 	project := tui.ProjectSummary{ID: "p1", Name: "Portal Alfa", StartDate: "2026-01-01", PlannedFinishDate: "2026-12-31", Status: "active"}
 	m := openBrowser(t, project)
-	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // use it as the session project
-	m = press(m, tea.KeyEnter)                      // reopen the browser
-	m = seedProjects(t, m, project)
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // open its workspace
+	m = press(m, tea.KeyEsc)                        // back to the browser
+	m = seedProjects(t, m, project, fillerProject)
 
 	view := stripANSI(m.View())
 	if !strings.Contains(view, "✓ Portal Alfa") {
@@ -234,31 +185,14 @@ func TestProjectAPIErrorIsShownWithoutSuccess(t *testing.T) {
 }
 
 func TestProjectNotFoundIsExplicitAndPreservesAPIDetail(t *testing.T) {
-	m := tui.NewModel("http://localhost:8080")
+	m := toEditProject(t, tui.NewModel("http://localhost:8080"), sampleProjects()[0])
+	m = press(press(m, tea.KeyTab), tea.KeyTab)
+	m = press(m, tea.KeyEnter) // submit, leaving the request pending
 	updated, _ := m.Update(tui.ProjectResultMsg{Response: tui.APIResponse{StatusCode: 404, Body: []byte(`{"error":"project_not_found","message":"project not found"}`)}})
 	m = updated.(tui.Model)
 	view := m.View()
 	if !strings.Contains(view, "no existe") || !strings.Contains(view, "project_not_found") {
 		t.Errorf("404 view = %q, want explicit not-found message and API detail", view)
-	}
-}
-
-func TestProjectNavigationPreservesOtherSectionsAndQuit(t *testing.T) {
-	m := tui.NewModel("http://localhost:8080")
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	updated, _ = updated.(tui.Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = updated.(tui.Model)
-	if m.Screen != "project-picker" {
-		t.Fatalf("screen = %q, want project-picker", m.Screen)
-	}
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	m = updated.(tui.Model)
-	if m.Screen != "menu" {
-		t.Fatalf("screen after escape = %q, want menu", m.Screen)
-	}
-	_, cmd := m.Update(keyMsg("q"))
-	if cmd == nil {
-		t.Fatal("q should quit from menu")
 	}
 }
 
@@ -321,17 +255,12 @@ func TestCtrlCQuitsFromProjectForms(t *testing.T) {
 	}
 }
 
-func TestQuitOnQFromMenuAndProjectLists(t *testing.T) {
+func TestQuitOnQFromProjectBrowserAndLists(t *testing.T) {
 	screens := []struct {
 		screen string
 		open   func(tui.Model) tui.Model
 	}{
-		{"menu", func(m tui.Model) tui.Model { return m }},
-		{"project-picker", func(m tui.Model) tui.Model { return press(m, tea.KeyEnter) }},
-		{"project-result", func(m tui.Model) tui.Model {
-			updated, _ := m.Update(tui.ProjectResultMsg{Err: errors.New("connection refused")})
-			return updated.(tui.Model)
-		}},
+		{"project-picker", func(m tui.Model) tui.Model { return m }},
 	}
 	for _, tc := range screens {
 		for _, char := range []string{"q", "Q"} {

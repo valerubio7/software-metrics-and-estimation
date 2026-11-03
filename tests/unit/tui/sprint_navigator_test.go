@@ -62,13 +62,13 @@ func TestSprintBrowserEscapeClearsTheFilterFirst(t *testing.T) {
 		t.Fatalf("first Esc did not clear the filter: %q", view)
 	}
 	m = press(m, tea.KeyEsc)
-	if m.Screen != "menu" {
-		t.Fatalf("second Esc left screen %q, want menu", m.Screen)
+	if m.Screen != "project-picker" {
+		t.Fatalf("second Esc left screen %q, want project-picker", m.Screen)
 	}
 }
 
-// TestSprintScreenChangeProjectReturnsToBrowser checks the global p shortcut from
-// a Sprint screen resumes on the Sprint browser of the new project.
+// TestSprintScreenChangeProjectReturnsToBrowser checks that leaving the Sprints
+// tab with Esc and picking another project retargets the Sprints tab.
 func TestSprintScreenChangeProjectReturnsToBrowser(t *testing.T) {
 	server := sprintServer(t, func(w http.ResponseWriter, r *http.Request) bool {
 		if strings.HasSuffix(r.URL.Path, "/sprints/open") {
@@ -79,11 +79,12 @@ func TestSprintScreenChangeProjectReturnsToBrowser(t *testing.T) {
 	})
 
 	m := openSprintsWithProject(t, server.URL, "p1")
-	m, load := apply(m, keyMsg("p"))
+	m, load := apply(m, tea.KeyMsg{Type: tea.KeyEsc})
 	if m.Screen != "project-picker" {
-		t.Fatalf("p = screen %q, want project-picker", m.Screen)
+		t.Fatalf("Esc = screen %q, want project-picker", m.Screen)
 	}
-	m, cmd := confirmProjectInPicker(t, m, load, "p2")
+	m, _ = confirmProjectInPicker(t, m, load, "p2")
+	m, cmd := apply(m, keyMsg(tabSprints))
 	m = run(t, m, cmd)
 	if m.Screen != "sprints" {
 		t.Fatalf("after changing project: screen %q, want sprints", m.Screen)
