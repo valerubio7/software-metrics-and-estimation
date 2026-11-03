@@ -41,6 +41,19 @@ func (k sectionKind) primaryUsesStories() bool {
 	return false
 }
 
+// storyNextStep is the selector that follows choosing a story.
+func (k sectionKind) storyNextStep() sectionStep {
+	switch k {
+	case sectionPlanningPoker:
+		return sectionStepMembers
+	case sectionEffort:
+		return sectionStepTasks
+	case sectionDefects:
+		return sectionStepSprints
+	}
+	return sectionStepNotice
+}
+
 func (k sectionKind) primaryHint() string {
 	switch k {
 	case sectionPlanningPoker:
@@ -96,6 +109,9 @@ type sectionState struct {
 	detail       selectorItem
 	notice       string
 	noticeReturn sectionStep
+	// preselected marks a section opened from the backlog with P/E: the story
+	// came chosen, so Esc on its first selector returns to the backlog.
+	preselected bool
 }
 
 // SectionResultMsg is the asynchronous result of a section API read.
@@ -119,6 +135,7 @@ func (m Model) openSection(kind sectionKind) (Model, tea.Cmd) {
 	m.section.selected = selectorItem{}
 	m.section.detail = selectorItem{}
 	m.section.notice = ""
+	m.section.preselected = false
 	m.section.selector = selector{}
 	m.section.tasks = selector{}
 	m.effort = effortState{seq: m.effort.seq}
@@ -231,6 +248,9 @@ func (m Model) updateSection(key tea.KeyMsg) (Model, tea.Cmd) {
 		if m.section.step == sectionStepPrimary {
 			return m.leaveWorkspace()
 		}
+		if m.section.preselected && m.section.step == m.section.kind.storyNextStep() {
+			return m.openBacklog()
+		}
 		if m.section.kind == sectionEffort && m.section.step == sectionStepMembers {
 			m.section.step = sectionStepTasks
 			m.section.selector = m.section.tasks
@@ -261,12 +281,8 @@ func (m Model) chooseSectionItem() (Model, tea.Cmd) {
 		m.section.selected = item
 		m.section.primary = m.section.selector
 		switch m.section.kind {
-		case sectionPlanningPoker:
-			return m.beginSectionStep(sectionStepMembers)
-		case sectionEffort:
-			return m.beginSectionStep(sectionStepTasks)
-		case sectionDefects:
-			return m.beginSectionStep(sectionStepSprints)
+		case sectionPlanningPoker, sectionEffort, sectionDefects:
+			return m.beginSectionStep(m.section.kind.storyNextStep())
 		default:
 			m.section.noticeReturn = sectionStepPrimary
 			m.section.step = sectionStepNotice

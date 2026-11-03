@@ -13,7 +13,8 @@ var pokerEstimates = []int{0, 1, 2, 3, 5, 8, 13, 20, 40, 100}
 
 func (m Model) viewPokerParticipants() string {
 	var b strings.Builder
-	b.WriteString(screenTitleStyle.Render("Planning Poker · Participantes") + "\nElegí participantes con Space y confirmá con Enter.\n\n")
+	b.WriteString(screenTitleStyle.Render("Planning Poker · Participantes") + "\nHistoria: " + m.section.selected.Label +
+		"\nElegí participantes con Space y confirmá con Enter.\n\n")
 	if m.section.selector.err != "" {
 		b.WriteString(m.errorBlock(m.section.selector.err))
 		return b.String()

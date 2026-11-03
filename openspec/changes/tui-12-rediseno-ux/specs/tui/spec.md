@@ -145,7 +145,7 @@ El pie DEBERÁ mostrar como máximo cinco atajos, los principales de la pantalla
 - **THEN** la ayuda lista `Tab/Shift+Tab` y `1–6` en «Navegación»
 
 ### Requirement: Atajos contextuales de estimación y esfuerzo
-En la lista del backlog, `P` DEBERÁ abrir la pestaña Estimación con la historia resaltada ya elegida, mostrando el selector de participantes, y `E` DEBERÁ abrir la pestaña Esfuerzo con la historia resaltada ya elegida, mostrando el selector de tareas. `Esc` desde ese primer selector DEBERÁ volver a la lista de historias de la pestaña abierta. Los atajos solo emiten consultas `GET`.
+En la lista del backlog, `P` DEBERÁ abrir la pestaña Estimación con la historia resaltada ya elegida, mostrando el selector de participantes, y `E` DEBERÁ abrir la pestaña Esfuerzo con la historia resaltada ya elegida, mostrando el selector de tareas. `Esc` desde ese primer selector DEBERÁ volver a la lista del backlog y recargarla; desde un paso posterior, `Esc` retrocede un paso como siempre. Los atajos solo emiten consultas `GET`, se distinguen por mayúscula (`p` y `e` minúsculas siguen iniciando la búsqueda) y se listan en la ayuda, grupo «Acciones», sin ocupar el pie. Con el backlog vacío no hacen nada y no se anuncian.
 
 #### Scenario: Estimar desde el backlog
 - **GIVEN** que el backlog tiene una historia resaltada
@@ -156,6 +156,16 @@ En la lista del backlog, `P` DEBERÁ abrir la pestaña Estimación con la histor
 - **GIVEN** que el backlog tiene una historia resaltada
 - **WHEN** el usuario presiona `E`
 - **THEN** la pestaña Esfuerzo queda activa con esa historia elegida y muestra el selector de tareas
+
+#### Scenario: Volver al backlog desde la historia preelegida
+- **GIVEN** que el usuario abrió Estimación o Esfuerzo con `P` o `E`
+- **WHEN** presiona `Esc` en el primer selector
+- **THEN** la TUI vuelve a la lista del backlog y la recarga
+
+#### Scenario: Backlog vacío
+- **GIVEN** que el backlog no tiene historias
+- **WHEN** el usuario presiona `P` o `E`
+- **THEN** la pantalla no cambia, no se emite ninguna consulta y la ayuda no ofrece esos atajos
 
 ## MODIFIED Requirements
 

@@ -108,6 +108,10 @@ func (m Model) screenBindings(l *keyList) {
 		l.add(keyNav, true, "/", "buscar", "Buscar o filtrar historias")
 		l.add(keyNav, true, "Esc", "proyectos", "Volver a Proyectos")
 		l.add(keyAction, false, "r", "refrescar", "Refrescar el backlog")
+		if len(m.visibleStories()) > 0 {
+			l.add(keyAction, false, "P", "estimar", "Estimar la historia resaltada (Planning Poker)")
+			l.add(keyAction, false, "E", "esfuerzo", "Registrar esfuerzo de la historia resaltada")
+		}
 	case "backlog-form":
 		if !m.backlogForm.saving {
 			m.formBindings(l, "Tab/↑/↓", "siguiente/enviar", "Pasar al siguiente campo o enviar")
