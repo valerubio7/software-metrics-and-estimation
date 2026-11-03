@@ -25,3 +25,11 @@ Este archivo registra la evidencia observada de cada Unidad de Trabajo. Los hash
 - **TRIANGULATE**: `internal/tui/dashboard_test.go` verifica que un resultado con secuencia vieja o recibido fuera de la pantalla se descarta, y que el resultado vigente se aplica. `tests/unit/tui/dashboard_test.go` verifica que el recorrido completo (abrir, refrescar, cambiar de proyecto) solo emite `GET`.
 - **REFACTOR**: sin cambios de producción; se revisaron los textos del footer y la ayuda para que no anuncien acciones inexistentes.
 - **Commit**: `test(tui): cubrir errores y solo lectura del Dashboard`.
+
+## UT 4 — SDD, README y archivado
+
+- **README**: Dashboard pasa a `disponible (TUI-11)` y se agrega la sección «Dashboard» con estado, barras, «sin datos», 80/44 columnas y las teclas `r`, `p`, `Esc`.
+- **Delta**: `openspec validate tui-11-visualizar-dashboard --strict` → `Change 'tui-11-visualizar-dashboard' is valid`. El delta conserva los dos escenarios del requisito MODIFIED y agrega el escenario «Dashboard ya no muestra el aviso».
+- **Verificación**: `go build ./...` y `go vet ./...` sin salida; `go test ./...` con Docker → exit 0, 37 paquetes `ok`, 0 `FAIL`. Detalle y criterios en `verify-report.md`. `gofmt -l` solo reporta `internal/tui/metrics.go`, preexistente y no modificado.
+- **Archivado**: `openspec archive tui-11-visualizar-dashboard --yes --skip-specs` movió el cambio a `openspec/changes/archive/2026-11-03-tui-11-visualizar-dashboard`. La consolidación manual en `openspec/specs/tui/spec.md` reemplazó el requisito de avisos y agregó los 4 requisitos del Dashboard; la spec pasa de 33 a 37 requisitos.
+- **Commits de la rama**: `dcf7c3e` (UT 1), `09dcfaf` (UT 2), `1ec3ff9` (UT 3) y el commit `docs(tui): especificar y archivar el Dashboard (TUI-11)` de esta UT, cuyo hash consta en el historial de la rama.

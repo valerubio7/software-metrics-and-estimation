@@ -347,4 +347,3 @@ func TestDashboardFooterAndHelpOnlyShowValidKeys(t *testing.T) {
 		}
 	}
 }
-

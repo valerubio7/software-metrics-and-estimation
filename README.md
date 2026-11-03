@@ -67,15 +67,15 @@ abren directamente su pantalla principal y encadenan selectores según el flujo:
 | Esfuerzo       | historia → tarea o historia completa → integrante → registro | disponible (TUI-08) |
 | Defectos       | listado/búsqueda → detalle; alta con historia y Sprint de detección; actualización de estado con Sprint de resolución si queda resuelto | disponible (TUI-09) |
 | Métricas       | Sprint                                          | TUI-10 |
-| Dashboard      | Sprint                                          | TUI-11 |
+| Dashboard      | proyecto activo (estado y métricas)             | disponible (TUI-11) |
 
 Defectos permite consultar, filtrar y abrir el detalle del listado del proyecto,
 registrar un defecto mediante confirmación y cambiar su estado entre las opciones
-admitidas por la API. Las demás secciones indicadas como futuras siguen siendo
-*shells* de navegación de solo lectura: consultan la API con `GET`, muestran
-estados de carga, vacío y error, y terminan con un aviso del flujo pendiente. Si
-no hay proyecto activo, la sección abre primero el navegador de proyectos; el
-atajo `p` permite cambiarlo sin salir de la sección.
+admitidas por la API. El Dashboard presenta el estado y las métricas del proyecto
+activo sin modificarlo. Las secciones que encadenan selectores consultan la API
+con `GET` y muestran estados de carga, vacío y error. Si no hay proyecto activo,
+la sección abre primero el navegador de proyectos; el atajo `p` permite cambiarlo
+sin salir de la sección.
 
 Esfuerzo es la excepción: registra el esfuerzo mediante `POST` y muestra las
 métricas del proyecto devueltas por la API, sin calcular horas ni desvíos.
@@ -86,6 +86,18 @@ Lecturas nuevas usadas por los selectores:
 | ------ | ------------------------------------------------- | ---------------------- |
 | `GET`  | `/projects/{project_id}/members`                  | Integrantes            |
 | `GET`  | `/projects/{project_id}/stories/{story_id}/tasks` | Tareas de una historia |
+
+### Dashboard
+
+Dashboard se abre directamente desde el menú para el proyecto activo (o pide
+elegir uno si la sesión no tiene ninguno) y combina `GET /projects/{project_id}`
+con `GET /projects/{project_id}/metrics`. Muestra el estado del proyecto
+(`planificado`, `en curso` o `atrasado`) y las métricas de US-19 con barras
+Unicode (`█` lleno, `░` vacío) para Story Points, horas, historias completadas y
+defectos. Una métrica `null` se presenta como «sin datos», nunca como cero. La
+pantalla es de solo lectura, se mantiene legible en terminales de 80 y 44
+columnas y no depende del color: cada fila conserva su etiqueta y sus valores.
+`r` refresca, `p` cambia el proyecto y `Esc` vuelve al menú.
 
 ## API de esfuerzo
 
