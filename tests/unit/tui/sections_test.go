@@ -10,40 +10,27 @@ import (
 	"github.com/valerubio7/software-metrics-and-estimation/internal/tui"
 )
 
+// Workspace tab digits, in tab bar order.
 const (
-	menuPlanning  = 3
-	menuEffort    = 4
-	menuDefects   = 5
-	menuMetrics   = 6
-	menuDashboard = 7
+	tabDashboard  = "1"
+	tabBacklog    = "2"
+	tabSprints    = "3"
+	tabEstimation = "4"
+	tabEffort     = "5"
+	tabDefects    = "6"
 )
 
-// startSection opens the section at index from the menu. Without an active
-// project the section lands on the project picker and returns its load command.
-func startSection(url string, index int) (tui.Model, tea.Cmd) {
-	m := tui.NewModel(url)
-	for i := 0; i < index; i++ {
-		m = press(m, tea.KeyDown)
-	}
-	return apply(m, tea.KeyMsg{Type: tea.KeyEnter})
-}
-
-// openSectionWithProject goes menu -> section -> picker -> pid -> Enter and
-// applies the primary collection response when opening one. Metrics starts at
-// its scope selector without issuing a request.
-func openSectionWithProject(t *testing.T, url, pid string, index int) tui.Model {
+// openSectionWithProject goes browser -> pid -> section tab (Estimación or
+// Esfuerzo) and applies the primary collection response.
+func openSectionWithProject(t *testing.T, url, pid, digit string) tui.Model {
 	t.Helper()
-	m, load := startSection(url, index)
-	m, cmd := confirmProjectInPicker(t, m, load, pid)
+	m, cmd := openTab(t, url, pid, digit)
 	if cmd == nil {
-		if index != menuMetrics {
-			t.Fatal("expected a command to load the section")
-		}
-	} else {
-		m = run(t, m, cmd)
+		t.Fatal("expected a command to load the section")
 	}
+	m = run(t, m, cmd)
 	if m.Screen != "section" {
-		t.Fatalf("Screen = %q after opening section %d, want section", m.Screen, index)
+		t.Fatalf("Screen = %q after opening tab %s, want section", m.Screen, digit)
 	}
 	return m
 }
@@ -83,40 +70,23 @@ func storiesBodyForSection(stories []tui.Story) string {
 	return encoded + `]}`
 }
 
-func TestMenuExposesNineOptions(t *testing.T) {
-	m := tui.NewModel("http://localhost:8080")
-	want := []string{"Proyectos", "Backlog", "Sprints", "Planning Poker", "Esfuerzo", "Defectos", "Métricas", "Dashboard", "Salir"}
-	if len(m.Choices) != len(want) {
-		t.Fatalf("Choices = %#v, want %d options", m.Choices, len(want))
-	}
-	for i, option := range want {
-		if m.Choices[i] != option {
-			t.Errorf("Choices[%d] = %q, want %q", i, m.Choices[i], option)
-		}
-		if !strings.Contains(m.View(), option) {
-			t.Errorf("View() lacks menu option %q", option)
-		}
-	}
-}
-
-func TestMenuRoutesToEachSprint3Section(t *testing.T) {
+func TestTabsRouteToEachSprint3Section(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
-		index int
+		digit string
 		title string
 		body  string
 		item  string
 	}{
-		{"planning", menuPlanning, "Planning Poker", storiesBodyForSection(sectionStories()), "Primera historia"},
-		{"effort", menuEffort, "Esfuerzo", storiesBodyForSection(sectionStories()), "Primera historia"},
-		{"metrics", menuMetrics, "Métricas", `{"ok":true}`, "Proyecto"},
+		{"planning", tabEstimation, "Estimación", storiesBodyForSection(sectionStories()), "Primera historia"},
+		{"effort", tabEffort, "Esfuerzo", storiesBodyForSection(sectionStories()), "Primera historia"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			path := "/projects/p1/stories"
 			server := sectionServer(t, map[string]string{path: tc.body})
-			m := openSectionWithProject(t, server.URL, "p1", tc.index)
+			m := openSectionWithProject(t, server.URL, "p1", tc.digit)
 			view := stripANSI(m.View())
-			for _, want := range []string{tc.title, tc.item, "Proyecto: Alpha"} {
+			for _, want := range []string{tc.title, tc.item, "Proyectos › Alpha › " + tc.title} {
 				if !strings.Contains(view, want) {
 					t.Errorf("section view lacks %q: %q", want, view)
 				}
@@ -128,14 +98,13 @@ func TestMenuRoutesToEachSprint3Section(t *testing.T) {
 	}
 }
 
-// TestDefectsMenuOpensProjectDefectList covers TUI-09 replacing the former
+// TestDefectsTabOpensProjectDefectList covers TUI-09 replacing the former
 // placeholder section with the project-scoped defect listing.
-func TestDefectsMenuOpensProjectDefectList(t *testing.T) {
+func TestDefectsTabOpensProjectDefectList(t *testing.T) {
 	server := sectionServer(t, map[string]string{
 		"/projects/p1/defects": `{"project_id":"p1","defects":[{"id":"d1","project_id":"p1","story_id":"s1","sprint_id":"sp1","description":"Primer defecto","severity":"alta","status":"detectado","resolution_sprint_id":null}]}`,
 	})
-	m, load := startSection(server.URL, menuDefects)
-	m, cmd := confirmProjectInPicker(t, m, load, "p1")
+	m, cmd := openTab(t, server.URL, "p1", tabDefects)
 	if cmd == nil {
 		t.Fatal("opening Defectos should load the project defect list")
 	}
@@ -163,7 +132,7 @@ func TestSectionAPIErrorStaysOpenAndRefreshes(t *testing.T) {
 		return false
 	})
 
-	m := openSectionWithProject(t, server.URL, "p1", menuPlanning)
+	m := openSectionWithProject(t, server.URL, "p1", tabEstimation)
 	view := stripANSI(m.View())
 	if m.Screen != "section" || !strings.Contains(view, "Error HTTP 500") {
 		t.Fatalf("Screen/view = %q / %q, want section with an inline HTTP error", m.Screen, view)
@@ -180,7 +149,7 @@ func TestSectionAPIErrorStaysOpenAndRefreshes(t *testing.T) {
 
 func TestSectionEmptyCollectionShowsAnEmptyState(t *testing.T) {
 	server := sectionServer(t, map[string]string{"/projects/p1/stories": storiesBodyForSection([]tui.Story{})})
-	m := openSectionWithProject(t, server.URL, "p1", menuPlanning)
+	m := openSectionWithProject(t, server.URL, "p1", tabEstimation)
 	view := stripANSI(m.View())
 	if !strings.Contains(view, "No hay historias") {
 		t.Fatalf("empty section view = %q, want an empty state", view)
@@ -197,7 +166,7 @@ func TestSectionFilterRefreshAndEscape(t *testing.T) {
 		}
 		return false
 	})
-	m := openSectionWithProject(t, server.URL, "p1", menuPlanning)
+	m := openSectionWithProject(t, server.URL, "p1", tabEstimation)
 
 	m, _ = apply(m, keyMsg("/"))
 	m = typeText(m, "seg")
@@ -224,24 +193,33 @@ func TestSectionFilterRefreshAndEscape(t *testing.T) {
 		t.Fatalf("first Esc did not clear the filter: screen=%q view=%q", m.Screen, stripANSI(m.View()))
 	}
 	m = press(m, tea.KeyEsc)
-	if m.Screen != "menu" {
-		t.Fatalf("second Esc left screen %q, want menu", m.Screen)
+	if m.Screen != "project-picker" {
+		t.Fatalf("second Esc left screen %q, want project-picker", m.Screen)
 	}
 }
 
 func TestSectionFooterAndHelpOnlyShowValidKeys(t *testing.T) {
 	server := sectionServer(t, map[string]string{"/projects/p1/stories": storiesBodyForSection(sectionStories())})
-	m := openSectionWithProject(t, server.URL, "p1", menuPlanning)
+	m := openSectionWithProject(t, server.URL, "p1", tabEstimation)
 	footer := stripANSI(m.View())
-	for _, want := range []string{"elegir historia", "p  proyecto", "?  ayuda"} {
+	for _, want := range []string{"elegir historia", "?  ayuda"} {
 		if !strings.Contains(footer, want) {
 			t.Errorf("section footer lacks %q: %q", want, footer)
 		}
 	}
 
+	for _, unwanted := range []string{"p  proyecto", "Esc  menú"} {
+		if strings.Contains(footer, unwanted) {
+			t.Errorf("section footer still shows the removed %q: %q", unwanted, footer)
+		}
+	}
+
 	m, _ = apply(m, keyMsg("?"))
 	help := stripANSI(m.View())
-	for _, want := range []string{"Mover la selección", "Cambiar el proyecto activo", "Salir"} {
+	if strings.Contains(help, "Cambiar el proyecto activo") {
+		t.Errorf("section help still offers the removed project shortcut: %q", help)
+	}
+	for _, want := range []string{"Mover la selección", "Salir"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("section help lacks %q: %q", want, help)
 		}

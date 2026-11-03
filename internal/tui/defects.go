@@ -74,7 +74,7 @@ type DefectResultMsg struct {
 func (m Model) openDefects() (Model, tea.Cmd) {
 	m.defectCursor, m.defectFilter, m.defectFiltering = 0, "", false
 	if m.activeProjectID == "" {
-		return m.openProjectPicker("defects")
+		return m.leaveWorkspace()
 	}
 	m.Screen = "defects"
 	return m.startDefectLoad()
@@ -146,7 +146,7 @@ func (m Model) updateDefects(key tea.KeyMsg) (Model, tea.Cmd) {
 			m.defectFilter, m.defectCursor = "", 0
 			return m, nil
 		}
-		m.Screen, m.Cursor = "menu", 0
+		return m.leaveWorkspace()
 	case tea.KeyUp:
 		if m.defectCursor > 0 {
 			m.defectCursor--
@@ -174,7 +174,6 @@ func (m Model) updateDefects(key tea.KeyMsg) (Model, tea.Cmd) {
 			m.defectFiltering = true
 		case "r":
 			return m.startDefectLoad()
-		case "p":
 		default:
 			m.defectFiltering = true
 			if value, ok := editText(m.defectFilter, key); ok {

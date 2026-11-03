@@ -149,7 +149,7 @@ func TestEffortResultCrumbAndTitle(t *testing.T) {
 	m := resultWithMetrics(t, server.URL)
 
 	view := stripANSI(m.View())
-	for _, want := range []string{"Esfuerzo › Resultado", "Proyecto: Alpha"} {
+	for _, want := range []string{"Proyectos › Alpha › Esfuerzo › Resultado"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the breadcrumb should read %q: %q", want, view)
 		}
@@ -331,10 +331,10 @@ func TestEffortResultKeys(t *testing.T) {
 			t.Fatalf("? should open the help: %q", view)
 		}
 	})
-	t.Run("p opens the project picker", func(t *testing.T) {
+	t.Run("p no longer opens the project picker", func(t *testing.T) {
 		m, cmd := apply(result(t), keyMsg("p"))
-		if m.Screen != "project-picker" || cmd == nil {
-			t.Fatalf("p should open the project picker and load it (screen %q, cmd %v)", m.Screen, cmd != nil)
+		if m.Screen != "effort-result" || cmd != nil {
+			t.Fatalf("p must not leave the result (screen %q, cmd %v)", m.Screen, cmd != nil)
 		}
 	})
 	t.Run("Esc goes back", func(t *testing.T) {
@@ -359,7 +359,7 @@ func TestEffortResultFooterAndHelpShowOnlyResultKeys(t *testing.T) {
 	help, _ := apply(m, keyMsg("?"))
 
 	footer := footerOf(t, stripANSI(m.View()))
-	for _, want := range []string{"r refrescar métricas", "Esc volver", "p proyecto", "? ayuda", "q salir"} {
+	for _, want := range []string{"r refrescar métricas", "Esc volver", "? ayuda", "q salir"} {
 		if !strings.Contains(flatView(footer), want) {
 			t.Errorf("the footer should offer %q: %q", want, footer)
 		}
@@ -368,7 +368,10 @@ func TestEffortResultFooterAndHelpShowOnlyResultKeys(t *testing.T) {
 	if !strings.Contains(helpView, "Atajos de teclado") {
 		t.Fatalf("? should open the help: %q", helpView)
 	}
-	for _, key := range []string{"r", "Esc", "p", "?", "q"} {
+	if strings.Contains(flatView(footer), "p proyecto") {
+		t.Errorf("the footer still offers the removed p shortcut: %q", footer)
+	}
+	for _, key := range []string{"r", "Esc", "?", "q"} {
 		row := regexp.MustCompile(`│\s+` + regexp.QuoteMeta(key) + `\s{2,}\S`)
 		if !row.MatchString(helpView) {
 			t.Errorf("the help should list a %q row: %q", key, helpView)
@@ -499,15 +502,10 @@ func TestEffortProjectSwitchFromResultReopensStoriesAndDiscardsFlow(t *testing.T
 	server, _ := effortFlowServer(t, effortFlowOptions{})
 	m := resultWithMetrics(t, server.URL).WithClock(fixedClock)
 
-	m, load := apply(m, keyMsg("p"))
-	m, cmd := confirmProjectInPicker(t, m, load, "p2")
-	if cmd == nil {
-		t.Fatal("choosing the project should load its stories")
-	}
-	m = run(t, m, cmd)
+	m = switchEffortProject(t, m, "p2")
 
 	view := stripANSI(m.View())
-	if m.Screen != "section" || !strings.Contains(view, "Historia de Beta") || !strings.Contains(view, "Proyecto: Beta") {
+	if m.Screen != "section" || !strings.Contains(view, "Historia de Beta") || !strings.Contains(view, "Proyectos › Beta › Esfuerzo") {
 		t.Fatalf("Esfuerzo should reopen on the stories of Beta (screen %q): %q", m.Screen, view)
 	}
 	for _, stale := range []string{"Esfuerzo registrado", "Implementar login", "Horas reales", "Ada Lovelace", "Diseñar", "Primera historia"} {
@@ -531,15 +529,30 @@ func TestEffortProjectSwitchFromResultReopensStoriesAndDiscardsFlow(t *testing.T
 	}
 }
 
-// [caracterización] born green: a project change from a selector already reopened
-// the section (returnTo == "section").
+// switchEffortProject walks back with Esc to the project browser, picks pid and
+// reopens the Esfuerzo tab, applying its story load.
+func switchEffortProject(t *testing.T, m tui.Model, pid string) tui.Model {
+	t.Helper()
+	var load tea.Cmd
+	for i := 0; i < 6 && m.Screen != "project-picker"; i++ {
+		m, load = apply(m, tea.KeyMsg{Type: tea.KeyEsc})
+	}
+	if m.Screen != "project-picker" {
+		t.Fatalf("Esc did not reach the project browser (screen %q)", m.Screen)
+	}
+	m, _ = confirmProjectInPicker(t, m, load, pid)
+	m, cmd := apply(m, keyMsg(tabEffort))
+	if cmd == nil {
+		t.Fatal("opening Esfuerzo should load the stories of the new project")
+	}
+	return run(t, m, cmd)
+}
+
 func TestEffortProjectSwitchFromSelectorDiscardsFlow(t *testing.T) {
 	server, _ := effortFlowServer(t, effortFlowOptions{})
 	m := openEffortMembers(t, server.URL, 0, 1)
 
-	m, load := apply(m, keyMsg("p"))
-	m, cmd := confirmProjectInPicker(t, m, load, "p2")
-	m = run(t, m, cmd)
+	m = switchEffortProject(t, m, "p2")
 
 	view := stripANSI(m.View())
 	if m.Screen != "section" || !strings.Contains(view, "Historia de Beta") {
@@ -549,19 +562,5 @@ func TestEffortProjectSwitchFromSelectorDiscardsFlow(t *testing.T) {
 		if strings.Contains(view, stale) {
 			t.Errorf("nothing from the previous project should remain, found %q: %q", stale, view)
 		}
-	}
-}
-
-func TestEffortResultMetricsAnsweredWhileProjectPickerIsOpenAreKept(t *testing.T) {
-	server, _ := effortFlowServer(t, effortFlowOptions{})
-	m, metrics := registerEffort(t, openEffortFormFor(t, server.URL, 0, 1, 0))
-
-	m, _ = apply(m, keyMsg("p")) // the query is still in flight
-	m = run(t, m, metrics)
-	m = press(m, tea.KeyEsc) // back to the result without choosing a project
-
-	view := stripANSI(m.View())
-	if m.Screen != "effort-result" || !strings.Contains(view, "Horas reales: 30.5 h") || strings.Contains(view, "Cargando métricas") {
-		t.Fatalf("the answer that arrived behind the picker should be shown (screen %q): %q", m.Screen, view)
 	}
 }

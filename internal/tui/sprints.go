@@ -136,7 +136,7 @@ type SprintResultMsg struct {
 // of the session project. Without a project it first asks for one.
 func (m Model) enterSprints() (Model, tea.Cmd) {
 	if m.activeProjectID == "" {
-		return m.openProjectPicker("sprints")
+		return m.leaveWorkspace()
 	}
 	m.Screen = "sprints"
 	m.sprintFilter, m.sprintFiltering, m.sprintCursor = "", false, 0
@@ -198,7 +198,7 @@ func (m Model) updateSprints(key tea.KeyMsg) (Model, tea.Cmd) {
 			m.sprintFilter, m.sprintCursor = "", 0
 			return m, nil
 		}
-		m.Screen, m.Cursor = "menu", 0
+		return m.leaveWorkspace()
 	case tea.KeyUp:
 		if m.sprintCursor > 0 {
 			m.sprintCursor--
@@ -248,9 +248,6 @@ func (m Model) updateSprints(key tea.KeyMsg) (Model, tea.Cmd) {
 			m.Screen = "sprint-confirm"
 		case "h":
 			return m.openSprintHistory()
-		case "p":
-			// p is the global «change project» shortcut; keep it inert here so it
-			// does not seed a search.
 		default:
 			m.sprintFiltering = true
 			if value, ok := editText(m.sprintFilter, key); ok {
@@ -339,8 +336,6 @@ func (m Model) updateSprintHistory(key tea.KeyMsg) (Model, tea.Cmd) {
 		case "r":
 			m.sprintHistoryLoading = true
 			return m, m.historySprintsCmd()
-		case "p":
-			// p is the global shortcut; keep it inert here.
 		default:
 			m.sprintFiltering = true
 			if value, ok := editText(m.sprintFilter, key); ok {
@@ -422,8 +417,6 @@ func (m Model) updateAssignedStories(key tea.KeyMsg) (Model, tea.Cmd) {
 			return m, m.listAssignedSprintStoriesCmd(m.selectedSprintID)
 		case "c":
 			return m.completeSelectedStory(stories)
-		case "p":
-			// p is the global shortcut; keep it inert here.
 		default:
 			m.sprintFiltering = true
 			if value, ok := editText(m.sprintFilter, key); ok {
@@ -522,8 +515,6 @@ func (m Model) updateSprintStorySelection(key tea.KeyMsg) (Model, tea.Cmd) {
 		case "r":
 			m.sprintStoriesLoading = true
 			return m, m.listAssignedBacklogCmd()
-		case "p":
-			// p is the global shortcut; keep it inert here.
 		default:
 			m.sprintFiltering = true
 			if value, ok := editText(m.sprintFilter, key); ok {

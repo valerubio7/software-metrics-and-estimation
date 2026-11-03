@@ -15,18 +15,17 @@ import (
 
 // Model is the Bubble Tea model for the TUI.
 type Model struct {
-	APIURL  string
-	Choices []string
-	Cursor  int
-	Screen  string
-	APIErr  error
+	APIURL string
+	Screen string
+	APIErr error
 
 	width, height int
 	showHelp      bool
 
 	// Session context shared by every screen.
-	activeProjectID   string
-	activeProjectName string
+	activeProjectID     string
+	activeProjectName   string
+	activeProjectStatus string
 
 	// Project browser (the searchable project list).
 	projects         []ProjectSummary
@@ -34,8 +33,7 @@ type Model struct {
 	projectFilter    string
 	projectFiltering bool
 	projectCursor    int
-	pickerReturn     string
-	pickerPurpose    string
+	autoOpen         bool // open the only project on the first load
 
 	projectID        string
 	formField        int
@@ -149,13 +147,11 @@ func (m Model) today() string {
 // NewModel creates the base navigation model.
 func NewModel(apiURL string) Model {
 	return Model{
-		APIURL: apiURL,
-		Choices: []string{
-			"Proyectos", "Backlog", "Sprints", "Planning Poker",
-			"Esfuerzo", "Defectos", "Métricas", "Dashboard", "Salir",
-		},
-		Screen: "menu",
-		client: NewProjectClient(apiURL),
+		APIURL:          apiURL,
+		Screen:          "project-picker",
+		projectsLoading: true,
+		autoOpen:        true,
+		client:          NewProjectClient(apiURL),
 
 		backlogClient:     NewBacklogClient(apiURL),
 		storyPointsClient: NewStoryPointsClient(apiURL), sprintClient: NewSprintClient(apiURL),
@@ -168,8 +164,8 @@ func NewModel(apiURL string) Model {
 	}
 }
 
-// Init implements tea.Model.
-func (m Model) Init() tea.Cmd { return nil }
+// Init implements tea.Model: the TUI starts loading the project browser.
+func (m Model) Init() tea.Cmd { return m.listProjectsCmd() }
 
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -239,15 +235,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.showHelp = true
 		return m, nil
 	}
-	if key.Type == tea.KeyRunes && string(key.Runes) == "p" && quitsOnQ(m.Screen) && m.Screen != "project-picker" && m.Screen != "sprint-confirm" && !m.filtering() && !m.defectSubmissionInFlight() {
-		return m.openProjectPicker("project")
+	if m.tabRoot() && !m.filtering() {
+		if t, ok := tabForKey(key, m.currentTab()); ok {
+			return m.openTab(t)
+		}
 	}
 	if isQuitRune(key) && quitsOnQ(m.Screen) && !m.filtering() && !m.defectSubmissionInFlight() {
 		return m, tea.Quit
 	}
 	switch m.Screen {
-	case "menu":
-		return m.updateMenu(key)
 	case "project-picker":
 		return m.updateProjectPicker(key)
 	case "create-project", "edit-project":
@@ -323,8 +319,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateDefectCreateResult(key)
 	default:
 		if key.Type == tea.KeyEsc {
-			m.Screen = "menu"
-			m.Cursor = 0
+			return m.leaveWorkspace()
 		}
 		return m, nil
 	}
@@ -344,7 +339,7 @@ func entersText(screen string) bool {
 // listed, so q is a plain character there; Ctrl+C always quits.
 func quitsOnQ(screen string) bool {
 	switch screen {
-	case "menu", "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "dashboard", "planning-poker", "effort-result", "defects", "defect-detail", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-create-result", "defect-status-select", "defect-resolution-select", "defect-status-result":
+	case "project-picker", "project-result", "backlog", "backlog-result", "sprints", "sprint-history", "sprint-result", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "dashboard", "planning-poker", "effort-result", "defects", "defect-detail", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-create-result", "defect-status-select", "defect-resolution-select", "defect-status-result":
 		return true
 	}
 	return false
@@ -386,41 +381,6 @@ func editText(value string, key tea.KeyMsg) (string, bool) {
 		return value[:len(value)-size], true
 	}
 	return value, false
-}
-
-func (m Model) updateMenu(key tea.KeyMsg) (Model, tea.Cmd) {
-	switch key.Type {
-	case tea.KeyUp:
-		if m.Cursor > 0 {
-			m.Cursor--
-		}
-	case tea.KeyDown:
-		if m.Cursor < len(m.Choices)-1 {
-			m.Cursor++
-		}
-	case tea.KeyEnter:
-		switch m.Cursor {
-		case 0:
-			return m.openProjectPicker("projects")
-		case 1:
-			return m.openBacklog()
-		case 2:
-			return m.enterSprints()
-		case 3:
-			return m.openSection(sectionPlanningPoker)
-		case 4:
-			return m.openSection(sectionEffort)
-		case 5:
-			return m.openDefects()
-		case 6:
-			return m.openSection(sectionMetrics)
-		case 7:
-			return m.openDashboard()
-		default:
-			return m, tea.Quit
-		}
-	}
-	return m, nil
 }
 
 // projectFormFields is the number of rows in the create/edit project form:
@@ -492,7 +452,7 @@ func (m Model) updateProjectForm(key tea.KeyMsg) (Model, tea.Cmd) {
 		m.formErr = ""
 		m.Screen = m.formReturn
 		if m.Screen == "" {
-			m.Screen = "menu"
+			m.Screen = "project-picker"
 		}
 		return m, nil
 	}
@@ -652,8 +612,6 @@ func (m Model) View() string {
 }
 func (m Model) viewBody() string {
 	switch m.Screen {
-	case "menu":
-		return m.viewMenu()
 	case "project-picker":
 		return m.viewProjectPicker()
 	case "create-project", "edit-project":
@@ -713,24 +671,8 @@ func (m Model) viewBody() string {
 	case "defect-create-result":
 		return m.viewDefectCreateResult()
 	default:
-		return screenTitleStyle.Render(m.Choices[m.Cursor])
+		return ""
 	}
-}
-
-func (m Model) viewMenu() string {
-	var b strings.Builder
-	b.WriteString(screenTitleStyle.Render("Panel de control"))
-	b.WriteString("\n")
-	context := "Sin proyecto activo · elegí uno en Proyectos"
-	if m.activeProjectID != "" {
-		context = "Proyecto activo: " + m.activeProjectName
-	}
-	b.WriteString(hintStyle.Render(context))
-	b.WriteString("\n\n")
-	for i, choice := range m.Choices {
-		b.WriteString(m.row(i == m.Cursor, choice) + "\n")
-	}
-	return b.String()
 }
 
 func (m Model) viewProjectForm() string {
@@ -784,6 +726,10 @@ func (m Model) chrome() string {
 	var b strings.Builder
 	b.WriteString(m.appBar(statusStyle, status))
 	b.WriteString("\n")
+	if m.inWorkspace() {
+		b.WriteString(m.workspaceHeader())
+		b.WriteString("\n")
+	}
 	b.WriteString(ansi.Truncate(breadcrumb(m.crumbParts()...), width, "…"))
 	b.WriteString("\n")
 	b.WriteString(ruleStyle.Render(strings.Repeat("─", width)))
@@ -814,8 +760,6 @@ func (m Model) appBar(statusStyle lipgloss.Style, status string) string {
 func (m Model) crumbParts() []string {
 	var parts []string
 	switch m.Screen {
-	case "menu":
-		return []string{"Panel de control"}
 	case "create-project", "edit-project", "project-result":
 		parts = append(parts, "Proyectos")
 		switch m.Screen {
@@ -827,21 +771,7 @@ func (m Model) crumbParts() []string {
 			parts = append(parts, "Resultado")
 		}
 	case "project-picker":
-		switch {
-		case m.pickerReturn == "backlog":
-			parts = append(parts, "Backlog")
-		case m.pickerPurpose == "dashboard" || m.pickerReturn == "dashboard":
-			parts = append(parts, "Dashboard")
-		case m.pickerReturn == "sprints" || isSprintScreen(m.pickerReturn) || m.pickerPurpose == "sprints":
-			parts = append(parts, "Sprints")
-		case m.pickerReturn == "section" || strings.HasPrefix(m.pickerPurpose, "section:"):
-			parts = append(parts, m.section.kind.title())
-		default:
-			parts = append(parts, "Proyectos")
-		}
-		if m.pickerPurpose != "projects" {
-			parts = append(parts, "Elegir proyecto")
-		}
+		return []string{"Proyectos"}
 	case "backlog", "backlog-form", "backlog-result":
 		parts = append(parts, "Backlog")
 		switch m.Screen {
@@ -915,12 +845,8 @@ func (m Model) crumbParts() []string {
 	default:
 		parts = append(parts, "")
 	}
-	if m.activeProjectID != "" && !isProjectScreen(m.Screen) {
-		name := m.activeProjectName
-		if name == "" {
-			name = shortID(m.activeProjectID)
-		}
-		parts = append(parts, "Proyecto: "+name)
+	if m.inWorkspace() {
+		parts = append([]string{"Proyectos", m.projectLabel()}, parts...)
 	}
 	return parts
 }
@@ -938,13 +864,11 @@ func (m Model) footer() string {
 		return m.keyHints("Esc", "cerrar ayuda", "?", "cerrar", "Ctrl+C", "salir")
 	}
 	switch m.Screen {
-	case "menu":
-		return m.keyHints("↑/↓", "mover", "Enter", "elegir", "?", "ayuda", "q", "salir")
 	case "project-picker":
 		if m.projectFiltering {
 			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "elegir", "Esc", "limpiar")
 		}
-		return m.keyHints("↑/↓", "mover", "Enter", "usar", "e", "editar", "n", "crear", "r", "refrescar", "/", "buscar", "Esc", "volver")
+		return m.keyHints("↑/↓", "mover", "Enter", "abrir", "n", "crear", "e", "editar", "/", "buscar", "q", "salir")
 	case "create-project", "edit-project":
 		return m.keyHints("Tab/↑/↓", "campo", "Enter", "continuar", "Esc", "volver", "Ctrl+C", "salir")
 	case "project-result":
@@ -953,7 +877,7 @@ func (m Model) footer() string {
 		if m.backlogFiltering {
 			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
 		}
-		return m.keyHints("↑/↓", "mover", "Enter", "editar", "n", "crear", "c", "proyecto", "r", "refrescar", "/", "buscar", "Esc", "menú", "q", "salir")
+		return m.keyHints("↑/↓", "mover", "Enter", "editar", "n", "crear", "r", "refrescar", "/", "buscar", "Esc", "proyectos", "q", "salir")
 	case "backlog-form":
 		return m.keyHints("Tab/↑/↓", "campo", "Enter", "siguiente/enviar", "Esc", "volver", "Ctrl+C", "salir")
 	case "backlog-result", "sprint-result":
@@ -962,7 +886,7 @@ func (m Model) footer() string {
 		if m.sprintFiltering {
 			return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
 		}
-		return m.keyHints("↑/↓", "mover", "Enter", "historias", "d", "PDF", "a", "asignar", "x", "cerrar", "h", "cerrados", "n", "nuevo", "r", "refrescar", "/", "buscar", "Esc", "menú", "q", "salir")
+		return m.keyHints("↑/↓", "mover", "Enter", "historias", "d", "PDF", "a", "asignar", "x", "cerrar", "h", "cerrados", "n", "nuevo", "r", "refrescar", "/", "buscar", "Esc", "proyectos", "q", "salir")
 	case "sprint-goal":
 		return m.keyHints("Enter", "enviar", "Esc", "volver", "Ctrl+C", "salir")
 	case "sprint-confirm":
@@ -1002,10 +926,10 @@ func (m Model) footer() string {
 		if len(m.visibleDefects()) > 0 {
 			pairs = append(pairs, "Enter", "detalle", "u", "actualizar estado")
 		}
-		pairs = append(pairs, "n", "nuevo defecto", "r", "refrescar", "/", "buscar", "?", "ayuda", "p", "proyecto", "Esc", "menú", "q", "salir", "Ctrl+C", "salir")
+		pairs = append(pairs, "n", "nuevo defecto", "r", "refrescar", "/", "buscar", "?", "ayuda", "Esc", "proyectos", "q", "salir", "Ctrl+C", "salir")
 		return m.keyHints(pairs...)
 	case "defect-detail":
-		return m.keyHints("u", "cambiar estado", "Esc", "volver al listado", "?", "ayuda", "p", "proyecto", "q", "salir", "Ctrl+C", "salir")
+		return m.keyHints("u", "cambiar estado", "Esc", "volver al listado", "?", "ayuda", "q", "salir", "Ctrl+C", "salir")
 	case "defect-story-select":
 		return m.defectSelectorFooter(&m.defectStorySelector, "historia")
 	case "defect-sprint-select":
@@ -1013,21 +937,21 @@ func (m Model) footer() string {
 	case "defect-resolution-select":
 		return m.defectSelectorFooter(&m.defectResolutionSelector, "Sprint")
 	case "defect-status-select":
-		return m.keyHints("↑/↓", "elegir estado", "Enter", "confirmar estado", "Esc", "cancelar", "?", "ayuda", "p", "proyecto", "q", "salir", "Ctrl+C", "salir")
+		return m.keyHints("↑/↓", "elegir estado", "Enter", "confirmar estado", "Esc", "cancelar", "?", "ayuda", "q", "salir", "Ctrl+C", "salir")
 	case "defect-status-result":
 		if m.defectStatusLoading {
 			return m.keyHints("?", "ayuda", "Ctrl+C", "salir")
 		}
-		return m.keyHints("Enter/Esc", "volver", "?", "ayuda", "p", "proyecto", "q", "salir", "Ctrl+C", "salir")
+		return m.keyHints("Enter/Esc", "volver", "?", "ayuda", "q", "salir", "Ctrl+C", "salir")
 	case "defect-create-form":
 		return m.keyHints("Tab/↑/↓", "campo", "←/→", "opción", "Enter", "continuar", "Esc", "cancelar", "Ctrl+C", "salir")
 	case "defect-create-confirm":
-		return m.keyHints("s", "confirmar registro", "n", "cancelar", "Esc", "volver", "?", "ayuda", "p", "proyecto", "q", "salir", "Ctrl+C", "salir")
+		return m.keyHints("s", "confirmar registro", "n", "cancelar", "Esc", "volver", "?", "ayuda", "q", "salir", "Ctrl+C", "salir")
 	case "defect-create-result":
 		if m.defectCreateLoading {
 			return m.keyHints("?", "ayuda", "Ctrl+C", "salir")
 		}
-		return m.keyHints("Enter/Esc", "volver", "?", "ayuda", "p", "proyecto", "q", "salir", "Ctrl+C", "salir")
+		return m.keyHints("Enter/Esc", "volver", "?", "ayuda", "q", "salir", "Ctrl+C", "salir")
 	default:
 		return m.keyHints("Esc", "volver", "?", "ayuda", "q", "salir")
 	}
@@ -1038,16 +962,16 @@ func (m Model) defectSelectorFooter(s *selector, noun string) string {
 		return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar", "Ctrl+C", "salir")
 	}
 	if s.loading || m.defectStatusOptionsLoading && m.Screen == "defect-resolution-select" {
-		return m.keyHints("Esc", "cancelar", "p", "proyecto", "q", "salir", "?", "ayuda", "Ctrl+C", "salir")
+		return m.keyHints("Esc", "cancelar", "q", "salir", "?", "ayuda", "Ctrl+C", "salir")
 	}
 	if s.err != "" {
-		return m.keyHints("r", "reintentar", "Esc", "volver", "p", "proyecto", "q", "salir", "?", "ayuda", "Ctrl+C", "salir")
+		return m.keyHints("r", "reintentar", "Esc", "volver", "q", "salir", "?", "ayuda", "Ctrl+C", "salir")
 	}
 	pairs := []string{"↑/↓", "mover"}
 	if len(s.visible()) > 0 {
 		pairs = append(pairs, "Enter", "elegir "+noun)
 	}
-	pairs = append(pairs, "r", "refrescar", "/", "buscar", "Esc", "volver", "p", "proyecto", "q", "salir", "?", "ayuda", "Ctrl+C", "salir")
+	pairs = append(pairs, "r", "refrescar", "/", "buscar", "Esc", "volver", "q", "salir", "?", "ayuda", "Ctrl+C", "salir")
 	return m.keyHints(pairs...)
 }
 
@@ -1093,7 +1017,6 @@ func (m Model) helpRows() [][2]string {
 		{"r", "Refrescar el listado actual"},
 		{"x", "Cerrar el Sprint resaltado (pide confirmación)"},
 		{"h", "Ver los Sprints cerrados"},
-		{"p", "Cambiar el proyecto activo"},
 		{"Esc", "Limpiar el filtro y volver un nivel (nunca pierde el contexto)"},
 		{"Tab / ↑ / ↓", "Cambiar de campo en un formulario"},
 		{"?", "Mostrar u ocultar esta ayuda"},
@@ -1113,7 +1036,6 @@ func sprintsHelpRows() [][2]string {
 		{"n", "Crear un Sprint"},
 		{"/", "Buscar o filtrar Sprints"},
 		{"r", "Refrescar el listado"},
-		{"p", "Cambiar el proyecto activo"},
 		{"Esc", "Limpiar el filtro y volver al menú"},
 		{"?", "Mostrar u ocultar esta ayuda"},
 		{"q / Q", "Salir"},
@@ -1167,7 +1089,6 @@ func (m Model) defectHelpRows() [][2]string {
 		}
 	}
 	if m.Screen != "defect-create-form" && !m.filtering() && !m.defectSubmissionInFlight() {
-		rows = append(rows, [2]string{"p", "Cambiar el proyecto activo"}, [2]string{"q / Q", "Salir"})
 	}
 	if !m.filtering() {
 		rows = append(rows, [2]string{"?", "Mostrar u ocultar esta ayuda"})

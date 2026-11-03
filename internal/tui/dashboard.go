@@ -37,7 +37,7 @@ type dashboardResultMsg struct {
 // project first when the session has none.
 func (m Model) openDashboard() (Model, tea.Cmd) {
 	if m.activeProjectID == "" {
-		return m.openProjectPicker("dashboard")
+		return m.leaveWorkspace()
 	}
 	m.Screen = "dashboard"
 	m.dashboard.seq++
@@ -99,8 +99,7 @@ func (m Model) applyDashboardResult(result dashboardResultMsg) (Model, tea.Cmd) 
 func (m Model) updateDashboard(key tea.KeyMsg) (Model, tea.Cmd) {
 	switch {
 	case key.Type == tea.KeyEsc:
-		m.Screen, m.Cursor = "menu", 0
-		return m, nil
+		return m.leaveWorkspace()
 	case key.Type == tea.KeyRunes && string(key.Runes) == "r" && !m.dashboard.loading:
 		m.dashboard.seq++
 		m.dashboard.loading = true
@@ -269,15 +268,14 @@ func dashboardBar(fraction float64, width int) string {
 }
 
 func (m Model) dashboardFooter() string {
-	return m.keyHints("r", "refrescar", "d", "PDF", "p", "proyecto", "Esc", "menú", "?", "ayuda", "q", "salir")
+	return m.keyHints("r", "refrescar", "d", "PDF", "Esc", "proyectos", "?", "ayuda", "q", "salir")
 }
 
 func dashboardHelpRows() [][2]string {
 	return [][2]string{
 		{"r", "Refrescar el estado y las métricas del proyecto"},
 		{"d", "Descargar el reporte PDF del proyecto"},
-		{"p", "Cambiar el proyecto activo"},
-		{"Esc", "Volver al menú"},
+		{"Esc", "Volver a Proyectos"},
 		{"?", "Mostrar u ocultar esta ayuda"},
 		{"q", "Salir"},
 		{"Ctrl+C", "Salir desde cualquier pantalla"},

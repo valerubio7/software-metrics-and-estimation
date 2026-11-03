@@ -23,7 +23,7 @@ const (
 func (k sectionKind) title() string {
 	switch k {
 	case sectionPlanningPoker:
-		return "Planning Poker"
+		return "Estimación"
 	case sectionEffort:
 		return "Esfuerzo"
 	case sectionDefects:
@@ -126,7 +126,7 @@ type SectionResultMsg struct {
 func (m Model) openSection(kind sectionKind) (Model, tea.Cmd) {
 	m.section.kind = kind
 	if m.activeProjectID == "" {
-		return m.openProjectPicker("section:" + string(kind))
+		return m.leaveWorkspace()
 	}
 	m.Screen = "section"
 	m.section.step = sectionStepPrimary
@@ -293,8 +293,7 @@ func (m Model) updateSection(key tea.KeyMsg) (Model, tea.Cmd) {
 	switch action {
 	case selectorBack:
 		if m.section.step == sectionStepScope {
-			m.Screen, m.Cursor = "menu", 0
-			return m, nil
+			return m.leaveWorkspace()
 		}
 		if m.section.step == sectionStepPrimary {
 			if m.section.kind == sectionMetrics && m.section.metricsScope == metricsScopeSprint {
@@ -303,8 +302,7 @@ func (m Model) updateSection(key tea.KeyMsg) (Model, tea.Cmd) {
 				m.section.selector.setItems(sectionMetricsScopeItems())
 				return m, nil
 			}
-			m.Screen, m.Cursor = "menu", 0
-			return m, nil
+			return m.leaveWorkspace()
 		}
 		if m.section.kind == sectionEffort && m.section.step == sectionStepMembers {
 			m.section.step = sectionStepTasks
@@ -691,7 +689,7 @@ func (m Model) sectionFooter() string {
 		return m.keyHints("Enter/Esc", "volver", "?", "ayuda", "q", "salir")
 	}
 	if m.section.step == sectionStepMetrics {
-		return m.keyHints("r", "refrescar", "p", "proyecto", "Esc", "volver", "?", "ayuda", "q", "salir")
+		return m.keyHints("r", "refrescar", "Esc", "volver", "?", "ayuda", "q", "salir")
 	}
 	if m.section.selector.filtering {
 		return m.keyHints("escribí", "para filtrar", "↑/↓", "mover", "Enter", "dejar de filtrar", "Esc", "limpiar")
@@ -718,7 +716,7 @@ func (m Model) sectionFooter() string {
 		return m.keyHints("↑/↓", "mover", "Space", "seleccionar", "Enter", "confirmar participantes", "/", "buscar", "Esc", "volver", "?", "ayuda", "q", "salir")
 	}
 	return m.keyHints("↑/↓", "mover", "Enter", action, "/", "buscar", "r", "refrescar",
-		"p", "proyecto", "Esc", "volver", "?", "ayuda", "q", "salir")
+		"Esc", "volver", "?", "ayuda", "q", "salir")
 }
 
 func (m Model) sectionHelpRows() [][2]string {
@@ -733,7 +731,6 @@ func (m Model) sectionHelpRows() [][2]string {
 	if m.section.step == sectionStepMetrics {
 		return [][2]string{
 			{"r", "Refrescar las métricas del ámbito activo"},
-			{"p", "Cambiar el proyecto activo"},
 			{"Esc", "Volver al selector anterior"},
 			{"?", "Mostrar u ocultar esta ayuda"},
 			{"q", "Salir (no dentro de un filtro)"},
@@ -763,7 +760,6 @@ func (m Model) sectionHelpRows() [][2]string {
 		{"Enter", action},
 		{"/", "Buscar o filtrar en la lista"},
 		{"r", "Refrescar el listado actual"},
-		{"p", "Cambiar el proyecto activo"},
 		{"Esc", "Limpiar el filtro y volver un nivel"},
 		{"?", "Mostrar u ocultar esta ayuda"},
 		{"q", "Salir (no dentro de un filtro)"},

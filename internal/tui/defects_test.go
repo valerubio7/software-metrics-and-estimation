@@ -45,11 +45,8 @@ func TestDefectsProjectSelectionLoadsSelectedProject(t *testing.T) {
 	defer server.Close()
 
 	model := NewModel(server.URL)
-	model, cmd := model.openDefects()
-	if model.Screen != "project-picker" || model.pickerPurpose != "defects" || cmd == nil {
-		t.Fatalf("openDefects() without active project = screen %q, purpose %q, cmd nil %v", model.Screen, model.pickerPurpose, cmd == nil)
-	}
-	model, cmd = model.selectProject(ProjectSummary{ID: "p-2", Name: "Project Two"})
+	model, _ = model.selectProject(ProjectSummary{ID: "p-2", Name: "Project Two"})
+	model, cmd := model.openTab(tabDefects)
 	if model.Screen != "defects" || cmd == nil {
 		t.Fatalf("project selection = screen %q, cmd nil %v", model.Screen, cmd == nil)
 	}
@@ -255,8 +252,9 @@ func TestChangingProjectFromDefectDetailOpensNewProjectList(t *testing.T) {
 	model.Screen, model.activeProjectID = "defect-detail", "old-project"
 	model.defectDetail = Defect{ID: "old-defect", Description: "Old project record"}
 	model.defectFilter = "old-project-filter"
-	model, _ = model.openProjectPicker("project")
-	model, cmd := model.selectProject(ProjectSummary{ID: "new-project", Name: "New project"})
+	model, _ = model.openProjectPicker()
+	model, _ = model.selectProject(ProjectSummary{ID: "new-project", Name: "New project"})
+	model, cmd := model.openTab(tabDefects)
 	if model.Screen != "defects" || cmd == nil {
 		t.Fatalf("selecting another project from detail = screen %q, cmd nil %v", model.Screen, cmd == nil)
 	}

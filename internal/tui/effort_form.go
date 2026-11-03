@@ -333,7 +333,7 @@ func (m Model) leaveEffortResult() Model {
 
 // effortResultFooter lists the keys that act on the result screen.
 func (m Model) effortResultFooter() string {
-	return m.keyHints("r", "refrescar métricas", "Esc", "volver", "p", "proyecto", "?", "ayuda", "q", "salir")
+	return m.keyHints("r", "refrescar métricas", "Esc", "volver", "?", "ayuda", "q", "salir")
 }
 
 // effortResultHelpRows lists the same keys for the help overlay.
@@ -341,7 +341,6 @@ func effortResultHelpRows() [][2]string {
 	return [][2]string{
 		{"r", "Refrescar las métricas del proyecto"},
 		{"Esc", "Volver a las tareas de la historia"},
-		{"p", "Cambiar el proyecto activo"},
 		{"?", "Mostrar u ocultar esta ayuda"},
 		{"q", "Salir"},
 	}

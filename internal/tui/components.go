@@ -148,15 +148,16 @@ func priorityBadge(priority string) string {
 	}
 }
 
-// breadcrumb renders a Home-rooted trail, highlighting the current node.
+// breadcrumb renders the trail from Proyectos, highlighting the current node.
 func breadcrumb(parts ...string) string {
 	if len(parts) == 0 {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString(crumbStyle.Render("Inicio"))
 	for i, part := range parts {
-		b.WriteString(crumbSepStyle.Render(" › "))
+		if i > 0 {
+			b.WriteString(crumbSepStyle.Render(" › "))
+		}
 		if i == len(parts)-1 {
 			b.WriteString(crumbCurrentStyle.Render(part))
 		} else {

@@ -235,7 +235,7 @@ func TestEffortFormCrumbAndTitle(t *testing.T) {
 	m := openEffortFormFor(t, server.URL, 0, 1, 0)
 
 	view := stripANSI(m.View())
-	for _, want := range []string{"Esfuerzo › Registrar", "Proyecto: Alpha", "Registrar esfuerzo"} {
+	for _, want := range []string{"Proyectos › Alpha › Esfuerzo › Registrar", "Registrar esfuerzo"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("form lacks %q: %q", want, view)
 		}

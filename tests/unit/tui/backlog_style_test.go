@@ -60,11 +60,11 @@ func wantPlainBody(t *testing.T, view, body string) {
 func hasBackground(line string) bool { return strings.Contains(line, "48;2;") }
 
 func TestSelectionRowSpansContentWidth(t *testing.T) {
-	m := tui.NewModel("http://localhost:8080")
+	m := seedProjects(t, tui.NewModel("http://localhost:8080"), sampleProjects()...)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
 	view := stripANSI(updated.(tui.Model).View())
 	for _, line := range strings.Split(view, "\n") {
-		if strings.Contains(line, "▸ Proyectos") {
+		if strings.Contains(line, "▸") && strings.Contains(line, "Alpha") {
 			if w := lipgloss.Width(line); w != 60 {
 				t.Errorf("selected row width = %d, want 60 (line %q)", w, line)
 			}
@@ -85,7 +85,7 @@ func TestStyledChromeShowsBrandAndBreadcrumb(t *testing.T) {
 
 	wantPlainBody(t, view, "Software Metrics & Estimation")
 	wantPlainBody(t, view, "API conectada")
-	wantPlainBody(t, view, "Inicio › Backlog › Proyecto: Alpha")
+	wantPlainBody(t, view, "Proyectos › Alpha › Backlog")
 	styled := wantStyled(t, view, "Software Metrics & Estimation")
 	if !hasBackground(styled) && !ansiSequence.MatchString(styled) {
 		t.Errorf("brand line %q has no styling", styled)
@@ -143,8 +143,8 @@ func TestStyledBacklogEmptyAndLoadingMessagesAreMuted(t *testing.T) {
 		wantStyled(t, view, "El backlog no tiene historias.")
 	})
 	t.Run("picker loading", func(t *testing.T) {
-		view, _ := startBacklog("http://localhost:8080")
-		wantPlainBody(t, view.View(), "Elegí un proyecto")
+		view, _ := startBrowser("http://localhost:8080")
+		wantPlainBody(t, view.View(), "Enter abre el proyecto")
 		wantPlainBody(t, view.View(), "Cargando proyectos…")
 		wantStyled(t, view.View(), "Cargando proyectos…")
 	})
@@ -153,11 +153,11 @@ func TestStyledBacklogEmptyAndLoadingMessagesAreMuted(t *testing.T) {
 func TestStyledProjectPickerShowsStatusBadges(t *testing.T) {
 	forceColor(t)
 	server, _ := fakeBacklogAPI(t, apiStubs{})
-	m, load := startBacklog(server.URL)
+	m, load := startBrowser(server.URL)
 	m = run(t, m, load)
 	view := m.View()
 
-	wantPlainBody(t, view, "Elegí un proyecto")
+	wantPlainBody(t, view, "Enter abre el proyecto")
 	wantPlainBody(t, view, "Alpha")
 	wantPlainBody(t, view, "EN CURSO")
 	wantStyled(t, view, "Alpha")

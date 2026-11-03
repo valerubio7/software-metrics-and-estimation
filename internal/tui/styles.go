@@ -180,4 +180,13 @@ var (
 	helpKeyStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(accent)
+
+	// Workspace tab bar: the active tab is a filled accent chip.
+	tabActiveStyle = lipgloss.NewStyle().
+			Background(accent).
+			Foreground(onAccent).
+			Bold(true)
+
+	tabIdleStyle = lipgloss.NewStyle().
+			Foreground(inkFaint)
 )

@@ -121,7 +121,7 @@ func (m Model) openBacklog() (Model, tea.Cmd) {
 	m.backlogCursor = 0
 	m.backlogFilter, m.backlogFiltering = "", false
 	if m.activeProjectID == "" {
-		return m.openProjectPicker("backlog")
+		return m.leaveWorkspace()
 	}
 	m.Screen = "backlog"
 	return m.startBacklogLoad()
@@ -184,7 +184,7 @@ func (m Model) updateBacklog(key tea.KeyMsg) (Model, tea.Cmd) {
 			m.backlogFilter, m.backlogCursor = "", 0
 			return m, nil
 		}
-		m.Screen, m.Cursor = "menu", 0
+		return m.leaveWorkspace()
 	case tea.KeyUp:
 		if m.backlogCursor > 0 {
 			m.backlogCursor--
@@ -201,13 +201,8 @@ func (m Model) updateBacklog(key tea.KeyMsg) (Model, tea.Cmd) {
 			m.backlogFiltering = true
 		case "n":
 			m.Screen, m.backlogForm = "backlog-form", storyForm{}
-		case "c":
-			return m.openProjectPicker("backlog")
 		case "r":
 			return m.startBacklogLoad()
-		case "p":
-			// p is the global «change project» shortcut; the list already offers
-			// that with c, so keep p inert instead of seeding a search.
 		default:
 			m.backlogFiltering = true
 			if value, ok := editText(m.backlogFilter, key); ok {
@@ -278,7 +273,7 @@ func (m Model) updateBacklogResult(key tea.KeyMsg) (Model, tea.Cmd) {
 	case "backlog-form":
 		m.Screen = "backlog-form"
 	case "project-picker":
-		return m.openProjectPicker("backlog")
+		return m.leaveWorkspace()
 	default:
 		m.Screen = "backlog"
 		return m.startBacklogLoad()
@@ -497,9 +492,9 @@ func (m Model) viewBacklog() string {
 // that used to live in rows stay discoverable.
 func backlogHint(hasProject bool) string {
 	if !hasProject {
-		return "c elige un proyecto."
+		return "Esc vuelve a Proyectos para elegir uno."
 	}
-	return "Enter edita · n crea · c cambia de proyecto · r refresca · / busca."
+	return "Enter edita · n crea · r refresca · / busca · Esc vuelve a Proyectos."
 }
 
 func (m Model) viewBacklogForm() string {

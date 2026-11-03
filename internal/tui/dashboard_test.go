@@ -54,7 +54,7 @@ func TestDashboardDiscardsStaleAndForeignResults(t *testing.T) {
 		t.Fatalf("stale result changed the dashboard: %+v", m.dashboard)
 	}
 
-	m.Screen = "menu"
+	m.Screen = "project-picker"
 	m, _ = m.applyDashboardResult(dashboardResultMsg{seq: 2, status: "foreign", metricsOK: true})
 	if m.dashboard.status != "old" || !m.dashboard.loading {
 		t.Fatalf("result applied outside the dashboard: %+v", m.dashboard)

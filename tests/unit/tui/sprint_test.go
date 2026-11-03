@@ -12,21 +12,11 @@ import (
 	"github.com/valerubio7/software-metrics-and-estimation/internal/tui"
 )
 
-// startSprints opens Sprints from the top-level menu (Down, Down, Enter). With no
-// active project this lands on the project picker and returns its load command.
-func startSprints(url string) (tui.Model, tea.Cmd) {
-	m := tui.NewModel(url)
-	m = press(m, tea.KeyDown)
-	m = press(m, tea.KeyDown)
-	return apply(m, tea.KeyMsg{Type: tea.KeyEnter})
-}
-
-// openSprintsWithProject goes menu -> Sprints -> picker -> pid -> Enter and applies
-// the open Sprint list.
+// openSprintsWithProject goes browser -> pid -> Sprints tab and applies the open
+// Sprint list.
 func openSprintsWithProject(t *testing.T, url, pid string) tui.Model {
 	t.Helper()
-	m, load := startSprints(url)
-	m, cmd := confirmProjectInPicker(t, m, load, pid)
+	m, cmd := openTab(t, url, pid, tabSprints)
 	m = run(t, m, cmd)
 	if m.Screen != "sprints" {
 		t.Fatalf("Screen = %q after loading, want sprints", m.Screen)

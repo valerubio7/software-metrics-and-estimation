@@ -194,10 +194,11 @@ func TestProjectDateRowIsHighlightedWhenFocused(t *testing.T) {
 	}
 }
 
-// openBrowser opens the project browser from the menu and seeds it with projects.
+// openBrowser seeds the startup project browser with projects plus a trailing
+// filler, so a single project under test is not auto-opened.
 func openBrowser(t *testing.T, projects ...tui.ProjectSummary) tui.Model {
 	t.Helper()
-	return seedProjects(t, press(tui.NewModel("http://localhost:8080"), tea.KeyEnter), projects...)
+	return seedProjects(t, tui.NewModel("http://localhost:8080"), append(projects, fillerProject)...)
 }
 
 func TestEditProjectPrefillsFromSelectedSummary(t *testing.T) {

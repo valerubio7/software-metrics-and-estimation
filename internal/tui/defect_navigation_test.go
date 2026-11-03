@@ -42,8 +42,8 @@ func TestDefectStatusScreensSupportGlobalNavigationWhenIdle(t *testing.T) {
 			m = NewModel("http://localhost:8080")
 			m.Screen, m.activeProjectID = screen, "p-1"
 			updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
-			if updated.(Model).Screen != "project-picker" || cmd == nil {
-				t.Fatalf("p = screen %q, cmd nil %v; want project picker and project load", updated.(Model).Screen, cmd == nil)
+			if updated.(Model).Screen != screen || cmd != nil {
+				t.Fatalf("p = screen %q, cmd nil %v; the removed project shortcut must not leave the screen", updated.(Model).Screen, cmd == nil)
 			}
 
 			m = NewModel("http://localhost:8080")

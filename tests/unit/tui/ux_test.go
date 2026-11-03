@@ -17,10 +17,13 @@ func TestHelpOverlayToggles(t *testing.T) {
 	if !strings.Contains(view, "Atajos de teclado") {
 		t.Fatalf("View() = %q, want the help overlay", view)
 	}
-	for _, want := range []string{"Mover la selección", "Cambiar el proyecto activo", "Salir"} {
+	for _, want := range []string{"Mover la selección", "Salir"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("help overlay missing %q: %q", want, view)
 		}
+	}
+	if strings.Contains(view, "Cambiar el proyecto activo") {
+		t.Errorf("help overlay still offers the removed project shortcut: %q", view)
 	}
 	m = press(m, tea.KeyEsc)
 	if strings.Contains(m.View(), "Atajos de teclado") {
@@ -40,27 +43,15 @@ func TestQuestionMarkIsTypedInTextFields(t *testing.T) {
 	}
 }
 
-func TestProjectShortcutOpensPicker(t *testing.T) {
-	server, _ := fakeBacklogAPI(t, apiStubs{})
-	m := openBacklogWithProject(t, server.URL, "p1")
-	m, cmd := apply(m, keyMsg("p"))
-	if m.Screen != "project-picker" {
-		t.Fatalf("Screen = %q, want project-picker", m.Screen)
-	}
-	if cmd == nil {
-		t.Fatal("opening the picker should load the project collection")
-	}
-}
-
 func TestActiveProjectContextIsShownAcrossScreens(t *testing.T) {
 	server, _ := fakeBacklogAPI(t, apiStubs{})
 	m := openBacklogWithProject(t, server.URL, "p1")
-	if !strings.Contains(m.View(), "Proyecto: Alpha") {
-		t.Errorf("backlog View() = %q, want the active project in the breadcrumb", m.View())
+	if view := stripANSI(m.View()); !strings.Contains(view, "Proyectos › Alpha › Backlog") || !strings.Contains(view, "◆ Alpha") {
+		t.Errorf("backlog View() = %q, want the open project in the breadcrumb and the workspace line", view)
 	}
-	m = press(m, tea.KeyEsc)
-	if !strings.Contains(m.View(), "Proyecto activo: Alpha") {
-		t.Errorf("menu View() = %q, want the active project on the panel", m.View())
+	m, _ = apply(m, keyMsg(tabSprints))
+	if view := stripANSI(m.View()); !strings.Contains(view, "Proyectos › Alpha › Sprints") || !strings.Contains(view, "◆ Alpha") {
+		t.Errorf("sprints View() = %q, want the open project kept across tabs", view)
 	}
 }
 
@@ -80,7 +71,7 @@ func TestProjectClientListUsesCollectionEndpoint(t *testing.T) {
 }
 
 func TestPickerShowsTransportErrorWithoutCrashing(t *testing.T) {
-	m, _ := startBacklog("http://localhost:8080")
+	m, _ := startBrowser("http://localhost:8080")
 	m, _ = apply(m, tui.ProjectsResultMsg{Err: errors.New("connection refused")})
 	if m.Screen != "project-picker" {
 		t.Fatalf("Screen = %q, want project-picker", m.Screen)

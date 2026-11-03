@@ -134,7 +134,7 @@ func TestDefectFlowBreadcrumbsUseSpanishLabels(t *testing.T) {
 			m := NewModel("http://localhost:8080")
 			m.Screen, m.activeProjectID, m.activeProjectName = screen, "p-1", "Proyecto Alfa"
 			view := stripANSI(m.View())
-			if !strings.Contains(view, label) || !strings.Contains(view, "Proyecto: Proyecto Alfa") {
+			if !strings.Contains(view, label) || !strings.Contains(view, "Proyectos › Proyecto Alfa › Defectos") {
 				t.Errorf("breadcrumb %q does not contain %q and the project context: %q", view, label, view)
 			}
 			for _, raw := range []string{"status-select", "status-result", "create-result", "resolution-select", "sprint-select", "story-select", "create-confirm", "create-form"} {

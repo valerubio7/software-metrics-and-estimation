@@ -27,14 +27,11 @@ func dashboardServerWithMetrics(t *testing.T, metricsBody string) *httptest.Serv
 	})
 }
 
-// startDashboard opens Dashboard from the menu, confirms pid in the project
-// picker and applies the dashboard load command.
+// startDashboard starts the TUI on the project browser, opens pid with Enter
+// and applies the dashboard load command.
 func startDashboard(t *testing.T, url, pid string) tui.Model {
 	t.Helper()
-	m, load := startSection(url, menuDashboard)
-	if m.Screen != "project-picker" {
-		t.Fatalf("Screen = %q without an active project, want project-picker", m.Screen)
-	}
+	m, load := startBrowser(url)
 	m, cmd := confirmProjectInPicker(t, m, load, pid)
 	m = run(t, m, cmd)
 	if m.Screen != "dashboard" {
@@ -63,25 +60,6 @@ func TestDashboardMenuOpensProjectDashboard(t *testing.T) {
 	}
 	if strings.Contains(view, "TUI-11") || strings.Contains(view, "No se guardó ningún dato") {
 		t.Errorf("dashboard still shows the TUI-11 notice: %q", view)
-	}
-}
-
-func TestDashboardAsksForAProjectWhenNoneIsActive(t *testing.T) {
-	server := dashboardServer(t)
-	m, load := startSection(server.URL, menuDashboard)
-	if m.Screen != "project-picker" {
-		t.Fatalf("Screen = %q, want project-picker", m.Screen)
-	}
-	m, cmd := confirmProjectInPicker(t, m, load, "p1")
-	if cmd == nil {
-		t.Fatal("confirming the project should load the dashboard")
-	}
-	m = run(t, m, cmd)
-	if m.Screen != "dashboard" {
-		t.Fatalf("Screen = %q after confirming the project, want dashboard", m.Screen)
-	}
-	if view := stripANSI(m.View()); !strings.Contains(view, "Alpha") || !strings.Contains(strings.ToLower(view), "en curso") {
-		t.Fatalf("dashboard did not load the chosen project: %q", view)
 	}
 }
 
@@ -247,16 +225,16 @@ func TestDashboardShowsProjectStatusErrorsAndKeepsMetrics(t *testing.T) {
 	}
 }
 
-func TestDashboardEscapeReturnsToTheMenu(t *testing.T) {
+func TestDashboardEscapeReturnsToProjects(t *testing.T) {
 	server := dashboardServer(t)
 	m := startDashboard(t, server.URL, "p1")
 	m = press(m, tea.KeyEsc)
-	if m.Screen != "menu" {
-		t.Fatalf("Screen = %q after Esc, want menu", m.Screen)
+	if m.Screen != "project-picker" {
+		t.Fatalf("Screen = %q after Esc, want project-picker", m.Screen)
 	}
 }
 
-func TestDashboardSwitchesProjectWithP(t *testing.T) {
+func TestDashboardSwitchesProjectThroughTheBrowser(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/projects":
@@ -276,9 +254,9 @@ func TestDashboardSwitchesProjectWithP(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	m := startDashboard(t, server.URL, "p1")
-	m, cmd := apply(m, keyMsg("p"))
+	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEsc})
 	if m.Screen != "project-picker" {
-		t.Fatalf("Screen = %q after p, want project-picker", m.Screen)
+		t.Fatalf("Screen = %q after Esc, want project-picker", m.Screen)
 	}
 	m, cmd = confirmProjectInPicker(t, m, cmd, "p2")
 	m = run(t, m, cmd)
@@ -328,15 +306,24 @@ func TestDashboardFooterAndHelpOnlyShowValidKeys(t *testing.T) {
 	server := dashboardServer(t)
 	m := startDashboard(t, server.URL, "p1")
 	view := stripANSI(m.View())
-	for _, want := range []string{"r  refrescar", "p  proyecto", "Esc  menú", "?  ayuda", "q  salir"} {
+	for _, want := range []string{"r  refrescar", "Esc  proyectos", "?  ayuda", "q  salir"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("dashboard footer lacks %q: %q", want, view)
 		}
 	}
 
+	for _, unwanted := range []string{"p  proyecto", "Esc  menú"} {
+		if strings.Contains(view, unwanted) {
+			t.Errorf("dashboard footer still shows the removed %q: %q", unwanted, view)
+		}
+	}
+
 	m, _ = apply(m, keyMsg("?"))
 	help := stripANSI(m.View())
-	for _, want := range []string{"Refrescar el estado y las métricas", "Cambiar el proyecto activo", "Volver al menú", "Salir"} {
+	if strings.Contains(help, "Cambiar el proyecto activo") {
+		t.Errorf("dashboard help still offers the removed project shortcut: %q", help)
+	}
+	for _, want := range []string{"Refrescar el estado y las métricas", "Salir"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("dashboard help lacks %q: %q", want, help)
 		}
