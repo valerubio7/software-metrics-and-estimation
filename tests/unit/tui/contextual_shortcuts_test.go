@@ -160,9 +160,11 @@ func TestShortcutsDoNothingOnEmptyBacklog(t *testing.T) {
 	}
 }
 
-func TestLowercasePAndEStillStartASearch(t *testing.T) {
+// Lowercase p is not reserved in the backlog, so it still starts the search.
+// e is reserved since it edits the highlighted story (TestBacklogEKeyIsNotTypedIntoTheFilter).
+func TestLowercasePStillStartsASearch(t *testing.T) {
 	server, _ := shortcutServer(t, sectionStories())
-	for _, key := range []string{"p", "e"} {
+	for _, key := range []string{"p"} {
 		m := openBacklogWithProject(t, server.URL, "p1")
 		m, _ = apply(m, keyMsg(key))
 		if m.Screen != "backlog" {

@@ -55,6 +55,7 @@ type Model struct {
 	backlogFiltering     bool
 	backlogForm          storyForm
 	backlogMessage       string
+	storyDetail          storyDetailState
 	backlogClient        *BacklogClient
 	storyPointsClient    *StoryPointsClient
 	sprintClient         *SprintClient
@@ -255,6 +256,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateBacklog(key)
 	case "backlog-form":
 		return m.updateBacklogForm(key)
+	case "story-detail":
+		return m.updateStoryDetail(key)
 	case "sprints":
 		return m.updateSprints(key)
 	case "sprint-goal":
@@ -322,7 +325,7 @@ func entersText(screen string) bool {
 // listed, so q is a plain character there; Ctrl+C always quits.
 func quitsOnQ(screen string) bool {
 	switch screen {
-	case "project-picker", "backlog", "sprints", "sprint-history", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "dashboard", "dashboard-sprint-select", "planning-poker", "defects", "defect-detail", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-status-select", "defect-resolution-select":
+	case "project-picker", "backlog", "story-detail", "sprints", "sprint-history", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "dashboard", "dashboard-sprint-select", "planning-poker", "defects", "defect-detail", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-status-select", "defect-resolution-select":
 		return true
 	}
 	return false
@@ -600,6 +603,8 @@ func (m Model) viewBody() string {
 		return m.viewBacklog()
 	case "backlog-form":
 		return m.viewBacklogForm()
+	case "story-detail":
+		return m.viewStoryDetail()
 	case "sprints":
 		return m.viewSprints()
 	case "sprint-goal":
@@ -741,6 +746,8 @@ func (m Model) crumbParts() []string {
 		if m.Screen == "backlog-form" {
 			parts = append(parts, "Historia")
 		}
+	case "story-detail":
+		parts = append(parts, "Backlog", "Detalle")
 	case "sprints", "sprint-goal", "sprint-story-select", "sprint-assigned-list", "sprint-task-form", "sprint-history", "sprint-confirm":
 		parts = append(parts, "Sprints")
 		switch m.Screen {

@@ -103,10 +103,11 @@ func (m Model) screenBindings(l *keyList) {
 		}
 	case "backlog":
 		l.add(keyNav, true, "↑/↓", "mover", "Mover la selección")
-		l.add(keyAction, true, "Enter", "editar", "Editar la historia resaltada")
+		l.add(keyAction, true, "Enter", "detalle", "Abrir el detalle de la historia resaltada")
+		l.add(keyAction, true, "e", "editar", "Editar la historia resaltada")
 		l.add(keyAction, true, "n", "crear", "Crear una historia")
-		l.add(keyNav, true, "/", "buscar", "Buscar o filtrar historias")
 		l.add(keyNav, true, "Esc", "proyectos", "Volver a Proyectos")
+		l.add(keyNav, false, "/", "buscar", "Buscar o filtrar historias")
 		l.add(keyAction, false, "r", "refrescar", "Refrescar el backlog")
 		if len(m.visibleStories()) > 0 {
 			l.add(keyAction, false, "P", "estimar", "Estimar la historia resaltada (Planning Poker)")
@@ -116,6 +117,8 @@ func (m Model) screenBindings(l *keyList) {
 		if !m.backlogForm.saving {
 			m.formBindings(l, "Tab/↑/↓", "siguiente/enviar", "Pasar al siguiente campo o enviar")
 		}
+	case "story-detail":
+		m.storyDetailBindings(l)
 	case "sprints":
 		l.add(keyNav, true, "↑/↓", "mover", "Mover la selección")
 		l.add(keyAction, true, "Enter", "historias", "Ver las historias del Sprint resaltado")

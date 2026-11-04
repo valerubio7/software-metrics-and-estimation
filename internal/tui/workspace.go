@@ -69,7 +69,7 @@ func (m Model) currentTab() workspaceTab {
 	switch {
 	case m.Screen == "dashboard" || m.Screen == "dashboard-sprint-select":
 		return tabDashboard
-	case strings.HasPrefix(m.Screen, "backlog"):
+	case strings.HasPrefix(m.Screen, "backlog"), m.Screen == "story-detail":
 		return tabBacklog
 	case isSprintScreen(m.Screen):
 		return tabSprints
