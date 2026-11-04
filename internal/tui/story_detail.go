@@ -33,6 +33,7 @@ type storyAction struct {
 var storyActions = []storyAction{
 	{key: "p", label: "Estimar", help: "Estimar la historia con Planning Poker", open: openPokerForStory},
 	{key: "t", label: "Registrar esfuerzo", help: "Registrar esfuerzo de la historia", open: openEffortForStory},
+	{key: "d", label: "Reportar defecto", help: "Reportar un defecto de la historia", open: openDefectForStory},
 }
 
 func openPokerForStory(m Model, story Story) (Model, tea.Cmd) {
@@ -41,6 +42,22 @@ func openPokerForStory(m Model, story Story) (Model, tea.Cmd) {
 
 func openEffortForStory(m Model, story Story) (Model, tea.Cmd) {
 	return m.openStoryFlow(sectionEffort, story)
+}
+
+func openDefectForStory(m Model, story Story) (Model, tea.Cmd) {
+	return m.beginDefectCreationForStory(story)
+}
+
+// beginDefectCreationForStory opens the defect form with the story of the detail
+// already chosen, so the story selector is skipped (the form jumps from its last
+// field to the Sprint selector while storyID is set) and the story cannot change.
+// The draft always starts empty, and the flow goes back to the detail.
+func (m Model) beginDefectCreationForStory(story Story) (Model, tea.Cmd) {
+	m, cmd := m.beginDefectCreation()
+	item := storySelectorItem(story)
+	m.defectCreateForm.storyID, m.defectCreateForm.storyLabel = item.ID, item.Label
+	m.returnTo = returnStoryDetail
+	return m, cmd
 }
 
 // openStoryDetail opens the detail of the story highlighted in the backlog.

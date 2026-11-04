@@ -98,14 +98,16 @@ func (m Model) currentTab() workspaceTab {
 }
 
 // inStoryFlow reports whether the active screen is a step of an action launched
-// from the story detail (Estimar or Registrar esfuerzo), as opposed to the same
-// screens reached from the old Estimación and Esfuerzo tabs.
+// from the story detail (Estimar, Registrar esfuerzo or Reportar defecto), as
+// opposed to the same screens reached from the old Estimación and Esfuerzo tabs
+// or from the Defectos tab.
 func (m Model) inStoryFlow() bool {
 	if m.returnTo != returnStoryDetail {
 		return false
 	}
 	switch m.Screen {
-	case "section", "planning-poker", "effort-form":
+	case "section", "planning-poker", "effort-form",
+		"defect-create-form", "defect-sprint-select", "defect-create-confirm":
 		return true
 	}
 	return false

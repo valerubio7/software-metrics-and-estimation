@@ -358,9 +358,9 @@ func TestStoryDetailActionRowsInOrder(t *testing.T) {
 
 	view := stripANSI(m.View())
 
-	estimate, effort := strings.Index(view, "Estimar"), strings.Index(view, "Registrar esfuerzo")
-	if estimate < 0 || effort < 0 || estimate > effort {
-		t.Fatalf("the rows must be Estimar then Registrar esfuerzo (offsets %d, %d):\n%s", estimate, effort, view)
+	estimate, effort, defect := strings.Index(view, "Estimar"), strings.Index(view, "Registrar esfuerzo"), strings.Index(view, "Reportar defecto")
+	if estimate < 0 || effort < estimate || defect < effort {
+		t.Fatalf("the rows must be Estimar, Registrar esfuerzo and Reportar defecto in that order (offsets %d, %d, %d):\n%s", estimate, effort, defect, view)
 	}
 	if line := focusedLine(view); !strings.Contains(line, "Estimar") {
 		t.Errorf("the first row should be highlighted, got %q", line)
@@ -380,15 +380,23 @@ func TestStoryDetailArrowsMoveHighlightWithinBounds(t *testing.T) {
 	if line := highlighted(); !strings.Contains(line, "Registrar esfuerzo") {
 		t.Errorf("Down should highlight the next row, got %q", line)
 	}
+	m = press(m, tea.KeyDown)
+	if line := highlighted(); !strings.Contains(line, "Reportar defecto") {
+		t.Errorf("Down should highlight the third row, got %q", line)
+	}
 	for i := 0; i < 5; i++ {
 		m = press(m, tea.KeyDown)
 	}
-	if line := highlighted(); !strings.Contains(line, "Registrar esfuerzo") {
+	if line := highlighted(); !strings.Contains(line, "Reportar defecto") {
 		t.Errorf("Down on the last row must stay on it, got %q", line)
 	}
 	m = press(m, tea.KeyUp)
-	if line := highlighted(); !strings.Contains(line, "Estimar") {
+	if line := highlighted(); !strings.Contains(line, "Registrar esfuerzo") {
 		t.Errorf("Up should highlight the previous row, got %q", line)
+	}
+	m = press(m, tea.KeyUp)
+	if line := highlighted(); !strings.Contains(line, "Estimar") {
+		t.Errorf("Up should highlight the first row, got %q", line)
 	}
 	if m.Screen != "story-detail" {
 		t.Errorf("moving the highlight must not leave the detail, Screen = %q", m.Screen)
@@ -604,6 +612,10 @@ func TestFlowScreensHighlightBacklogTab(t *testing.T) {
 			return stepRunning(t, openStoryFlowWithProject(t, server.URL, "p1", 0, "t"), tea.KeyMsg{Type: tea.KeyEnter})
 		}, " › Esfuerzo › Integrante"},
 		{"formulario de esfuerzo", "effort-form", func(t *testing.T) tui.Model { return openEffortFormFromDetail(t, server.URL, 0, 1, 0) }, " › Esfuerzo › Registrar"},
+		{"formulario de defecto", "defect-create-form", func(t *testing.T) tui.Model {
+			m, _ := apply(openStoryDetailWithProject(t, server.URL, "p1", 0), keyMsg("d"))
+			return m
+		}, " › Registrar defecto"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := tc.reach(t)
@@ -649,7 +661,7 @@ func TestStoryDetailHelpListsActionShortcutsAndNotTabs(t *testing.T) {
 		t.Fatalf("the help should have an Acciones group before General:\n%s", help)
 	}
 	section := help[actions:general]
-	for key, text := range map[string]string{"p": "Estimar la historia con Planning Poker", "t": "Registrar esfuerzo de la historia"} {
+	for key, text := range map[string]string{"p": "Estimar la historia con Planning Poker", "t": "Registrar esfuerzo de la historia", "d": "Reportar un defecto de la historia"} {
 		var line string
 		for _, candidate := range strings.Split(section, "\n") {
 			if strings.Contains(candidate, text) {

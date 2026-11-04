@@ -309,6 +309,15 @@ func TestCurrentTabAndCrumbPerScreenAndOrigin(t *testing.T) {
 		{"Esfuerzo tareas desde el detalle", flowScreenModel("section", sectionEffort, sectionStepTasks, returnStoryDetail), tabBacklog, flow + " › Esfuerzo › Tareas"},
 		{"Esfuerzo integrantes desde el detalle", flowScreenModel("section", sectionEffort, sectionStepMembers, returnStoryDetail), tabBacklog, flow + " › Esfuerzo › Integrante"},
 		{"formulario de esfuerzo desde el detalle", flowScreenModel("effort-form", sectionEffort, sectionStepMembers, returnStoryDetail), tabBacklog, flow + " › Esfuerzo › Registrar"},
+		{"formulario de defecto desde el detalle", flowScreenModel("defect-create-form", "", 0, returnStoryDetail), tabBacklog, flow + " › Registrar defecto"},
+		{"selector de Sprints del defecto desde el detalle", flowScreenModel("defect-sprint-select", "", 0, returnStoryDetail), tabBacklog, flow + " › Elegir Sprint de detección"},
+		{"confirmación del defecto desde el detalle", flowScreenModel("defect-create-confirm", "", 0, returnStoryDetail), tabBacklog, flow + " › Confirmar registro"},
+		// [caracterización] Created from the Defectos tab, the same screens keep
+		// highlighting Defectos with their own breadcrumb.
+		{"formulario de defecto desde Defectos", flowScreenModel("defect-create-form", "", 0, returnDefault), tabDefects, "Proyectos › Alpha › Defectos › Registrar defecto"},
+		{"selector de historias del defecto desde Defectos", flowScreenModel("defect-story-select", "", 0, returnDefault), tabDefects, "Proyectos › Alpha › Defectos › Elegir historia"},
+		{"selector de Sprints del defecto desde Defectos", flowScreenModel("defect-sprint-select", "", 0, returnDefault), tabDefects, "Proyectos › Alpha › Defectos › Elegir Sprint de detección"},
+		{"confirmación del defecto desde Defectos", flowScreenModel("defect-create-confirm", "", 0, returnDefault), tabDefects, "Proyectos › Alpha › Defectos › Confirmar registro"},
 		// [caracterización] The old tabs keep their own tab and breadcrumb until
 		// they are retired; the origin is what tells the two apart.
 		{"pestaña Estimación", flowScreenModel("section", sectionPlanningPoker, sectionStepPrimary, returnDefault), tabEstimation, "Proyectos › Alpha › Estimación"},

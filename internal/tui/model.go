@@ -788,7 +788,11 @@ func (m Model) crumbParts() []string {
 	case "dashboard-sprint-select":
 		parts = append(parts, "Dashboard", "Elegir ámbito")
 	case "defects", "defect-detail", "defect-create-form", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-status-select", "defect-resolution-select":
-		parts = append(parts, sectionDefects.title())
+		if prefix := m.storyFlowCrumb(); prefix != nil {
+			parts = append(parts, prefix...) // reported from the story detail
+		} else {
+			parts = append(parts, sectionDefects.title())
+		}
 		switch m.Screen {
 		case "defect-detail":
 			parts = append(parts, "Detalle")
