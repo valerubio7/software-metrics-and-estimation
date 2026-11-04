@@ -42,12 +42,12 @@ volver con `Esc` la TUI se queda en el navegador. `Enter` sobre un proyecto abre
 su espacio de trabajo en la pestaña Dashboard, con una línea con el nombre y el
 estado del proyecto y la barra de pestañas:
 
-`1 Dashboard` · `2 Backlog` · `3 Sprints` · `4 Estimación` · `5 Esfuerzo` · `6 Defectos`
+`1 Dashboard` · `2 Backlog` · `3 Sprints` · `4 Defectos`
 
 | Tecla               | Acción                                                     |
 | ------------------- | ---------------------------------------------------------- |
 | `Tab` / `Shift+Tab` | Pestaña siguiente / anterior (circular)                    |
-| `1`–`6`             | Abrir la pestaña de esa posición                           |
+| `1`–`4`             | Abrir la pestaña de esa posición                           |
 | `Esc`               | En la raíz de una pestaña, volver a Proyectos              |
 
 Las teclas de pestaña rigen en la pantalla raíz de cada pestaña; dentro de un
@@ -63,14 +63,13 @@ selectores de las pestañas) comparten el mismo patrón navegable:
 | `↑` / `↓`     | Mover la selección                                            |
 | `Enter`       | Acción primaria de la fila (abrir, editar, desplegar)         |
 | `n`           | Crear                                                         |
-| `e`           | Editar (Proyectos)                                            |
+| `e`           | Editar (Proyectos y Backlog)                                  |
 | `Space`       | Marcar historias en la multiselección                         |
 | `/`           | Buscar; cualquier otro carácter también inicia la búsqueda    |
 | `r`           | Refrescar la lista                                            |
 | `d`           | Descargar el reporte PDF (Dashboard y Sprints)                |
 | `x`           | Cerrar el Sprint resaltado (pide confirmación `s/n`)          |
 | `h`           | Ver los Sprints cerrados                                      |
-| `P` / `E`     | Estimar / registrar esfuerzo de la historia resaltada (Backlog) |
 | `Esc`         | Limpiar el filtro y luego volver                              |
 | `?`           | Ayuda                                                         |
 | `q` / `Ctrl+C`| Salir (`q` es texto dentro de un campo; `Ctrl+C` sale siempre) |
@@ -83,7 +82,8 @@ un campo de texto, `?` es un carácter y el pie no lo ofrece.
 Al terminar con éxito una escritura (proyecto, historia, Sprint, asignación,
 tarea, cierre, esfuerzo o defecto), la TUI vuelve a la pantalla de origen,
 recarga su lista y muestra un aviso que empieza con `✓`; el aviso desaparece con
-la siguiente tecla. Si la API rechaza la operación, el formulario conserva lo
+la siguiente tecla (las acciones del detalle de una historia vuelven al detalle,
+ver «Secciones»). Si la API rechaza la operación, el formulario conserva lo
 escrito y muestra el motivo. Mientras se guarda, la pantalla indica
 «Guardando…» e ignora los reenvíos.
 
@@ -92,24 +92,37 @@ escrito y muestra el motivo. Mientras se guarda, la pantalla indica
 | Pestaña    | Navegación                                                    | Estado |
 | ---------- | ------------------------------------------------------------- | ------ |
 | Dashboard  | estado y métricas del proyecto o de un Sprint (`s`)           | disponible (TUI-11, TUI-12) |
-| Backlog    | lista → historia (crear con `n`, editar con `Enter`)          | disponible |
+| Backlog    | lista → detalle de la historia → Estimar, Registrar esfuerzo o Reportar defecto (crear con `n`, editar con `e`) | disponible |
 | Sprints    | Sprints abiertos → historias del Sprint → tareas; asignar, cerrar, historial | disponible |
-| Estimación | historia → integrante (Planning Poker)                        | TUI-07 |
-| Esfuerzo   | historia → tarea o historia completa → integrante → registro  | disponible (TUI-08) |
 | Defectos   | listado/búsqueda → detalle; alta con historia y Sprint de detección; actualización de estado con Sprint de resolución si queda resuelto | disponible (TUI-09) |
 
 Defectos permite consultar, filtrar y abrir el detalle del listado del proyecto,
 registrar un defecto mediante confirmación y cambiar su estado entre las opciones
-admitidas por la API. Las pestañas que encadenan selectores consultan la API con
+admitidas por la API. Los flujos que encadenan selectores consultan la API con
 `GET` y muestran estados de carga, vacío y error.
 
-Desde el Backlog, `P` abre la pestaña Estimación y `E` la pestaña Esfuerzo con la
-historia resaltada ya elegida; `Esc` en ese primer selector vuelve al Backlog.
-Los atajos se listan en la ayuda y no hacen nada con el backlog vacío; `p` y `e`
-minúsculas siguen iniciando la búsqueda.
+En el Backlog, `Enter` abre el detalle de la historia resaltada, `e` la edita,
+`n` crea una historia y `/` inicia la búsqueda; las demás letras no reservadas,
+incluidas `p`, `P` y `E`, también la inician. El detalle muestra los datos de la
+historia y ofrece tres acciones, que se eligen con `↑` / `↓` y `Enter` sobre su
+fila o con su atajo (no hacen nada mientras el backlog se recarga):
 
-Esfuerzo registra el esfuerzo mediante `POST` y, ante el éxito, vuelve al
-selector de historias con un aviso que resume horas, fecha, historia, tarea e
+| Tecla | Acción                                                                 |
+| ----- | ---------------------------------------------------------------------- |
+| `p`   | Estimar (Planning Poker: integrantes → votación → Story Points)        |
+| `t`   | Registrar esfuerzo (tarea o historia completa → integrante → registro) |
+| `d`   | Reportar defecto (la historia ya viene elegida; luego el Sprint de detección) |
+
+`Esc` retrocede un nivel por vez: dentro de una acción vuelve al paso anterior y,
+desde el primero, al detalle; del detalle vuelve al Backlog conservando el filtro
+y el cursor. Al terminar una acción la TUI vuelve al detalle de la misma historia:
+tras estimar relee el backlog y el detalle muestra los Story Points nuevos; tras
+registrar el esfuerzo o el defecto muestra el aviso `✓`. Los defectos también se
+listan, abren y gestionan desde la pestaña Defectos, donde `n` conserva el alta con
+selector de historias.
+
+Registrar esfuerzo envía el registro mediante `POST` y, ante el éxito, vuelve al
+detalle de la historia con un aviso que resume horas, fecha, historia, tarea e
 integrante, sin calcular horas ni desvíos.
 
 Lecturas nuevas usadas por los selectores:
