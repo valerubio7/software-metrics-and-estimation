@@ -218,27 +218,3 @@ func TestEffortToastDisappearsOnNextKeyInDetail(t *testing.T) {
 		t.Errorf("the key that cleared the toast should keep its effect (Down), highlighted line %q", line)
 	}
 }
-
-func TestEffortRegistrationReturnsToEffortRootWithToast(t *testing.T) {
-	server, rec := effortFlowServer(t, effortFlowOptions{})
-	m := openEffortFormFor(t, server.URL, 0, 1, 0)
-	m = fillEffortForm(m, [3]string{"2026", "10", "05"}, "Implementar login", "3.5")
-	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
-	m, reload := apply(m, cmd())
-	if m.Screen != "section" || reload == nil {
-		t.Fatalf("Screen = %q reload nil %v, want the Esfuerzo root reloading", m.Screen, reload == nil)
-	}
-	stories := requestCount(rec, http.MethodGet, "/projects/p1/stories")
-	m = run(t, m, reload)
-	if requestCount(rec, http.MethodGet, "/projects/p1/stories") != stories+1 {
-		t.Fatalf("reload did not list the stories: %+v", rec.all())
-	}
-	if requestCount(rec, http.MethodGet, "/projects/p1/metrics") != 0 {
-		t.Fatalf("the save must not query the project metrics: %+v", rec.all())
-	}
-	view := stripANSI(m.View())
-	if !strings.Contains(view, "Primera historia") || !strings.Contains(view, "Segunda historia") {
-		t.Fatalf("the story selector should be back:\n%s", view)
-	}
-	assertToast(t, m, "Esfuerzo registrado: 3.5 h el 2026-10-05 · Primera historia · Diseñar · Ada Lovelace")
-}

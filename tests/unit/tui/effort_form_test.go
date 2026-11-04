@@ -235,7 +235,7 @@ func TestEffortFormCrumbAndTitle(t *testing.T) {
 	m := openEffortFormFor(t, server.URL, 0, 1, 0)
 
 	view := stripANSI(m.View())
-	for _, want := range []string{"Proyectos › Alpha › Esfuerzo › Registrar", "Registrar esfuerzo"} {
+	for _, want := range []string{"Proyectos › Alpha › Backlog › Detalle › Esfuerzo › Registrar", "Registrar esfuerzo"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("form lacks %q: %q", want, view)
 		}
@@ -548,8 +548,8 @@ func TestEffortDoubleEnterEmitsSingleRequest(t *testing.T) {
 	if posts := effortPosts(rec); len(posts) != 1 {
 		t.Fatalf("POSTs = %d (%+v), want exactly 1", len(posts), posts)
 	}
-	if m.Screen != "section" {
-		t.Errorf("Screen = %q, want the Esfuerzo root after the 201", m.Screen)
+	if m.Screen != "story-detail" {
+		t.Errorf("Screen = %q, want the story detail after the 201", m.Screen)
 	}
 }
 
@@ -563,7 +563,7 @@ func TestEffortEscIgnoredWhileSaving(t *testing.T) {
 		t.Fatalf("Esc while saving must keep the form with the indicator (screen %q, cmd %v): %q", m.Screen, escCmd != nil, view)
 	}
 	m = run(t, m, cmd)
-	if view := stripANSI(m.View()); m.Screen != "section" || !strings.Contains(view, "Esfuerzo registrado") {
+	if view := wideView(m); m.Screen != "story-detail" || !strings.Contains(view, "✓ Esfuerzo registrado") {
 		t.Fatalf("the response should still be presented after the ignored Esc (screen %q): %q", m.Screen, view)
 	}
 }
@@ -700,8 +700,8 @@ func TestEffortFormCorrectAndResubmitAfterRejection(t *testing.T) {
 	if got := bodyKeys(t, post.Body)["hours"]; string(got) != "2" {
 		t.Errorf("hours = %s, want the corrected 2", got)
 	}
-	if m.Screen != "section" {
-		t.Errorf("Screen = %q, want the Esfuerzo root after the 201", m.Screen)
+	if m.Screen != "story-detail" {
+		t.Errorf("Screen = %q, want the story detail after the 201", m.Screen)
 	}
 }
 
@@ -748,7 +748,7 @@ func TestEffortSaveResultWithoutPendingSaveIsDiscarded(t *testing.T) {
 			t.Fatalf("an old answer must not replace the pending save (screen %q):\nwant %q\ngot  %q", m.Screen, pending, got)
 		}
 		m, _ = apply(m, saveMessage(t, second))
-		if m.Screen != "section" {
+		if m.Screen != "story-detail" {
 			t.Errorf("the current answer should still be applied, Screen = %q", m.Screen)
 		}
 	})
@@ -779,7 +779,7 @@ func TestEffortSaveResultWithoutPendingSaveIsDiscarded(t *testing.T) {
 		want := stripANSI(m.View())
 
 		m, _ = apply(m, msg)
-		if got := stripANSI(m.View()); got != want || m.Screen != "section" {
+		if got := stripANSI(m.View()); got != want || m.Screen != "story-detail" {
 			t.Fatalf("a repeated answer must change nothing (screen %q):\nwant %q\ngot  %q", m.Screen, want, got)
 		}
 	})

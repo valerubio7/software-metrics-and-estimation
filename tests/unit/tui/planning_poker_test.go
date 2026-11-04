@@ -11,6 +11,9 @@ import (
 	"github.com/valerubio7/software-metrics-and-estimation/internal/tui"
 )
 
+// The agreed estimate is only sent after the explicit confirmation; once saved,
+// the flow goes back to the detail of the story, which rereads the backlog and
+// shows the new Story Points.
 func TestPlanningPokerExplicitConfirmationSavesThenRefreshesBacklog(t *testing.T) {
 	var requests []string
 	saved := false
@@ -35,7 +38,7 @@ func TestPlanningPokerExplicitConfirmationSavesThenRefreshesBacklog(t *testing.T
 		}
 	})
 
-	m := pokerConfirmModel(t, server.URL)
+	m := pokerConfirmFromDetail(t, server.URL)
 	if got := stripANSI(m.View()); !strings.Contains(got, "Confirmar Story Points 8") {
 		t.Fatalf("expected explicit confirmation screen, got %q", got)
 	}
@@ -54,9 +57,12 @@ func TestPlanningPokerExplicitConfirmationSavesThenRefreshesBacklog(t *testing.T
 	if !reflect.DeepEqual(requests, []string{"GET /projects/p1/stories", "GET /projects/p1/members", "PUT /projects/p1/stories/s1/story-points"}) {
 		t.Fatalf("requests before refresh=%v", requests)
 	}
+	if m.Screen != "story-detail" {
+		t.Fatalf("Screen = %q after the save, want story-detail", m.Screen)
+	}
 	m = run(t, m, refreshCmd)
-	if !strings.Contains(stripANSI(m.View()), "puntos 8") {
-		t.Fatalf("refreshed backlog does not show updated points: %q", stripANSI(m.View()))
+	if got := fieldValue(t, stripANSI(m.View()), "Story points"); got != "8" {
+		t.Fatalf("the detail does not show the updated points (Story points = %q): %q", got, stripANSI(m.View()))
 	}
 	want := []string{"GET /projects/p1/stories", "GET /projects/p1/members", "PUT /projects/p1/stories/s1/story-points", "GET /projects/p1/stories"}
 	if !reflect.DeepEqual(requests, want) {
@@ -77,9 +83,7 @@ func TestPlanningPokerEmptyMemberListHasClearStateAndCannotStartVoting(t *testin
 			return false
 		}
 	})
-	m := openSectionWithProject(t, server.URL, "p1", tabEstimation)
-	m, membersCmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
-	m = run(t, m, membersCmd)
+	m := openStoryFlowWithProject(t, server.URL, "p1", 0, "p")
 	if got := stripANSI(m.View()); !strings.Contains(got, "No hay participantes disponibles.") {
 		t.Fatalf("empty participant state is unclear: %q", got)
 	}
@@ -117,7 +121,7 @@ func TestPlanningPokerDisplaysEstimateAPIErrorsWithoutRefreshingOrClaimingSucces
 				}
 			})
 
-			m := pokerConfirmModel(t, server.URL)
+			m := pokerConfirmFromDetail(t, server.URL)
 			m, saveCmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
 			if saveCmd == nil {
 				t.Fatal("explicit confirmation should issue the estimate request")
@@ -319,24 +323,6 @@ func TestStoryDetailReportsMissingStoryAfterReload(t *testing.T) {
 	if m = press(m, tea.KeyEsc); m.Screen != "backlog" {
 		t.Errorf("Esc: Screen = %q, want backlog", m.Screen)
 	}
-}
-
-func pokerConfirmModel(t *testing.T, baseURL string) tui.Model {
-	t.Helper()
-	m := openSectionWithProject(t, baseURL, "p1", tabEstimation)
-	m, membersCmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
-	m = run(t, m, membersCmd)
-	m, _ = apply(m, tea.KeyMsg{Type: tea.KeySpace})
-	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
-	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'8'}})
-	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // finish the vote and offer reveal
-	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // reveal
-	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // choose agreed estimate
-	for i := 0; i < 5; i++ {                        // 8 points in the numeric scale
-		m, _ = apply(m, tea.KeyMsg{Type: tea.KeyDown})
-	}
-	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // explicit confirmation screen
-	return m
 }
 
 func pokerFlowServer(t *testing.T, requests *[]string, handler func(http.ResponseWriter, *http.Request) bool) *httptest.Server {

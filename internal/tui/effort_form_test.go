@@ -24,22 +24,29 @@ func TestTodayUsesInjectedClockInUTC(t *testing.T) {
 	}
 }
 
-// Opening a section must drop whatever the previous Esfuerzo flow left in
-// m.effort, but keep seq: an answer still in flight for the old flow can then
-// never match a request of the new one.
-func TestOpenSectionResetsEffortFlowKeepingSeq(t *testing.T) {
+// Starting a flow from the detail must drop whatever the previous Esfuerzo flow
+// left in m.effort and the Planning Poker votes, but keep seq: an answer still in
+// flight for the old flow can then never match a request of the new one.
+func TestOpenStoryFlowResetsEffortFlowKeepingSeq(t *testing.T) {
+	story := Story{ID: "s1", ProjectID: "p1", Title: "Login"}
 	m := NewModel("http://localhost")
 	m.activeProjectID = "p1"
+	m.backlogStories = []Story{story}
+	m.storyDetail = storyDetailState{storyID: "s1"}
 	m.effort = effortState{
 		story:       selectorItem{ID: "s1", Label: "Login"},
 		description: "Implementar login",
 		hours:       "3.5",
 		seq:         7,
 	}
+	m.pokerVotes = map[string]string{"m1": "8"}
 
-	m, _ = m.openSection(sectionEffort)
+	m, _ = m.openStoryFlow(sectionEffort, story)
 
 	if want := (effortState{seq: 7}); !reflect.DeepEqual(m.effort, want) {
 		t.Fatalf("effort = %+v, want only seq kept: %+v", m.effort, want)
+	}
+	if len(m.pokerVotes) != 0 {
+		t.Fatalf("pokerVotes = %v, want the votes of the previous flow dropped", m.pokerVotes)
 	}
 }

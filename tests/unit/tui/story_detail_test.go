@@ -611,7 +611,7 @@ func TestFlowScreensHighlightBacklogTab(t *testing.T) {
 		{"integrantes de Esfuerzo", "section", func(t *testing.T) tui.Model {
 			return stepRunning(t, openStoryFlowWithProject(t, server.URL, "p1", 0, "t"), tea.KeyMsg{Type: tea.KeyEnter})
 		}, " › Esfuerzo › Integrante"},
-		{"formulario de esfuerzo", "effort-form", func(t *testing.T) tui.Model { return openEffortFormFromDetail(t, server.URL, 0, 1, 0) }, " › Esfuerzo › Registrar"},
+		{"formulario de esfuerzo", "effort-form", func(t *testing.T) tui.Model { return openEffortFormFor(t, server.URL, 0, 1, 0) }, " › Esfuerzo › Registrar"},
 		{"formulario de defecto", "defect-create-form", func(t *testing.T) tui.Model {
 			m, _ := apply(openStoryDetailWithProject(t, server.URL, "p1", 0), keyMsg("d"))
 			return m
