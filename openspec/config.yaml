@@ -2,7 +2,11 @@ project:
   name: software-metrics-and-estimation
   description: Agile project management application focused on software metrics, estimation, effort tracking, defects, dashboards, and reports.
   primary_language: go
-  current_stage: mvp-parcial-backend
+  current_stage: mvp-backend-con-tui
+  frameworks:
+    - Bubbletea (TUI, cmd/tui, internal/tui)
+    - pgx/v5 + PostgreSQL (cmd/api, internal/*/infrastructure/postgres)
+    - go-pdf/fpdf (reportes PDF)
 
 sdd:
   artifact_store: openspec
@@ -34,13 +38,10 @@ conventions:
     commit_style: conventional-commits
 
 notes:
-  - MVP parcial de backend Go/PostgreSQL con módulos de proyectos, historias y Sprints; no representa la aplicación completa de la consigna.
-  - "Implementadas: US-01, US-02, US-05, US-06, US-07 y US-08 (crear/modificar proyectos e historias, consultar backlog y crear Sprint)."
-  - "Implementada: US-10 (descomponer historia en tareas)."
-  - "Implementada: US-11 (registrar historia completada en el Sprint)."
-  - "Implementada: US-13 (consultar Sprints anteriores)."
-  - "Implementada: US-15 (registrar esfuerzo realizado en una historia o tarea)."
-  - "Implementada: US-16 (registrar un defecto detectado durante el desarrollo)."
+  - MVP de backend Go/PostgreSQL más TUI Bubbletea (cmd/tui); el estado archivado vive en openspec/changes/archive y las specs consolidadas en openspec/specs (defecto, esfuerzo, historia, metricas, project, reporte, sprint, tarea, tui).
+  - "Backend archivado: US-01 a US-04, US-05 a US-13, US-15, US-16, US-18, US-19 y US-21 (proyectos, miembros, estado, historias, backlog, Sprints, tareas, esfuerzo, defectos, métricas, reporte PDF)."
+  - "TUI archivada: TUI-01, TUI-02, TUI-03, TUI-06, TUI-08, TUI-11, TUI-12 y TUI-13 (navegación, proyectos, backlog, sprint, esfuerzo, dashboard, rediseño UX y limpieza de la spec) y el cambio tui-refactor-acciones-desde-historia (detalle de la historia con las acciones Estimar, Registrar esfuerzo y Reportar defecto; la TUI queda con cuatro pestañas)."
+  - "Estructura: cmd/{api,tui}, internal/<módulo>/{domain,application,infrastructure,transport}, tests/{unit,integration}; las pruebas de integración usan Testcontainers y requieren Docker."
   - Las historias se siguen como issues de GitHub y las épicas se representan como milestones.
   - Las migraciones se aplican externamente; schema_migrations condiciona la disponibilidad de rutas opcionales al arrancar.
-  - El directorio compartido de migraciones contiene 13 pares 000001–000013 sin números duplicados (lo verifica migration_files_test.go); el despliegue de las migraciones es externo.
+  - El directorio compartido de migraciones contiene 14 pares 000001–000014 sin números duplicados (lo verifica migration_files_test.go); el despliegue de las migraciones es externo.
