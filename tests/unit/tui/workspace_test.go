@@ -145,7 +145,7 @@ func TestEnterOnAProjectOpensItsWorkspaceTabs(t *testing.T) {
 	m := openWorkspace(t, server.URL, "p1")
 	m, _ = apply(m, tea.WindowSizeMsg{Width: 100, Height: 30})
 	view := stripANSI(m.View())
-	for _, tab := range []string{"Dashboard", "Backlog", "Sprints", "Estimación", "Esfuerzo", "Defectos"} {
+	for _, tab := range []string{"Dashboard", "Backlog", "Sprints", "Defectos"} {
 		if !strings.Contains(view, tab) {
 			t.Errorf("workspace view lacks the %q tab:\n%s", tab, view)
 		}
@@ -155,7 +155,36 @@ func TestEnterOnAProjectOpensItsWorkspaceTabs(t *testing.T) {
 	}
 }
 
-func TestTabsSwitchWithTabDigitsAndShiftTab(t *testing.T) {
+// tabBarLine is the line of a rendered workspace view that holds the tab bar.
+func tabBarLine(t *testing.T, view string) string {
+	t.Helper()
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "1 Dashboard") {
+			return line
+		}
+	}
+	t.Fatalf("view has no tab bar:\n%s", view)
+	return ""
+}
+
+func TestTabBarShowsFourTabsWithoutEstimationOrEffort(t *testing.T) {
+	server := newWorkspaceServer(t, sampleProjects())
+	m := openWorkspace(t, server.URL, "p1")
+	m, _ = apply(m, tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	bar := tabBarLine(t, stripANSI(m.View()))
+
+	if !strings.Contains(bar, "1 Dashboard  2 Backlog  3 Sprints  4 Defectos") {
+		t.Errorf("tab bar %q should list the four tabs in order with the digits 1 to 4", bar)
+	}
+	for _, unwanted := range []string{"Estimación", "Esfuerzo", "5 ", "6 "} {
+		if strings.Contains(bar, unwanted) {
+			t.Errorf("tab bar %q must not offer %q", bar, unwanted)
+		}
+	}
+}
+
+func TestTabsSwitchWithTabAndDigits(t *testing.T) {
 	server := newWorkspaceServer(t, sampleProjects())
 	m := openWorkspace(t, server.URL, "p1")
 
@@ -166,23 +195,72 @@ func TestTabsSwitchWithTabDigitsAndShiftTab(t *testing.T) {
 	if !server.requested("GET /projects/p1/stories") {
 		t.Error("opening the Backlog tab did not load the project stories")
 	}
-	m = switchTab(t, m, keyMsg("6"))
-	if m.Screen != "defects" {
-		t.Fatalf("6: Screen = %q, want defects", m.Screen)
-	}
-	m = switchTab(t, m, tea.KeyMsg{Type: tea.KeyShiftTab})
-	m, _ = apply(m, tea.WindowSizeMsg{Width: 100, Height: 30})
-	if m.Screen != "section" || !strings.Contains(stripANSI(m.View()), "Proyectos › Alpha › Esfuerzo") {
-		t.Fatalf("Shift+Tab from Defectos: Screen = %q, want the Esfuerzo section:\n%s", m.Screen, stripANSI(m.View()))
+	m = switchTab(t, m, keyMsg("3"))
+	if m.Screen != "sprints" {
+		t.Fatalf("3: Screen = %q, want sprints", m.Screen)
 	}
 }
 
-func TestShiftTabFromDashboardWrapsToDefects(t *testing.T) {
+func TestDigitFourOpensDefects(t *testing.T) {
+	server := newWorkspaceServer(t, sampleProjects())
+	m := openWorkspace(t, server.URL, "p1")
+
+	m = switchTab(t, m, keyMsg("4"))
+
+	if m.Screen != "defects" {
+		t.Fatalf("4: Screen = %q, want defects", m.Screen)
+	}
+	if !server.requested("GET /projects/p1/defects") {
+		t.Error("opening the Defectos tab did not load the project defects")
+	}
+}
+
+func TestDigitsFiveAndSixDoNothing(t *testing.T) {
+	server := newWorkspaceServer(t, sampleProjects())
+	m := openWorkspace(t, server.URL, "p1")
+
+	for _, digit := range []string{"5", "6"} {
+		next, cmd := apply(m, keyMsg(digit))
+		if next.Screen != "dashboard" || cmd != nil {
+			t.Errorf("%s: Screen = %q, command = %v, want the Dashboard unchanged and no request", digit, next.Screen, cmd != nil)
+		}
+	}
+}
+
+func TestTabWrapsFromDefectsToDashboard(t *testing.T) {
+	server := newWorkspaceServer(t, sampleProjects())
+	m := switchTab(t, openWorkspace(t, server.URL, "p1"), keyMsg("4"))
+	if m.Screen != "defects" {
+		t.Fatalf("4: Screen = %q, want defects", m.Screen)
+	}
+
+	m = switchTab(t, m, tea.KeyMsg{Type: tea.KeyTab})
+
+	if m.Screen != "dashboard" {
+		t.Fatalf("Tab from Defectos: Screen = %q, want dashboard", m.Screen)
+	}
+}
+
+func TestShiftTabFromDashboardOpensDefects(t *testing.T) {
 	server := newWorkspaceServer(t, sampleProjects())
 	m := openWorkspace(t, server.URL, "p1")
 	m = switchTab(t, m, tea.KeyMsg{Type: tea.KeyShiftTab})
 	if m.Screen != "defects" {
 		t.Fatalf("Shift+Tab from Dashboard: Screen = %q, want defects", m.Screen)
+	}
+}
+
+func TestShiftTabFromDefectsOpensSprints(t *testing.T) {
+	server := newWorkspaceServer(t, sampleProjects())
+	m := switchTab(t, openWorkspace(t, server.URL, "p1"), keyMsg("4"))
+	if m.Screen != "defects" {
+		t.Fatalf("4: Screen = %q, want defects", m.Screen)
+	}
+
+	m = switchTab(t, m, tea.KeyMsg{Type: tea.KeyShiftTab})
+
+	if m.Screen != "sprints" {
+		t.Fatalf("Shift+Tab from Defectos: Screen = %q, want sprints", m.Screen)
 	}
 }
 

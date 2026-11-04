@@ -33,7 +33,7 @@ func (m Model) updateDefectCreateConfirm(key tea.KeyMsg) (Model, tea.Cmd) {
 	if key.Type == tea.KeyRunes {
 		switch strings.ToLower(string(key.Runes)) {
 		case "n":
-			m.Screen = "defects"
+			return m.cancelDefectCreation()
 		case "s":
 			return m.submitDefectCreate()
 		}
@@ -60,8 +60,10 @@ func (m Model) submitDefectCreate() (Model, tea.Cmd) {
 	}
 }
 
-// applyDefectCreateResult returns to the reloaded defect list with a toast on
-// success; a rejection stays on the confirmation with the API reason.
+// applyDefectCreateResult returns to where the flow started with a toast on
+// success: the reloaded defect list, or the story detail without reloading
+// anything when the defect was reported from it. A rejection stays on the
+// confirmation with the API reason.
 func (m Model) applyDefectCreateResult(result defectCreateResult) (Model, tea.Cmd) {
 	if result.ProjectID != m.activeProjectID || m.Screen != "defect-create-confirm" || !m.defectCreateLoading || result.RequestID != m.defectCreateRequestID {
 		return m, nil
@@ -76,6 +78,9 @@ func (m Model) applyDefectCreateResult(result defectCreateResult) (Model, tea.Cm
 		return m, nil
 	}
 	m.toast = "Defecto registrado: " + m.defectCreateForm.description
+	if m.returnTo == returnStoryDetail {
+		return m.backToStoryDetail()
+	}
 	return m.openDefects()
 }
 

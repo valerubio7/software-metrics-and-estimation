@@ -12,25 +12,27 @@ import (
 
 // Workspace tab digits, in tab bar order.
 const (
-	tabDashboard  = "1"
-	tabBacklog    = "2"
-	tabSprints    = "3"
-	tabEstimation = "4"
-	tabEffort     = "5"
-	tabDefects    = "6"
+	tabDashboard = "1"
+	tabBacklog   = "2"
+	tabSprints   = "3"
+	tabDefects   = "4"
 )
 
-// openSectionWithProject goes browser -> pid -> section tab (Estimación or
-// Esfuerzo) and applies the primary collection response.
-func openSectionWithProject(t *testing.T, url, pid, digit string) tui.Model {
+// openStoryFlowWithProject goes browser -> pid -> Backlog -> detail of the
+// storyIndex-th story, presses actionKey (p or t) and applies the command of the
+// first step of the flow. The flow starts with the story already chosen, so it
+// never passes through a story selector. It is the single way the tests reach the
+// Planning Poker and Esfuerzo selectors.
+func openStoryFlowWithProject(t *testing.T, url, pid string, storyIndex int, actionKey string) tui.Model {
 	t.Helper()
-	m, cmd := openTab(t, url, pid, digit)
+	m := openStoryDetailWithProject(t, url, pid, storyIndex)
+	m, cmd := apply(m, keyMsg(actionKey))
 	if cmd == nil {
-		t.Fatal("expected a command to load the section")
+		t.Fatalf("%s on the detail should issue the command of the first step", actionKey)
 	}
 	m = run(t, m, cmd)
 	if m.Screen != "section" {
-		t.Fatalf("Screen = %q after opening tab %s, want section", m.Screen, digit)
+		t.Fatalf("Screen = %q after %s on the detail, want section", m.Screen, actionKey)
 	}
 	return m
 }
@@ -70,34 +72,6 @@ func storiesBodyForSection(stories []tui.Story) string {
 	return encoded + `]}`
 }
 
-func TestTabsRouteToEachSprint3Section(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		digit string
-		title string
-		body  string
-		item  string
-	}{
-		{"planning", tabEstimation, "Estimación", storiesBodyForSection(sectionStories()), "Primera historia"},
-		{"effort", tabEffort, "Esfuerzo", storiesBodyForSection(sectionStories()), "Primera historia"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			path := "/projects/p1/stories"
-			server := sectionServer(t, map[string]string{path: tc.body})
-			m := openSectionWithProject(t, server.URL, "p1", tc.digit)
-			view := stripANSI(m.View())
-			for _, want := range []string{tc.title, tc.item, "Proyectos › Alpha › " + tc.title} {
-				if !strings.Contains(view, want) {
-					t.Errorf("section view lacks %q: %q", want, view)
-				}
-			}
-			if strings.Contains(view, "submenú") {
-				t.Errorf("section view looks like an operations submenu: %q", view)
-			}
-		})
-	}
-}
-
 // TestDefectsTabOpensProjectDefectList covers TUI-09 replacing the former
 // placeholder section with the project-scoped defect listing.
 func TestDefectsTabOpensProjectDefectList(t *testing.T) {
@@ -120,38 +94,54 @@ func TestDefectsTabOpensProjectDefectList(t *testing.T) {
 	}
 }
 
+// The first step of each flow launched from the detail is a collection of its
+// own: the participants for Estimar and the tasks for Registrar esfuerzo.
 func TestSectionAPIErrorStaysOpenAndRefreshes(t *testing.T) {
-	requests := 0
-	server := sprintServer(t, func(w http.ResponseWriter, r *http.Request) bool {
-		if r.URL.Path == "/projects/p1/stories" {
-			requests++
-			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = w.Write([]byte(`{"error":"internal_error","message":"an unexpected error occurred"}`))
-			return true
-		}
-		return false
-	})
+	for _, tc := range []struct{ name, key, path string }{
+		{"participantes de Estimar", "p", "/projects/p1/members"},
+		{"tareas de Registrar esfuerzo", "t", "/projects/p1/stories/s1/tasks"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			requests := 0
+			server := sprintServer(t, func(w http.ResponseWriter, r *http.Request) bool {
+				switch r.URL.Path {
+				case "/projects/p1/stories":
+					_, _ = w.Write([]byte(storiesBodyForSection(sectionStories())))
+					return true
+				case tc.path:
+					requests++
+					w.WriteHeader(http.StatusInternalServerError)
+					_, _ = w.Write([]byte(`{"error":"internal_error","message":"an unexpected error occurred"}`))
+					return true
+				}
+				return false
+			})
 
-	m := openSectionWithProject(t, server.URL, "p1", tabEstimation)
-	view := stripANSI(m.View())
-	if m.Screen != "section" || !strings.Contains(view, "Error HTTP 500") {
-		t.Fatalf("Screen/view = %q / %q, want section with an inline HTTP error", m.Screen, view)
-	}
-	m, cmd := apply(m, keyMsg("r"))
-	if cmd == nil {
-		t.Fatal("r should retry the failed section collection")
-	}
-	m = run(t, m, cmd)
-	if requests != 2 || m.Screen != "section" {
-		t.Fatalf("requests/screen = %d/%q, want 2/section", requests, m.Screen)
+			m := openStoryFlowWithProject(t, server.URL, "p1", 0, tc.key)
+			view := stripANSI(m.View())
+			if m.Screen != "section" || !strings.Contains(view, "Error HTTP 500") {
+				t.Fatalf("Screen/view = %q / %q, want section with an inline HTTP error", m.Screen, view)
+			}
+			m, cmd := apply(m, keyMsg("r"))
+			if cmd == nil {
+				t.Fatal("r should retry the failed section collection")
+			}
+			m = run(t, m, cmd)
+			if requests != 2 || m.Screen != "section" {
+				t.Fatalf("requests/screen = %d/%q, want 2/section", requests, m.Screen)
+			}
+		})
 	}
 }
 
 func TestSectionEmptyCollectionShowsAnEmptyState(t *testing.T) {
-	server := sectionServer(t, map[string]string{"/projects/p1/stories": storiesBodyForSection([]tui.Story{})})
-	m := openSectionWithProject(t, server.URL, "p1", tabEstimation)
+	server := sectionServer(t, map[string]string{
+		"/projects/p1/stories": storiesBodyForSection(sectionStories()),
+		"/projects/p1/members": `{"project_id":"p1","members":[]}`,
+	})
+	m := openStoryFlowWithProject(t, server.URL, "p1", 0, "p")
 	view := stripANSI(m.View())
-	if !strings.Contains(view, "No hay historias") {
+	if !strings.Contains(view, "No hay participantes disponibles") {
 		t.Fatalf("empty section view = %q, want an empty state", view)
 	}
 }
@@ -159,19 +149,23 @@ func TestSectionEmptyCollectionShowsAnEmptyState(t *testing.T) {
 func TestSectionFilterRefreshAndEscape(t *testing.T) {
 	requests := 0
 	server := sprintServer(t, func(w http.ResponseWriter, r *http.Request) bool {
-		if r.URL.Path == "/projects/p1/stories" {
-			requests++
+		switch r.URL.Path {
+		case "/projects/p1/stories":
 			_, _ = w.Write([]byte(storiesBodyForSection(sectionStories())))
+			return true
+		case "/projects/p1/stories/s1/tasks":
+			requests++
+			_, _ = w.Write([]byte(effortTasksBody))
 			return true
 		}
 		return false
 	})
-	m := openSectionWithProject(t, server.URL, "p1", tabEstimation)
+	m := openStoryFlowWithProject(t, server.URL, "p1", 0, "t")
 
 	m, _ = apply(m, keyMsg("/"))
-	m = typeText(m, "seg")
+	m = typeText(m, "pro")
 	view := stripANSI(m.View())
-	if !strings.Contains(view, "Segunda historia") || strings.Contains(view, "Primera historia") {
+	if !strings.Contains(view, "Probar") || strings.Contains(view, "Diseñar") {
 		t.Fatalf("filtered view = %q, want only the match", view)
 	}
 	m = press(m, tea.KeyEnter) // stop searching, keep the filter
@@ -184,49 +178,60 @@ func TestSectionFilterRefreshAndEscape(t *testing.T) {
 		t.Fatalf("requests = %d, want 2 (initial + refresh)", requests)
 	}
 	view = stripANSI(m.View())
-	if !strings.Contains(view, "Buscar: seg") || !strings.Contains(view, "Segunda historia") || strings.Contains(view, "Primera historia") {
+	if !strings.Contains(view, "Buscar: pro") || !strings.Contains(view, "Probar") || strings.Contains(view, "Diseñar") {
 		t.Fatalf("refresh dropped the filter: %q", view)
 	}
 
 	m = press(m, tea.KeyEsc)
-	if m.Screen != "section" || strings.Contains(stripANSI(m.View()), "Buscar:") || !strings.Contains(stripANSI(m.View()), "Primera historia") {
+	if m.Screen != "section" || strings.Contains(stripANSI(m.View()), "Buscar:") || !strings.Contains(stripANSI(m.View()), "Diseñar") {
 		t.Fatalf("first Esc did not clear the filter: screen=%q view=%q", m.Screen, stripANSI(m.View()))
 	}
 	m = press(m, tea.KeyEsc)
-	if m.Screen != "project-picker" {
-		t.Fatalf("second Esc left screen %q, want project-picker", m.Screen)
+	if m.Screen != "story-detail" {
+		t.Fatalf("second Esc left screen %q, want story-detail", m.Screen)
 	}
 }
 
 func TestSectionFooterAndHelpOnlyShowValidKeys(t *testing.T) {
-	server := sectionServer(t, map[string]string{"/projects/p1/stories": storiesBodyForSection(sectionStories())})
-	m := openSectionWithProject(t, server.URL, "p1", tabEstimation)
-	footer := stripANSI(m.View())
-	for _, want := range []string{"elegir historia", "?  más"} {
-		if !strings.Contains(footer, want) {
-			t.Errorf("section footer lacks %q: %q", want, footer)
-		}
-	}
+	server := sectionServer(t, map[string]string{
+		"/projects/p1/stories":          storiesBodyForSection(sectionStories()),
+		"/projects/p1/members":          effortMembersBody,
+		"/projects/p1/stories/s1/tasks": effortTasksBody,
+	})
+	for _, tc := range []struct{ name, key, wantAction string }{
+		{"participantes de Estimar", "p", "confirmar participantes"},
+		{"tareas de Registrar esfuerzo", "t", "elegir tarea"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := openStoryFlowWithProject(t, server.URL, "p1", 0, tc.key)
+			footer := stripANSI(m.View())
+			for _, want := range []string{tc.wantAction, "Esc  volver"} {
+				if !strings.Contains(footer, want) {
+					t.Errorf("section footer lacks %q: %q", want, footer)
+				}
+			}
 
-	for _, unwanted := range []string{"p  proyecto", "Esc  menú"} {
-		if strings.Contains(footer, unwanted) {
-			t.Errorf("section footer still shows the removed %q: %q", unwanted, footer)
-		}
-	}
+			for _, unwanted := range []string{"p  proyecto", "Esc  menú", "elegir historia"} {
+				if strings.Contains(footer, unwanted) {
+					t.Errorf("section footer still shows the removed %q: %q", unwanted, footer)
+				}
+			}
 
-	m, _ = apply(m, keyMsg("?"))
-	help := stripANSI(m.View())
-	if strings.Contains(help, "Cambiar el proyecto activo") {
-		t.Errorf("section help still offers the removed project shortcut: %q", help)
-	}
-	for _, want := range []string{"Mover la selección", "Salir"} {
-		if !strings.Contains(help, want) {
-			t.Errorf("section help lacks %q: %q", want, help)
-		}
-	}
-	for _, unwanted := range []string{"Crear un elemento nuevo", "Editar el elemento resaltado", "Cerrar el Sprint resaltado", "Ver los Sprints cerrados"} {
-		if strings.Contains(help, unwanted) {
-			t.Errorf("section help shows unavailable action %q: %q", unwanted, help)
-		}
+			m, _ = apply(m, keyMsg("?"))
+			help := stripANSI(m.View())
+			if strings.Contains(help, "Cambiar el proyecto activo") {
+				t.Errorf("section help still offers the removed project shortcut: %q", help)
+			}
+			for _, want := range []string{"Mover la selección", "Salir"} {
+				if !strings.Contains(help, want) {
+					t.Errorf("section help lacks %q: %q", want, help)
+				}
+			}
+			for _, unwanted := range []string{"Crear un elemento nuevo", "Editar el elemento resaltado", "Cerrar el Sprint resaltado", "Ver los Sprints cerrados"} {
+				if strings.Contains(help, unwanted) {
+					t.Errorf("section help shows unavailable action %q: %q", unwanted, help)
+				}
+			}
+		})
 	}
 }

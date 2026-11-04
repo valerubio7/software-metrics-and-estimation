@@ -55,6 +55,8 @@ type Model struct {
 	backlogFiltering     bool
 	backlogForm          storyForm
 	backlogMessage       string
+	storyDetail          storyDetailState
+	returnTo             returnTarget // where the open story flow goes back to
 	backlogClient        *BacklogClient
 	storyPointsClient    *StoryPointsClient
 	sprintClient         *SprintClient
@@ -255,6 +257,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateBacklog(key)
 	case "backlog-form":
 		return m.updateBacklogForm(key)
+	case "story-detail":
+		return m.updateStoryDetail(key)
 	case "sprints":
 		return m.updateSprints(key)
 	case "sprint-goal":
@@ -322,7 +326,7 @@ func entersText(screen string) bool {
 // listed, so q is a plain character there; Ctrl+C always quits.
 func quitsOnQ(screen string) bool {
 	switch screen {
-	case "project-picker", "backlog", "sprints", "sprint-history", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "dashboard", "dashboard-sprint-select", "planning-poker", "defects", "defect-detail", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-status-select", "defect-resolution-select":
+	case "project-picker", "backlog", "story-detail", "sprints", "sprint-history", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "dashboard", "dashboard-sprint-select", "planning-poker", "defects", "defect-detail", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-status-select", "defect-resolution-select":
 		return true
 	}
 	return false
@@ -600,6 +604,8 @@ func (m Model) viewBody() string {
 		return m.viewBacklog()
 	case "backlog-form":
 		return m.viewBacklogForm()
+	case "story-detail":
+		return m.viewStoryDetail()
 	case "sprints":
 		return m.viewSprints()
 	case "sprint-goal":
@@ -741,6 +747,8 @@ func (m Model) crumbParts() []string {
 		if m.Screen == "backlog-form" {
 			parts = append(parts, "Historia")
 		}
+	case "story-detail":
+		parts = append(parts, "Backlog", "Detalle")
 	case "sprints", "sprint-goal", "sprint-story-select", "sprint-assigned-list", "sprint-task-form", "sprint-history", "sprint-confirm":
 		parts = append(parts, "Sprints")
 		switch m.Screen {
@@ -758,6 +766,7 @@ func (m Model) crumbParts() []string {
 			parts = append(parts, "Cerrar")
 		}
 	case "section", "planning-poker":
+		parts = append(parts, m.storyFlowCrumb()...)
 		parts = append(parts, m.section.kind.title())
 		switch m.section.step {
 		case sectionStepMembers:
@@ -768,17 +777,20 @@ func (m Model) crumbParts() []string {
 			}
 		case sectionStepTasks:
 			parts = append(parts, "Tareas")
-		case sectionStepSprints:
-			parts = append(parts, "Sprint")
 		}
 	case "effort-form":
+		parts = append(parts, m.storyFlowCrumb()...)
 		parts = append(parts, sectionEffort.title(), "Registrar")
 	case "dashboard":
 		parts = append(parts, "Dashboard")
 	case "dashboard-sprint-select":
 		parts = append(parts, "Dashboard", "Elegir ámbito")
 	case "defects", "defect-detail", "defect-create-form", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-status-select", "defect-resolution-select":
-		parts = append(parts, sectionDefects.title())
+		if prefix := m.storyFlowCrumb(); prefix != nil {
+			parts = append(parts, prefix...) // reported from the story detail
+		} else {
+			parts = append(parts, tabDefects.title())
+		}
 		switch m.Screen {
 		case "defect-detail":
 			parts = append(parts, "Detalle")
@@ -802,6 +814,15 @@ func (m Model) crumbParts() []string {
 		parts = append([]string{"Proyectos", m.projectLabel()}, parts...)
 	}
 	return parts
+}
+
+// storyFlowCrumb is the prefix of the breadcrumb of an action launched from the
+// story detail; the defect screens reached from the Defectos tab have none.
+func (m Model) storyFlowCrumb() []string {
+	if m.inStoryFlow() {
+		return []string{"Backlog", "Detalle"}
+	}
+	return nil
 }
 
 func isProjectScreen(screen string) bool {

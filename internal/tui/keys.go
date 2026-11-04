@@ -103,19 +103,18 @@ func (m Model) screenBindings(l *keyList) {
 		}
 	case "backlog":
 		l.add(keyNav, true, "↑/↓", "mover", "Mover la selección")
-		l.add(keyAction, true, "Enter", "editar", "Editar la historia resaltada")
+		l.add(keyAction, true, "Enter", "detalle", "Abrir el detalle de la historia resaltada")
+		l.add(keyAction, true, "e", "editar", "Editar la historia resaltada")
 		l.add(keyAction, true, "n", "crear", "Crear una historia")
-		l.add(keyNav, true, "/", "buscar", "Buscar o filtrar historias")
 		l.add(keyNav, true, "Esc", "proyectos", "Volver a Proyectos")
+		l.add(keyNav, false, "/", "buscar", "Buscar o filtrar historias")
 		l.add(keyAction, false, "r", "refrescar", "Refrescar el backlog")
-		if len(m.visibleStories()) > 0 {
-			l.add(keyAction, false, "P", "estimar", "Estimar la historia resaltada (Planning Poker)")
-			l.add(keyAction, false, "E", "esfuerzo", "Registrar esfuerzo de la historia resaltada")
-		}
 	case "backlog-form":
 		if !m.backlogForm.saving {
 			m.formBindings(l, "Tab/↑/↓", "siguiente/enviar", "Pasar al siguiente campo o enviar")
 		}
+	case "story-detail":
+		m.storyDetailBindings(l)
 	case "sprints":
 		l.add(keyNav, true, "↑/↓", "mover", "Mover la selección")
 		l.add(keyAction, true, "Enter", "historias", "Ver las historias del Sprint resaltado")
@@ -264,18 +263,10 @@ func (m Model) sectionBindings(l *keyList) {
 	}
 	action, help := "elegir", "Elegir / confirmar la fila resaltada"
 	switch m.section.step {
-	case sectionStepPrimary:
-		if m.section.kind.primaryUsesStories() {
-			action, help = "elegir historia", "Elegir la historia resaltada"
-		} else {
-			action, help = "elegir Sprint", "Elegir el Sprint resaltado"
-		}
 	case sectionStepMembers:
 		action, help = "elegir integrante", "Elegir el integrante resaltado"
 	case sectionStepTasks:
 		action, help = "elegir tarea", "Elegir la tarea resaltada"
-	case sectionStepSprints:
-		action, help = "elegir Sprint", "Elegir el Sprint resaltado"
 	}
 	l.add(keyAction, true, "Enter", action, help)
 	l.add(keyNav, true, "/", "buscar", "Buscar o filtrar en la lista")

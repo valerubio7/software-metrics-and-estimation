@@ -215,12 +215,13 @@ func submitStory(m tui.Model, title, description, priority, criteria string) (tu
 	return apply(m, tea.KeyMsg{Type: tea.KeyEnter})
 }
 
-// selectStory moves to the index-th story of the list and opens its update form.
+// selectStory moves to the index-th story of the list and opens its update form
+// with e (Enter opens the story detail).
 func selectStory(m tui.Model, index int) tui.Model {
 	for i := 0; i < index; i++ {
 		m = press(m, tea.KeyDown)
 	}
-	return press(m, tea.KeyEnter)
+	return typeText(m, "e")
 }
 
 // advanceFields moves to the next form field n times.
@@ -409,8 +410,8 @@ func TestBacklogSearchFiltersStories(t *testing.T) {
 	}
 	m = press(m, tea.KeyEnter)
 
-	// The filtered story is now the first row, so Enter opens it directly.
-	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	// The filtered story is now the first row, so e opens its form directly.
+	m = typeText(m, "e")
 	if m.Screen != "backlog-form" || fieldValue(t, m.View(), "Título") != "Alta de usuarios" {
 		t.Fatalf("Screen = %q view = %q, want the filtered story form", m.Screen, m.View())
 	}
@@ -695,7 +696,7 @@ func TestBacklogSelectingStoryWithEmptyListOpensNoForm(t *testing.T) {
 			for i := 0; i < downs; i++ {
 				m = press(m, tea.KeyDown)
 			}
-			m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+			m, cmd := apply(m, keyMsg("e"))
 			if cmd != nil {
 				cmd()
 			}
@@ -1104,4 +1105,160 @@ func TestSpaceAndBackspaceByRuneInBacklogFields(t *testing.T) {
 			t.Errorf("title = %q, want %q", sent.Title, "Gestión ao")
 		}
 	})
+}
+
+func TestBacklogEKeyOpensPrefilledForm(t *testing.T) {
+	server, rec := fakeBacklogAPI(t, apiStubs{})
+	m := openBacklogWithProject(t, server.URL, "p1")
+	before := len(rec.all())
+
+	m, cmd := apply(m, keyMsg("e"))
+
+	if m.Screen != "backlog-form" {
+		t.Fatalf("Screen = %q, want backlog-form", m.Screen)
+	}
+	if cmd != nil || len(rec.all()) != before {
+		t.Fatalf("opening the update form must not emit requests (cmd nil = %v)", cmd == nil)
+	}
+	for label, want := range map[string]string{"Título": "Login", "Prioridad": "alta", "Estado": "pendiente", "Criterios de aceptación": "A; B", "Horas estimadas": "5"} {
+		if got := fieldValue(t, m.View(), label); got != want {
+			t.Errorf("field %q = %q, want %q", label, got, want)
+		}
+	}
+}
+
+func TestBacklogEKeyIsNotTypedIntoTheFilter(t *testing.T) {
+	server, _ := fakeBacklogAPI(t, apiStubs{})
+	m := openBacklogWithProject(t, server.URL, "p1")
+
+	m = typeText(m, "e")
+
+	if strings.Contains(stripANSI(m.View()), "Buscar:") {
+		t.Fatalf("e must not start the search:\n%s", stripANSI(m.View()))
+	}
+}
+
+func TestBacklogEKeyOnEmptyListDoesNotOpenForm(t *testing.T) {
+	server, rec := fakeBacklogAPI(t, apiStubs{list: stub{http.StatusOK, storiesBody(t, nil)}})
+	m := openBacklogWithProject(t, server.URL, "p1")
+	before := len(rec.all())
+
+	m, cmd := apply(m, keyMsg("e"))
+
+	if m.Screen != "backlog" || cmd != nil || len(rec.all()) != before {
+		t.Fatalf("Screen = %q, cmd nil = %v, new requests = %d, want the list untouched", m.Screen, cmd == nil, len(rec.all())-before)
+	}
+	if strings.Contains(stripANSI(m.View()), "Buscar:") {
+		t.Fatalf("e on an empty list must not start the search:\n%s", stripANSI(m.View()))
+	}
+}
+
+func TestBacklogEKeyOpensTheHighlightedStoryUnderFilter(t *testing.T) {
+	server, _ := fakeBacklogAPI(t, apiStubs{})
+	m := openBacklogWithProject(t, server.URL, "p1")
+	m, _ = apply(m, keyMsg("/"))
+	m = typeText(m, "alta")
+	m = press(m, tea.KeyEnter) // stop searching, keep the filter
+
+	m = typeText(m, "e")
+
+	if m.Screen != "backlog-form" {
+		t.Fatalf("Screen = %q, want backlog-form", m.Screen)
+	}
+	if got := fieldValue(t, m.View(), "Título"); got != "Alta de usuarios" {
+		t.Errorf("Título = %q, want the story visible under the filter", got)
+	}
+}
+
+// [caracterización] Inside the search box e was already plain text; it is kept
+// to pin the behavior now that e is a reserved key outside of it.
+func TestBacklogEKeyInsideFilterIsText(t *testing.T) {
+	server, _ := fakeBacklogAPI(t, apiStubs{})
+	m := openBacklogWithProject(t, server.URL, "p1")
+	m, _ = apply(m, keyMsg("/"))
+
+	m = typeText(m, "e")
+
+	view := stripANSI(m.View())
+	if m.Screen != "backlog" || !strings.Contains(view, "Buscar: e_") {
+		t.Fatalf("Screen = %q, want the search box holding e:\n%s", m.Screen, view)
+	}
+}
+
+// P and E used to start Planning Poker and Esfuerzo from the list. Those flows
+// now start from the story detail, so the capital letters are plain characters
+// again: with or without stories they only start the search.
+func TestBacklogUppercasePAndEDoNotStartFlows(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		stories []tui.Story
+	}{
+		{"con historias", detailStories()},
+		{"lista vacía", nil},
+	} {
+		for _, key := range []string{"P", "E"} {
+			t.Run(tc.name+"/"+key, func(t *testing.T) {
+				url, rec := detailServer(t, tc.stories)
+				m := openBacklogWithProject(t, url, "p1")
+				before := len(rec.all())
+
+				m, cmd := apply(m, keyMsg(key))
+
+				if m.Screen != "backlog" || cmd != nil {
+					t.Fatalf("%s: Screen = %q, command = %v, want the backlog without a command", key, m.Screen, cmd != nil)
+				}
+				if view := stripANSI(m.View()); !strings.Contains(view, "Buscar: "+key+"_") {
+					t.Errorf("%s did not start a search holding the character:\n%s", key, view)
+				}
+				if got := len(rec.all()); got != before {
+					t.Errorf("%s emitted %d requests, want none", key, got-before)
+				}
+			})
+		}
+	}
+}
+
+// Lowercase p is not reserved in the backlog, so it still starts the search.
+// e is reserved since it edits the highlighted story (TestBacklogEKeyIsNotTypedIntoTheFilter).
+func TestBacklogLowercasePStartsTheSearch(t *testing.T) {
+	url, _ := detailServer(t, detailStories())
+	m := openBacklogWithProject(t, url, "p1")
+
+	m, _ = apply(m, keyMsg("p"))
+
+	if m.Screen != "backlog" {
+		t.Fatalf("p left the backlog for %q", m.Screen)
+	}
+	if view := stripANSI(m.View()); !strings.Contains(view, "Buscar: p_") {
+		t.Errorf("p did not start a search: %q", view)
+	}
+	m = press(m, tea.KeyEsc) // clears the search, does not leave
+	if m.Screen != "backlog" {
+		t.Errorf("Esc after p left %q: the key was not typed into a search", m.Screen)
+	}
+}
+
+func TestBacklogHelpAndFooterDoNotOfferPAndE(t *testing.T) {
+	url, _ := detailServer(t, detailStories())
+	m := openBacklogWithProject(t, url, "p1")
+
+	footer := footerOf(t, stripANSI(m.View()))
+	m, _ = apply(m, keyMsg("?"))
+	help := stripANSI(m.View())
+
+	for _, want := range []string{"Abrir el detalle de la historia resaltada", "Editar la historia resaltada"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("backlog help lacks %q:\n%s", want, help)
+		}
+	}
+	for _, unwanted := range []string{"Estimar la historia resaltada", "Registrar esfuerzo de la historia resaltada", "│   P   ", "│   E   "} {
+		if strings.Contains(help, unwanted) {
+			t.Errorf("backlog help still offers %q:\n%s", unwanted, help)
+		}
+	}
+	for _, unwanted := range []string{"P estimar", "E esfuerzo"} {
+		if strings.Contains(footer, unwanted) {
+			t.Errorf("backlog footer %q still offers %q", footer, unwanted)
+		}
+	}
 }

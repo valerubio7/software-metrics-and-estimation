@@ -116,16 +116,11 @@ func effortFlowServer(t *testing.T, opts effortFlowOptions) (*httptest.Server, *
 	return server, rec
 }
 
-// openEffortTasks opens Esfuerzo, chooses the story at storyIndex and applies
-// its task list.
+// openEffortTasks launches Registrar esfuerzo from the detail of the story at
+// storyIndex and applies its task list.
 func openEffortTasks(t *testing.T, url string, storyIndex int) tui.Model {
 	t.Helper()
-	m := openSectionWithProject(t, url, "p1", tabEffort)
-	for i := 0; i < storyIndex; i++ {
-		m = press(m, tea.KeyDown)
-	}
-	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
-	return run(t, m, cmd)
+	return openStoryFlowWithProject(t, url, "p1", storyIndex, "t")
 }
 
 // openEffortMembers chooses the row at taskIndex (0 is the whole-story row) and
@@ -349,8 +344,8 @@ func TestEffortEscFromMembersRestoresTasksSnapshotWithoutRequests(t *testing.T) 
 		t.Fatalf("the next Esc should clear the filter first: %q", view)
 	}
 	m = press(m, tea.KeyEsc)
-	if view := stripANSI(m.View()); !strings.Contains(view, "Segunda historia") {
-		t.Fatalf("the following Esc should reach the story selector: %q", view)
+	if got := fieldValue(t, stripANSI(m.View()), "Título"); m.Screen != "story-detail" || got != "Primera historia" {
+		t.Fatalf("the following Esc should reach the detail of the story (screen %q, Título %q)", m.Screen, got)
 	}
 	if after := len(rec.all()); after != before {
 		t.Fatalf("walking back emitted %d new requests, want none", after-before)
@@ -362,8 +357,9 @@ func fixedClock() time.Time {
 	return time.Date(2026, 10, 31, 23, 30, 0, 0, time.FixedZone("UTC-3", -3*3600))
 }
 
-// openEffortFormFor walks the whole flow with the fixed clock and presses Enter
-// on the member at memberIndex, which opens the form.
+// openEffortFormFor walks the whole flow launched from the detail of the
+// storyIndex-th story with the fixed clock: the task at taskIndex (0 is the
+// whole-story row), then Enter on the member at memberIndex, which opens the form.
 func openEffortFormFor(t *testing.T, url string, storyIndex, taskIndex, memberIndex int) tui.Model {
 	t.Helper()
 	m := openEffortMembers(t, url, storyIndex, taskIndex).WithClock(fixedClock)
@@ -374,31 +370,48 @@ func openEffortFormFor(t *testing.T, url string, storyIndex, taskIndex, memberIn
 	return m
 }
 
-func TestEffortEscWalksBackThroughThreeLevels(t *testing.T) {
+func TestEscFromEffortTasksReturnsToStoryDetailWithoutRequests(t *testing.T) {
+	server, rec := effortFlowServer(t, effortFlowOptions{})
+	m := openStoryFlowWithProject(t, server.URL, "p1", 0, "t")
+	before := len(rec.all())
+
+	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEsc})
+
+	if m.Screen != "story-detail" || cmd != nil {
+		t.Fatalf("Screen = %q, cmd nil = %v, want story-detail without a command", m.Screen, cmd == nil)
+	}
+	if got := requestLines(rec, before); len(got) != 0 {
+		t.Errorf("Esc emitted requests: %v", got)
+	}
+	if got := fieldValue(t, stripANSI(m.View()), "Título"); got != "Primera historia" {
+		t.Errorf("Título = %q, want the story the flow started from", got)
+	}
+}
+
+func TestEffortEscChainEndsAtStoryDetail(t *testing.T) {
 	server, rec := effortFlowServer(t, effortFlowOptions{})
 	m := openEffortFormFor(t, server.URL, 0, 1, 0)
 	before := len(rec.all())
 
-	levels := []struct{ name, want string }{
-		{"members", "Esfuerzo · Integrante"},
-		{"tasks", "Tarea de Primera historia o la historia completa."},
-		{"stories", "Elegí una historia para registrar su esfuerzo."},
-	}
-	for _, level := range levels {
+	for _, step := range []struct{ screen, want string }{
+		{"section", "Esfuerzo · Integrante"},
+		{"section", "Tarea de Primera historia o la historia completa."},
+		{"story-detail", "Primera historia"},
+	} {
 		var cmd tea.Cmd
 		m, cmd = apply(m, tea.KeyMsg{Type: tea.KeyEsc})
 		if cmd != nil {
-			t.Fatalf("Esc towards %s must not emit a command", level.name)
+			t.Fatalf("Esc towards %q must not emit a command", step.want)
 		}
-		if view := stripANSI(m.View()); m.Screen != "section" || !strings.Contains(view, level.want) {
-			t.Fatalf("Esc should reach the %s selector (screen %q): %q", level.name, m.Screen, view)
+		if view := stripANSI(m.View()); m.Screen != step.screen || !strings.Contains(view, step.want) {
+			t.Fatalf("Esc should reach %q (screen %q): %q", step.want, m.Screen, view)
 		}
 	}
-	if after := len(rec.all()); after != before {
-		t.Fatalf("walking back emitted %d requests, want none", after-before)
+	if got := requestLines(rec, before); len(got) != 0 {
+		t.Errorf("walking back emitted requests: %v (the backlog must not reload)", got)
 	}
-	if m = press(m, tea.KeyEsc); m.Screen != "project-picker" {
-		t.Fatalf("the fourth Esc should reach the project browser, got screen %q", m.Screen)
+	if m = press(m, tea.KeyEsc); m.Screen != "backlog" {
+		t.Fatalf("the fourth Esc should leave the detail for the backlog, got screen %q", m.Screen)
 	}
 }
 
@@ -423,8 +436,8 @@ func TestEffortTaskFilterIsKeptWhenWalkingBackFromForm(t *testing.T) {
 		t.Fatalf("the next Esc should only clear the filter: %q", view)
 	}
 	m = press(m, tea.KeyEsc)
-	if view := stripANSI(m.View()); !strings.Contains(view, "Segunda historia") {
-		t.Fatalf("the following Esc should reach the stories: %q", view)
+	if got := fieldValue(t, stripANSI(m.View()), "Título"); m.Screen != "story-detail" || got != "Primera historia" {
+		t.Fatalf("the following Esc should reach the detail of the story (screen %q, Título %q)", m.Screen, got)
 	}
 	if after := len(rec.all()); after != before {
 		t.Fatalf("walking back emitted %d requests, want none", after-before)
@@ -475,17 +488,17 @@ func TestEffortLateMembersResponseAfterEscIsDropped(t *testing.T) {
 // [caracterización] born green, same reason as the members case.
 func TestEffortLateTasksResponseAfterEscIsDropped(t *testing.T) {
 	server, _ := effortFlowServer(t, effortFlowOptions{})
-	m := openSectionWithProject(t, server.URL, "p1", tabEffort)
-	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // tasks query stays pending
+	m := openStoryDetailWithProject(t, server.URL, "p1", 0)
+	m, cmd := apply(m, keyMsg("t")) // tasks query stays pending
 	if cmd == nil {
-		t.Fatal("choosing a story should start loading the tasks")
+		t.Fatal("Registrar esfuerzo on the detail should start loading the tasks")
 	}
 	m = press(m, tea.KeyEsc)
 	want := stripANSI(m.View())
 
 	m = run(t, m, cmd)
-	if got := stripANSI(m.View()); got != want || !strings.Contains(got, "Primera historia") {
-		t.Fatalf("a late task response must not change the story selector:\nwant %q\ngot  %q", want, got)
+	if got := stripANSI(m.View()); got != want || m.Screen != "story-detail" || !strings.Contains(got, "Primera historia") {
+		t.Fatalf("a late task response must not change the detail (screen %q):\nwant %q\ngot  %q", m.Screen, want, got)
 	}
 }
 
@@ -558,8 +571,8 @@ func TestEffortOnlyExplicitSubmitEmitsThePost(t *testing.T) {
 	}
 
 	m = stepRunning(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.Screen != "section" {
-		t.Fatalf("Screen = %q, want the Esfuerzo root after the confirmation", m.Screen)
+	if m.Screen != "story-detail" {
+		t.Fatalf("Screen = %q, want the story detail after the confirmation", m.Screen)
 	}
 	var posts int
 	for _, request := range rec.all() {

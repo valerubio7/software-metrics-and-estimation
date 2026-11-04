@@ -197,26 +197,24 @@ func TestSprintCreateRejectionKeepsTheForm(t *testing.T) {
 	}
 }
 
-func TestEffortRegistrationReturnsToEffortRootWithToast(t *testing.T) {
-	server, rec := effortFlowServer(t, effortFlowOptions{})
-	m := openEffortFormFor(t, server.URL, 0, 1, 0)
-	m = fillEffortForm(m, [3]string{"2026", "10", "05"}, "Implementar login", "3.5")
-	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
-	m, reload := apply(m, cmd())
-	if m.Screen != "section" || reload == nil {
-		t.Fatalf("Screen = %q reload nil %v, want the Esfuerzo root reloading", m.Screen, reload == nil)
+func TestEffortToastDisappearsOnNextKeyInDetail(t *testing.T) {
+	server, _ := effortFlowServer(t, effortFlowOptions{})
+	m, _ := registeredFromDetail(t, server.URL)
+	const toast = "Esfuerzo registrado: 3.5 h el 2026-10-05 · Primera historia · Diseñar · Ada Lovelace"
+	if m.Screen != "story-detail" {
+		t.Fatalf("Screen = %q, want the detail", m.Screen)
 	}
-	stories := requestCount(rec, http.MethodGet, "/projects/p1/stories")
-	m = run(t, m, reload)
-	if requestCount(rec, http.MethodGet, "/projects/p1/stories") != stories+1 {
-		t.Fatalf("reload did not list the stories: %+v", rec.all())
+	if view := wideView(m); !strings.Contains(view, "✓ "+toast) {
+		t.Fatalf("the detail should show the toast:\n%s", view)
 	}
-	if requestCount(rec, http.MethodGet, "/projects/p1/metrics") != 0 {
-		t.Fatalf("the save must not query the project metrics: %+v", rec.all())
+
+	m = press(m, tea.KeyDown)
+
+	view := wideView(m)
+	if strings.Contains(view, toast) {
+		t.Errorf("the toast survived the next key:\n%s", view)
 	}
-	view := stripANSI(m.View())
-	if !strings.Contains(view, "Primera historia") || !strings.Contains(view, "Segunda historia") {
-		t.Fatalf("the story selector should be back:\n%s", view)
+	if line := focusedLine(view); !strings.Contains(line, "Registrar esfuerzo") {
+		t.Errorf("the key that cleared the toast should keep its effect (Down), highlighted line %q", line)
 	}
-	assertToast(t, m, "Esfuerzo registrado: 3.5 h el 2026-10-05 · Primera historia · Diseñar · Ada Lovelace")
 }

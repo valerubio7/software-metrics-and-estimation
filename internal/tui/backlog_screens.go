@@ -195,19 +195,17 @@ func (m Model) updateBacklog(key tea.KeyMsg) (Model, tea.Cmd) {
 			m.backlogCursor++
 		}
 	case tea.KeyEnter:
-		return m.editSelectedStory(stories)
+		return m.openStoryDetail(stories)
 	case tea.KeyRunes:
 		switch string(key.Runes) {
 		case "/":
 			m.backlogFiltering = true
 		case "n":
 			m.Screen, m.backlogForm = "backlog-form", storyForm{}
+		case "e":
+			return m.editSelectedStory(stories)
 		case "r":
 			return m.startBacklogLoad()
-		case "P":
-			return m.openSectionForStory(sectionPlanningPoker, stories)
-		case "E":
-			return m.openSectionForStory(sectionEffort, stories)
 		default:
 			m.backlogFiltering = true
 			if value, ok := editText(m.backlogFilter, key); ok {
@@ -220,29 +218,13 @@ func (m Model) updateBacklog(key tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 // editSelectedStory opens the update form for the story highlighted in the
-// backlog, mirroring Enter on the project browser.
+// backlog, mirroring e on the project browser.
 func (m Model) editSelectedStory(stories []Story) (Model, tea.Cmd) {
 	if m.backlogCursor < 0 || m.backlogCursor >= len(stories) {
 		return m, nil
 	}
 	m.Screen, m.backlogForm = "backlog-form", newUpdateForm(stories[m.backlogCursor])
 	return m, nil
-}
-
-// openSectionForStory opens the Estimación or Esfuerzo tab with the highlighted
-// story already chosen, at the step that follows the story selector. Only the
-// usual GET of that step is issued; an empty list does nothing.
-func (m Model) openSectionForStory(kind sectionKind, stories []Story) (Model, tea.Cmd) {
-	if m.backlogCursor < 0 || m.backlogCursor >= len(stories) {
-		return m, nil
-	}
-	m, _ = m.openSection(kind)
-	m.section.selected = storySelectorItem(stories[m.backlogCursor])
-	m.section.preselected = true
-	if kind == sectionEffort {
-		return m.beginSectionStep(sectionStepTasks)
-	}
-	return m.beginSectionStep(sectionStepMembers)
 }
 
 func (m Model) updateBacklogForm(key tea.KeyMsg) (Model, tea.Cmd) {
@@ -321,12 +303,13 @@ func (m Model) updateStoryCmd(projectID, storyID string, input StoryUpdateInput)
 }
 
 // applyBacklogResult applies a backlog response. A list result only applies
-// while the backlog screen is waiting for it; a create or update result only
-// while its form is saving. Success returns to the reloaded list with a toast and
-// a rejection stays on the form with the API reason.
+// while the backlog screen or the story detail (which reloads the list in place
+// after an estimate) is waiting for it; a create or update result only while its
+// form is saving. Success returns to the reloaded list with a toast and a
+// rejection stays on the form with the API reason.
 func (m Model) applyBacklogResult(result BacklogResultMsg) (Model, tea.Cmd) {
 	if result.Op == BacklogOpList {
-		if m.Screen != "backlog" || !m.backlogLoading {
+		if (m.Screen != "backlog" && m.Screen != "story-detail") || !m.backlogLoading {
 			return m, nil
 		}
 		m.backlogLoading = false
@@ -507,7 +490,7 @@ func backlogHint(hasProject bool) string {
 	if !hasProject {
 		return "Esc vuelve a Proyectos para elegir uno."
 	}
-	return "Enter edita · n crea · r refresca · / busca · Esc vuelve a Proyectos."
+	return "Enter abre el detalle · e edita · n crea · / busca · Esc vuelve a Proyectos."
 }
 
 func (m Model) viewBacklogForm() string {

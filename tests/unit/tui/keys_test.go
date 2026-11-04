@@ -75,13 +75,16 @@ func TestSprintListHelpGroupsEveryShortcut(t *testing.T) {
 	}
 }
 
-func TestTabRootHelpListsTabKeys(t *testing.T) {
+func TestRootHelpListsOneToFourAndTabKeys(t *testing.T) {
 	m, _ := apply(openSprintList(t), keyMsg("?"))
 	help := stripANSI(m.View())
-	for _, want := range []string{"Tab/Shift+Tab", "1–6"} {
+	for _, want := range []string{"Tab/Shift+Tab", "1–4"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("tab root help lacks %q: %q", want, help)
 		}
+	}
+	if strings.Contains(help, "1–6") {
+		t.Errorf("tab root help still lists the six tabs: %q", help)
 	}
 }
 

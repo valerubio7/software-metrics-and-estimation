@@ -37,15 +37,28 @@ type defectOptionsResult struct {
 func (m Model) beginDefectCreation() (Model, tea.Cmd) {
 	m.defectCreateForm = defectCreateForm{severityIndex: 0}
 	m.defectStorySelector, m.defectSprintSelector = selector{}, selector{}
+	// Creating from the Defectos tab goes back to its list; the story detail
+	// overrides this after the call. It is set here so it is never inherited.
+	m.returnTo = returnDefault
 	m.Screen = "defect-create-form"
+	return m, nil
+}
+
+// cancelDefectCreation abandons the draft and goes back to where the creation
+// started: the story detail, or the defect list when it began in the Defectos
+// tab. It never issues a request; the next draft always starts empty.
+func (m Model) cancelDefectCreation() (Model, tea.Cmd) {
+	if m.returnTo == returnStoryDetail {
+		return m.backToStoryDetail()
+	}
+	m.Screen = "defects"
 	return m, nil
 }
 
 func (m Model) updateDefectCreateForm(key tea.KeyMsg) (Model, tea.Cmd) {
 	form := &m.defectCreateForm
 	if key.Type == tea.KeyEsc {
-		m.Screen = "defects"
-		return m, nil
+		return m.cancelDefectCreation()
 	}
 	switch key.Type {
 	case tea.KeyTab, tea.KeyDown:
@@ -137,7 +150,12 @@ func (m Model) updateDefectStorySelect(key tea.KeyMsg) (Model, tea.Cmd) {
 func (m Model) updateDefectSprintSelect(key tea.KeyMsg) (Model, tea.Cmd) {
 	switch m.defectSprintSelector.update(key) {
 	case selectorBack:
-		m.Screen = "defect-story-select"
+		if m.returnTo == returnStoryDetail {
+			// The story came preloaded from the detail: there is no story step to go back to.
+			m.Screen = "defect-create-form"
+		} else {
+			m.Screen = "defect-story-select"
+		}
 	case selectorRefresh:
 		return m.loadDefectOpenSprints()
 	case selectorChosen:
@@ -235,6 +253,9 @@ func (m Model) viewDefectCreateForm() string {
 	b.WriteString("\n")
 	if f.storyID != "" && f.sprintID != "" {
 		b.WriteString(hintStyle.Render("Borrador sin registrar · Esc cancela."))
+	} else if f.storyID != "" {
+		// The story came preloaded from the detail: the last field leads to the Sprint.
+		b.WriteString(hintStyle.Render("Use ←/→ para cambiar severidad o estado; Enter en el último campo elige el Sprint de detección."))
 	} else {
 		b.WriteString(hintStyle.Render("Usá ←/→ para cambiar severidad o estado; Enter en el último campo elige la historia."))
 	}
