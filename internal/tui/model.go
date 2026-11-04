@@ -777,8 +777,6 @@ func (m Model) crumbParts() []string {
 			}
 		case sectionStepTasks:
 			parts = append(parts, "Tareas")
-		case sectionStepSprints:
-			parts = append(parts, "Sprint")
 		}
 	case "effort-form":
 		parts = append(parts, m.storyFlowCrumb()...)
@@ -791,7 +789,7 @@ func (m Model) crumbParts() []string {
 		if prefix := m.storyFlowCrumb(); prefix != nil {
 			parts = append(parts, prefix...) // reported from the story detail
 		} else {
-			parts = append(parts, sectionDefects.title())
+			parts = append(parts, tabDefects.title())
 		}
 		switch m.Screen {
 		case "defect-detail":
@@ -819,7 +817,7 @@ func (m Model) crumbParts() []string {
 }
 
 // storyFlowCrumb is the prefix of the breadcrumb of an action launched from the
-// story detail; the same screens reached from the old tabs have none.
+// story detail; the defect screens reached from the Defectos tab have none.
 func (m Model) storyFlowCrumb() []string {
 	if m.inStoryFlow() {
 		return []string{"Backlog", "Detalle"}

@@ -1184,3 +1184,81 @@ func TestBacklogEKeyInsideFilterIsText(t *testing.T) {
 		t.Fatalf("Screen = %q, want the search box holding e:\n%s", m.Screen, view)
 	}
 }
+
+// P and E used to start Planning Poker and Esfuerzo from the list. Those flows
+// now start from the story detail, so the capital letters are plain characters
+// again: with or without stories they only start the search.
+func TestBacklogUppercasePAndEDoNotStartFlows(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		stories []tui.Story
+	}{
+		{"con historias", detailStories()},
+		{"lista vacía", nil},
+	} {
+		for _, key := range []string{"P", "E"} {
+			t.Run(tc.name+"/"+key, func(t *testing.T) {
+				url, rec := detailServer(t, tc.stories)
+				m := openBacklogWithProject(t, url, "p1")
+				before := len(rec.all())
+
+				m, cmd := apply(m, keyMsg(key))
+
+				if m.Screen != "backlog" || cmd != nil {
+					t.Fatalf("%s: Screen = %q, command = %v, want the backlog without a command", key, m.Screen, cmd != nil)
+				}
+				if view := stripANSI(m.View()); !strings.Contains(view, "Buscar: "+key+"_") {
+					t.Errorf("%s did not start a search holding the character:\n%s", key, view)
+				}
+				if got := len(rec.all()); got != before {
+					t.Errorf("%s emitted %d requests, want none", key, got-before)
+				}
+			})
+		}
+	}
+}
+
+// Lowercase p is not reserved in the backlog, so it still starts the search.
+// e is reserved since it edits the highlighted story (TestBacklogEKeyIsNotTypedIntoTheFilter).
+func TestBacklogLowercasePStartsTheSearch(t *testing.T) {
+	url, _ := detailServer(t, detailStories())
+	m := openBacklogWithProject(t, url, "p1")
+
+	m, _ = apply(m, keyMsg("p"))
+
+	if m.Screen != "backlog" {
+		t.Fatalf("p left the backlog for %q", m.Screen)
+	}
+	if view := stripANSI(m.View()); !strings.Contains(view, "Buscar: p_") {
+		t.Errorf("p did not start a search: %q", view)
+	}
+	m = press(m, tea.KeyEsc) // clears the search, does not leave
+	if m.Screen != "backlog" {
+		t.Errorf("Esc after p left %q: the key was not typed into a search", m.Screen)
+	}
+}
+
+func TestBacklogHelpAndFooterDoNotOfferPAndE(t *testing.T) {
+	url, _ := detailServer(t, detailStories())
+	m := openBacklogWithProject(t, url, "p1")
+
+	footer := footerOf(t, stripANSI(m.View()))
+	m, _ = apply(m, keyMsg("?"))
+	help := stripANSI(m.View())
+
+	for _, want := range []string{"Abrir el detalle de la historia resaltada", "Editar la historia resaltada"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("backlog help lacks %q:\n%s", want, help)
+		}
+	}
+	for _, unwanted := range []string{"Estimar la historia resaltada", "Registrar esfuerzo de la historia resaltada", "│   P   ", "│   E   "} {
+		if strings.Contains(help, unwanted) {
+			t.Errorf("backlog help still offers %q:\n%s", unwanted, help)
+		}
+	}
+	for _, unwanted := range []string{"P estimar", "E esfuerzo"} {
+		if strings.Contains(footer, unwanted) {
+			t.Errorf("backlog footer %q still offers %q", footer, unwanted)
+		}
+	}
+}

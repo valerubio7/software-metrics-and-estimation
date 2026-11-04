@@ -12,12 +12,10 @@ import (
 
 // Workspace tab digits, in tab bar order.
 const (
-	tabDashboard  = "1"
-	tabBacklog    = "2"
-	tabSprints    = "3"
-	tabEstimation = "4"
-	tabEffort     = "5"
-	tabDefects    = "6"
+	tabDashboard = "1"
+	tabBacklog   = "2"
+	tabSprints   = "3"
+	tabDefects   = "4"
 )
 
 // openStoryFlowWithProject goes browser -> pid -> Backlog -> detail of the
@@ -72,41 +70,6 @@ func storiesBodyForSection(stories []tui.Story) string {
 		encoded += `{"id":"` + story.ID + `","project_id":"p1","title":"` + story.Title + `","priority":"` + story.Priority + `","status":"` + story.Status + `"}`
 	}
 	return encoded + `]}`
-}
-
-func TestTabsRouteToEachSprint3Section(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		digit string
-		title string
-		body  string
-		item  string
-	}{
-		{"planning", tabEstimation, "Estimación", storiesBodyForSection(sectionStories()), "Primera historia"},
-		{"effort", tabEffort, "Esfuerzo", storiesBodyForSection(sectionStories()), "Primera historia"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			path := "/projects/p1/stories"
-			server := sectionServer(t, map[string]string{path: tc.body})
-			m, cmd := openTab(t, server.URL, "p1", tc.digit)
-			if cmd == nil {
-				t.Fatal("expected a command to load the section")
-			}
-			m = run(t, m, cmd)
-			if m.Screen != "section" {
-				t.Fatalf("Screen = %q after opening tab %s, want section", m.Screen, tc.digit)
-			}
-			view := stripANSI(m.View())
-			for _, want := range []string{tc.title, tc.item, "Proyectos › Alpha › " + tc.title} {
-				if !strings.Contains(view, want) {
-					t.Errorf("section view lacks %q: %q", want, view)
-				}
-			}
-			if strings.Contains(view, "submenú") {
-				t.Errorf("section view looks like an operations submenu: %q", view)
-			}
-		})
-	}
 }
 
 // TestDefectsTabOpensProjectDefectList covers TUI-09 replacing the former

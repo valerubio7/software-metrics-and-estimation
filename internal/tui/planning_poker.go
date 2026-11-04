@@ -190,12 +190,8 @@ func (m Model) applyPokerSave(result pokerSaveResult) (Model, tea.Cmd) {
 		m.pokerMessage = "No se pudo interpretar la historia guardada."
 		return m, nil
 	}
-	if m.returnTo == returnStoryDetail {
-		m, _ = m.backToStoryDetail()
-		return m.reloadBacklogInPlace()
-	}
-	m.backlogStories = nil
-	m.Screen = "backlog"
-	m.backlogLoading = true
-	return m, m.listStoriesCmd(m.activeProjectID)
+	// The estimate changes a field the detail shows, so the backlog is reloaded
+	// in place and the detail rereads its story once the list arrives.
+	m, _ = m.backToStoryDetail()
+	return m.reloadBacklogInPlace()
 }

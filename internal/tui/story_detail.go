@@ -8,7 +8,9 @@ import (
 )
 
 // returnTarget is where a flow goes back to when it is cancelled from its first
-// step or completes. The zero value keeps each flow's own destination.
+// step or completes. The zero value is the defect creation started from the
+// Defectos tab, which keeps its own destination (the defect list); Estimar and
+// Registrar esfuerzo always go back to the detail.
 type returnTarget int
 
 const (

@@ -267,24 +267,6 @@ func TestOpenTabResetsReturnTo(t *testing.T) {
 	}
 }
 
-// P and E on the backlog still start the old flows until the tabs are retired;
-// a returnTo left over from a story flow must not make them go back to the detail.
-func TestBacklogShortcutsResetAResidualReturnTo(t *testing.T) {
-	for _, key := range []rune{'P', 'E'} {
-		t.Run(string(key), func(t *testing.T) {
-			m := detailModel()
-			m.Screen = "backlog"
-			m.returnTo = returnStoryDetail
-
-			next, _ := m.updateBacklog(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
-
-			if next.Screen != "section" || next.returnTo != returnDefault {
-				t.Errorf("Screen = %q, returnTo = %v, want a section that goes back to its own destination", next.Screen, next.returnTo)
-			}
-		})
-	}
-}
-
 // flowScreenModel builds the model on screen with the flow state of a story flow
 // of kind at step, started from origin.
 func flowScreenModel(screen string, kind sectionKind, step sectionStep, origin returnTarget) Model {
@@ -303,28 +285,23 @@ func TestCurrentTabAndCrumbPerScreenAndOrigin(t *testing.T) {
 		wantTab  workspaceTab
 		wantPath string
 	}{
-		{"detalle", flowScreenModel("story-detail", "", 0, returnDefault), tabBacklog, flow},
+		{"detalle", flowScreenModel("story-detail", "", sectionStepNone, returnDefault), tabBacklog, flow},
 		{"Estimar participantes desde el detalle", flowScreenModel("section", sectionPlanningPoker, sectionStepMembers, returnStoryDetail), tabBacklog, flow + " › Estimación › Participantes"},
 		{"Planning Poker desde el detalle", flowScreenModel("planning-poker", sectionPlanningPoker, sectionStepMembers, returnStoryDetail), tabBacklog, flow + " › Estimación › Participantes"},
 		{"Esfuerzo tareas desde el detalle", flowScreenModel("section", sectionEffort, sectionStepTasks, returnStoryDetail), tabBacklog, flow + " › Esfuerzo › Tareas"},
 		{"Esfuerzo integrantes desde el detalle", flowScreenModel("section", sectionEffort, sectionStepMembers, returnStoryDetail), tabBacklog, flow + " › Esfuerzo › Integrante"},
 		{"formulario de esfuerzo desde el detalle", flowScreenModel("effort-form", sectionEffort, sectionStepMembers, returnStoryDetail), tabBacklog, flow + " › Esfuerzo › Registrar"},
-		{"formulario de defecto desde el detalle", flowScreenModel("defect-create-form", "", 0, returnStoryDetail), tabBacklog, flow + " › Registrar defecto"},
-		{"selector de Sprints del defecto desde el detalle", flowScreenModel("defect-sprint-select", "", 0, returnStoryDetail), tabBacklog, flow + " › Elegir Sprint de detección"},
-		{"confirmación del defecto desde el detalle", flowScreenModel("defect-create-confirm", "", 0, returnStoryDetail), tabBacklog, flow + " › Confirmar registro"},
+		{"formulario de defecto desde el detalle", flowScreenModel("defect-create-form", "", sectionStepNone, returnStoryDetail), tabBacklog, flow + " › Registrar defecto"},
+		{"selector de Sprints del defecto desde el detalle", flowScreenModel("defect-sprint-select", "", sectionStepNone, returnStoryDetail), tabBacklog, flow + " › Elegir Sprint de detección"},
+		{"confirmación del defecto desde el detalle", flowScreenModel("defect-create-confirm", "", sectionStepNone, returnStoryDetail), tabBacklog, flow + " › Confirmar registro"},
 		// [caracterización] Created from the Defectos tab, the same screens keep
 		// highlighting Defectos with their own breadcrumb.
-		{"formulario de defecto desde Defectos", flowScreenModel("defect-create-form", "", 0, returnDefault), tabDefects, "Proyectos › Alpha › Defectos › Registrar defecto"},
-		{"selector de historias del defecto desde Defectos", flowScreenModel("defect-story-select", "", 0, returnDefault), tabDefects, "Proyectos › Alpha › Defectos › Elegir historia"},
-		{"selector de Sprints del defecto desde Defectos", flowScreenModel("defect-sprint-select", "", 0, returnDefault), tabDefects, "Proyectos › Alpha › Defectos › Elegir Sprint de detección"},
-		{"confirmación del defecto desde Defectos", flowScreenModel("defect-create-confirm", "", 0, returnDefault), tabDefects, "Proyectos › Alpha › Defectos › Confirmar registro"},
-		// [caracterización] The old tabs keep their own tab and breadcrumb until
-		// they are retired; the origin is what tells the two apart.
-		{"pestaña Estimación", flowScreenModel("section", sectionPlanningPoker, sectionStepPrimary, returnDefault), tabEstimation, "Proyectos › Alpha › Estimación"},
-		{"pestaña Esfuerzo", flowScreenModel("section", sectionEffort, sectionStepPrimary, returnDefault), tabEffort, "Proyectos › Alpha › Esfuerzo"},
-		{"tareas con la historia elegida desde el Backlog", flowScreenModel("section", sectionEffort, sectionStepTasks, returnDefault), tabEffort, "Proyectos › Alpha › Esfuerzo › Tareas"},
-		{"Planning Poker de la pestaña", flowScreenModel("planning-poker", sectionPlanningPoker, sectionStepMembers, returnDefault), tabEstimation, "Proyectos › Alpha › Estimación › Participantes"},
-		{"formulario de esfuerzo de la pestaña", flowScreenModel("effort-form", sectionEffort, sectionStepMembers, returnDefault), tabEffort, "Proyectos › Alpha › Esfuerzo › Registrar"},
+		{"formulario de defecto desde Defectos", flowScreenModel("defect-create-form", "", sectionStepNone, returnDefault), tabDefects, "Proyectos › Alpha › Defectos › Registrar defecto"},
+		{"selector de historias del defecto desde Defectos", flowScreenModel("defect-story-select", "", sectionStepNone, returnDefault), tabDefects, "Proyectos › Alpha › Defectos › Elegir historia"},
+		{"selector de Sprints del defecto desde Defectos", flowScreenModel("defect-sprint-select", "", sectionStepNone, returnDefault), tabDefects, "Proyectos › Alpha › Defectos › Elegir Sprint de detección"},
+		{"confirmación del defecto desde Defectos", flowScreenModel("defect-create-confirm", "", sectionStepNone, returnDefault), tabDefects, "Proyectos › Alpha › Defectos › Confirmar registro"},
+		{"lista de defectos", flowScreenModel("defects", "", sectionStepNone, returnDefault), tabDefects, "Proyectos › Alpha › Defectos"},
+		{"detalle de un defecto", flowScreenModel("defect-detail", "", sectionStepNone, returnDefault), tabDefects, "Proyectos › Alpha › Defectos › Detalle"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Assumption S1 (unconfirmed by the user): the flows that start from the

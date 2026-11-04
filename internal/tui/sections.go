@@ -9,13 +9,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// sectionKind identifies one of the Sprint 3 navigation sections.
+// sectionKind identifies one of the flows launched from the story detail that
+// run in the section shell.
 type sectionKind string
 
 const (
 	sectionPlanningPoker sectionKind = "planning-poker"
 	sectionEffort        sectionKind = "effort"
-	sectionDefects       sectionKind = "defects"
 )
 
 // title returns the user-facing section name.
@@ -25,20 +25,9 @@ func (k sectionKind) title() string {
 		return "Estimación"
 	case sectionEffort:
 		return "Esfuerzo"
-	case sectionDefects:
-		return "Defectos"
 	default:
 		return string(k)
 	}
-}
-
-// primaryUsesStories reports whether the section starts from the backlog.
-func (k sectionKind) primaryUsesStories() bool {
-	switch k {
-	case sectionPlanningPoker, sectionEffort, sectionDefects:
-		return true
-	}
-	return false
 }
 
 // firstStep is the selector a flow starts at when it is launched from the story
@@ -51,47 +40,6 @@ func (k sectionKind) firstStep() sectionStep {
 	return sectionStepMembers
 }
 
-// storyNextStep is the selector that follows choosing a story; an unknown
-// kind keeps the primary step, so choosing a story is a no-op.
-func (k sectionKind) storyNextStep() sectionStep {
-	switch k {
-	case sectionPlanningPoker:
-		return sectionStepMembers
-	case sectionEffort:
-		return sectionStepTasks
-	case sectionDefects:
-		return sectionStepSprints
-	}
-	return sectionStepPrimary
-}
-
-func (k sectionKind) primaryHint() string {
-	switch k {
-	case sectionPlanningPoker:
-		return "Elegí una historia del backlog para estimarla."
-	case sectionEffort:
-		return "Elegí una historia para registrar su esfuerzo."
-	case sectionDefects:
-		return "Elegí la historia relacionada con el defecto."
-	default:
-		return "Elegí un Sprint abierto para continuar."
-	}
-}
-
-func (k sectionKind) primaryEmptyTitle() string {
-	if k.primaryUsesStories() {
-		return "No hay historias en el backlog."
-	}
-	return "No hay Sprints abiertos."
-}
-
-func (k sectionKind) primaryEmptyHint() string {
-	if k.primaryUsesStories() {
-		return "Creá una historia desde Backlog y volvé a intentar."
-	}
-	return "Creá un Sprint desde Sprints y volvé a intentar."
-}
-
 // wholeStoryLabel is the synthetic task row that registers effort over the
 // whole story; its empty ID means "no task".
 const wholeStoryLabel = "Toda la historia (sin tarea)"
@@ -100,26 +48,23 @@ const wholeStoryLabel = "Toda la historia (sin tarea)"
 type sectionStep int
 
 const (
-	sectionStepPrimary sectionStep = iota
+	// sectionStepNone is the zero value: no selector is active, so a section that
+	// was never started cannot be mistaken for one at its first step.
+	sectionStepNone sectionStep = iota
 	sectionStepMembers
 	sectionStepTasks
-	sectionStepSprints
 )
 
-// sectionState is the navigation state of a Sprint 3 section. The primary
-// selector is preserved while a secondary selector is displayed, so Esc can
-// restore the previous list without another request.
+// sectionState is the navigation state of a flow launched from the story detail.
+// The story comes already chosen (selected), so the flow starts at its first
+// selector (see firstStep).
 type sectionState struct {
 	kind     sectionKind
 	step     sectionStep
 	selector selector
-	primary  selector
 	tasks    selector // task list kept while Esfuerzo shows its members
 	selected selectorItem
 	detail   selectorItem
-	// preselected marks a section opened from the backlog with P/E: the story
-	// came chosen, so Esc on its first selector returns to the backlog.
-	preselected bool
 }
 
 // SectionResultMsg is the asynchronous result of a section API read.
@@ -131,28 +76,6 @@ type SectionResultMsg struct {
 	Err      error
 }
 
-// openSection enters a section directly, or asks for a project first when the
-// session has none. The section kind is retained across the picker so the
-// breadcrumb and the resume path can use it.
-func (m Model) openSection(kind sectionKind) (Model, tea.Cmd) {
-	m.section.kind = kind
-	m.returnTo = returnDefault
-	if m.activeProjectID == "" {
-		return m.leaveWorkspace()
-	}
-	m.Screen = "section"
-	m.section.step = sectionStepPrimary
-	m.section.selected = selectorItem{}
-	m.section.detail = selectorItem{}
-	m.section.preselected = false
-	m.section.selector = selector{}
-	m.section.tasks = selector{}
-	m.effort = effortState{seq: m.effort.seq}
-	m.section.selector.startLoading()
-	m.section.primary = m.section.selector
-	return m, m.loadSectionStepCmd()
-}
-
 // loadSectionStepCmd dispatches the read for the active step. All commands are
 // GETs; the section never mutates business data.
 func (m Model) loadSectionStepCmd() tea.Cmd {
@@ -160,19 +83,6 @@ func (m Model) loadSectionStepCmd() tea.Cmd {
 	storyID := m.section.selected.ID
 
 	switch step {
-	case sectionStepPrimary:
-		if kind.primaryUsesStories() {
-			client := m.backlogClient
-			return func() tea.Msg {
-				response, err := client.List(context.Background(), projectID)
-				return SectionResultMsg{Kind: kind, Step: step, StoryID: storyID, Response: response, Err: err}
-			}
-		}
-		client := m.sprintClient
-		return func() tea.Msg {
-			response, err := client.ListOpen(context.Background(), projectID)
-			return SectionResultMsg{Kind: kind, Step: step, StoryID: storyID, Response: response, Err: err}
-		}
 	case sectionStepMembers:
 		client := m.memberClient
 		return func() tea.Msg {
@@ -183,12 +93,6 @@ func (m Model) loadSectionStepCmd() tea.Cmd {
 		client := m.taskClient
 		return func() tea.Msg {
 			response, err := client.ListByStory(context.Background(), projectID, storyID)
-			return SectionResultMsg{Kind: kind, Step: step, StoryID: storyID, Response: response, Err: err}
-		}
-	case sectionStepSprints:
-		client := m.sprintClient
-		return func() tea.Msg {
-			response, err := client.ListOpen(context.Background(), projectID)
 			return SectionResultMsg{Kind: kind, Step: step, StoryID: storyID, Response: response, Err: err}
 		}
 	}
@@ -208,23 +112,14 @@ func (m Model) applySectionResult(result SectionResultMsg) (Model, tea.Cmd) {
 
 	if message := sectionFailure(result.Err, result.Response); message != "" {
 		m.section.selector.fail(message)
-		if result.Step == sectionStepPrimary {
-			m.section.primary = m.section.selector
-		}
 		return m, nil
 	}
 	items, ok := sectionItems(result)
 	if !ok {
 		m.section.selector.fail("No se pudo interpretar la respuesta de la API.")
-		if result.Step == sectionStepPrimary {
-			m.section.primary = m.section.selector
-		}
 		return m, nil
 	}
 	m.section.selector.setItems(items)
-	if result.Step == sectionStepPrimary {
-		m.section.primary = m.section.selector
-	}
 	return m, nil
 }
 
@@ -247,27 +142,15 @@ func (m Model) updateSection(key tea.KeyMsg) (Model, tea.Cmd) {
 	action := m.section.selector.update(key)
 	switch action {
 	case selectorBack:
-		if m.section.step == sectionStepPrimary {
-			return m.leaveWorkspace()
-		}
-		if m.returnTo == returnStoryDetail && m.section.step == m.section.kind.firstStep() {
+		if m.section.step == m.section.kind.firstStep() {
 			return m.backToStoryDetail()
 		}
-		if m.section.preselected && m.section.step == m.section.kind.storyNextStep() {
-			return m.openBacklog()
-		}
-		if m.section.kind == sectionEffort && m.section.step == sectionStepMembers {
-			m.section.step = sectionStepTasks
-			m.section.selector = m.section.tasks
-			return m, nil
-		}
-		m.section.step = sectionStepPrimary
-		m.section.selector = m.section.primary
+		// The members of Esfuerzo are its only second selector: Esc restores the
+		// task list as it was (rows, filter, cursor) without another request.
+		m.section.step = sectionStepTasks
+		m.section.selector = m.section.tasks
 	case selectorRefresh:
 		m.section.selector.startLoading()
-		if m.section.step == sectionStepPrimary {
-			m.section.primary = m.section.selector
-		}
 		return m, m.loadSectionStepCmd()
 	case selectorChosen:
 		return m.chooseSectionItem()
@@ -280,14 +163,6 @@ func (m Model) updateSection(key tea.KeyMsg) (Model, tea.Cmd) {
 func (m Model) chooseSectionItem() (Model, tea.Cmd) {
 	item, ok := m.section.selector.selected()
 	if !ok {
-		return m, nil
-	}
-	if m.section.step == sectionStepPrimary {
-		m.section.selected = item
-		m.section.primary = m.section.selector
-		if next := m.section.kind.storyNextStep(); next != sectionStepPrimary {
-			return m.beginSectionStep(next)
-		}
 		return m, nil
 	}
 
@@ -326,11 +201,6 @@ func (m Model) beginSectionStep(step sectionStep) (Model, tea.Cmd) {
 
 func (m Model) viewSection() string {
 	switch m.section.step {
-	case sectionStepPrimary:
-		title := m.section.kind.title()
-		hint := m.section.kind.primaryHint()
-		emptyTitle, emptyHint := m.section.kind.primaryEmptyTitle(), m.section.kind.primaryEmptyHint()
-		return m.viewSelector(&m.section.selector, title, hint, emptyTitle, emptyHint)
 	case sectionStepMembers:
 		if m.section.kind == sectionPlanningPoker {
 			return m.viewPokerParticipants()
@@ -351,10 +221,6 @@ func (m Model) viewSection() string {
 			view += "\n\n" + hintStyle.Render("La historia no tiene tareas.")
 		}
 		return view
-	case sectionStepSprints:
-		return m.viewSelector(&m.section.selector, m.section.kind.title()+" · Sprint",
-			"Elegí el Sprint relacionado.", "No hay Sprints abiertos.",
-			"Creá un Sprint desde Sprints.")
 	default:
 		return ""
 	}
@@ -408,21 +274,6 @@ func (m Model) viewSelector(s *selector, title, hint, emptyTitle, emptyHint stri
 // sectionItems projects each response to the shared selector shape.
 func sectionItems(result SectionResultMsg) ([]selectorItem, bool) {
 	switch result.Step {
-	case sectionStepPrimary:
-		if result.Kind.primaryUsesStories() {
-			var listing struct {
-				Stories []Story `json:"stories"`
-			}
-			if err := json.Unmarshal(result.Response.Body, &listing); err != nil {
-				return nil, false
-			}
-			items := make([]selectorItem, 0, len(listing.Stories))
-			for _, story := range listing.Stories {
-				items = append(items, storySelectorItem(story))
-			}
-			return items, true
-		}
-		return sprintSelectorItems(result.Response.Body)
 	case sectionStepMembers:
 		var listing struct {
 			Members []Member `json:"members"`
@@ -460,8 +311,6 @@ func sectionItems(result SectionResultMsg) ([]selectorItem, bool) {
 			items = append(items, selectorItem{ID: task.ID, Label: task.Title, Meta: meta})
 		}
 		return items, true
-	case sectionStepSprints:
-		return sprintSelectorItems(result.Response.Body)
 	}
 	return nil, false
 }

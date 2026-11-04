@@ -213,10 +213,9 @@ func (m Model) registerEffortCmd(input EffortInput) tea.Cmd {
 	}
 }
 
-// applyEffortSave returns to the detail of the story the flow started from, or to
-// the reloaded story selector of the Esfuerzo tab, with a toast once the API
-// answers 201. Any other answer, or a transport error, keeps the form with its
-// data and explains why.
+// applyEffortSave returns to the detail of the story the flow started from, with
+// a toast, once the API answers 201. Any other answer, or a transport error,
+// keeps the form with its data and explains why.
 func (m Model) applyEffortSave(result effortSaveResult) (Model, tea.Cmd) {
 	if !m.effort.saving || result.seq != m.effort.seq {
 		return m, nil // an answer nobody is waiting for
@@ -229,12 +228,9 @@ func (m Model) applyEffortSave(result effortSaveResult) (Model, tea.Cmd) {
 		m.effort.err = describeBacklogFailure(result.response)
 	default:
 		m.toast = m.effortToast(result.response.Body)
-		if m.returnTo == returnStoryDetail {
-			// Registering effort changes none of the fields the detail shows, so
-			// it goes back to the same story without reloading the backlog.
-			return m.backToStoryDetail()
-		}
-		return m.openSection(sectionEffort)
+		// Registering effort changes none of the fields the detail shows, so it
+		// goes back to the same story without reloading the backlog.
+		return m.backToStoryDetail()
 	}
 	return m, nil
 }

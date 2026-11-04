@@ -17,14 +17,12 @@ const (
 	tabDashboard
 	tabBacklog
 	tabSprints
-	tabEstimation
-	tabEffort
 	tabDefects
 )
 
 // workspaceTabs is the tab bar order; the digit shortcut of a tab is its
 // position plus one.
-var workspaceTabs = []workspaceTab{tabDashboard, tabBacklog, tabSprints, tabEstimation, tabEffort, tabDefects}
+var workspaceTabs = []workspaceTab{tabDashboard, tabBacklog, tabSprints, tabDefects}
 
 func (t workspaceTab) title() string {
 	switch t {
@@ -34,10 +32,6 @@ func (t workspaceTab) title() string {
 		return "Backlog"
 	case tabSprints:
 		return "Sprints"
-	case tabEstimation:
-		return "Estimación"
-	case tabEffort:
-		return "Esfuerzo"
 	case tabDefects:
 		return "Defectos"
 	default:
@@ -54,10 +48,6 @@ func (m Model) openTab(t workspaceTab) (Model, tea.Cmd) {
 		return m.openBacklog()
 	case tabSprints:
 		return m.enterSprints()
-	case tabEstimation:
-		return m.openSection(sectionPlanningPoker)
-	case tabEffort:
-		return m.openSection(sectionEffort)
 	case tabDefects:
 		return m.openDefects()
 	default:
@@ -78,37 +68,25 @@ func (m Model) currentTab() workspaceTab {
 	case m.inStoryFlow():
 		// Assumption S1 (not confirmed by the user): the flows launched from the
 		// story detail keep Backlog highlighted. This is the only place where the
-		// rule lives; dropping it makes them highlight their own tab again.
+		// rule lives; highlighting another tab is a change to this branch alone.
 		return tabBacklog
 	case m.Screen == "defects" || strings.HasPrefix(m.Screen, "defect-"):
 		return tabDefects
-	case m.Screen == "planning-poker":
-		return tabEstimation
-	case m.Screen == "effort-form":
-		return tabEffort
-	case m.Screen == "section":
-		switch m.section.kind {
-		case sectionPlanningPoker:
-			return tabEstimation
-		case sectionEffort:
-			return tabEffort
-		}
 	}
 	return tabNone
 }
 
 // inStoryFlow reports whether the active screen is a step of an action launched
-// from the story detail (Estimar, Registrar esfuerzo or Reportar defecto), as
-// opposed to the same screens reached from the old Estimación and Esfuerzo tabs
-// or from the Defectos tab.
+// from the story detail (Estimar, Registrar esfuerzo or Reportar defecto). The
+// Estimar and Registrar esfuerzo screens are only reachable from the detail; the
+// defect form, its Sprint selector and its confirmation are shared with the
+// Defectos tab, so there the return target tells the two origins apart.
 func (m Model) inStoryFlow() bool {
-	if m.returnTo != returnStoryDetail {
-		return false
-	}
 	switch m.Screen {
-	case "section", "planning-poker", "effort-form",
-		"defect-create-form", "defect-sprint-select", "defect-create-confirm":
+	case "section", "planning-poker", "effort-form":
 		return true
+	case "defect-create-form", "defect-sprint-select", "defect-create-confirm":
+		return m.returnTo == returnStoryDetail
 	}
 	return false
 }
@@ -119,13 +97,11 @@ func (m Model) tabRoot() bool {
 	switch m.Screen {
 	case "dashboard", "backlog", "sprints", "defects":
 		return true
-	case "section":
-		return m.section.step == sectionStepPrimary && (m.section.kind == sectionPlanningPoker || m.section.kind == sectionEffort)
 	}
 	return false
 }
 
-// tabForKey maps Tab, Shift+Tab and the digits 1–6 to the target tab.
+// tabForKey maps Tab, Shift+Tab and the digits 1–4 to the target tab.
 func tabForKey(key tea.KeyMsg, current workspaceTab) (workspaceTab, bool) {
 	index := 0
 	for i, t := range workspaceTabs {

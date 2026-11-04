@@ -212,6 +212,36 @@ func TestStoryDetailEKeyDoesNothing(t *testing.T) {
 	}
 }
 
+// Esc on the detail goes back to the list without a request and with the filter
+// and the cursor it had when the detail was opened. It replaces the old check
+// that Esc from a P/E flow reloaded the backlog: the detail never reloads it.
+func TestStoryDetailEscReturnsToBacklogKeepingFilterAndCursorWithoutRequests(t *testing.T) {
+	url, rec := detailServer(t, detailStories())
+	m := openBacklogWithProject(t, url, "p1")
+	m, _ = apply(m, keyMsg("/"))
+	m = typeText(m, "p")
+	m = press(m, tea.KeyEnter) // stop searching, keep the filter: Pago and Perfil
+	m = press(m, tea.KeyDown)  // highlight Perfil
+	m = press(m, tea.KeyEnter) // detail of Perfil
+	if got := fieldValue(t, stripANSI(m.View()), "Título"); m.Screen != "story-detail" || got != "Perfil" {
+		t.Fatalf("Screen = %q, Título = %q, want the detail of Perfil", m.Screen, got)
+	}
+	before := len(rec.all())
+
+	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEsc})
+
+	if m.Screen != "backlog" || cmd != nil || len(rec.all()) != before {
+		t.Fatalf("Esc: Screen = %q, command = %v, want the backlog without requests", m.Screen, cmd != nil)
+	}
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "Buscar: p") || strings.Contains(view, "Login") {
+		t.Errorf("the filter should be kept (Pago and Perfil only):\n%s", view)
+	}
+	if !strings.Contains(view, "▸ Perfil") {
+		t.Errorf("the cursor should stay on Perfil:\n%s", view)
+	}
+}
+
 // footerOf is the key hints under the content panel of a rendered view.
 func footerOf(t *testing.T, view string) string {
 	t.Helper()

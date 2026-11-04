@@ -206,10 +206,6 @@ func (m Model) updateBacklog(key tea.KeyMsg) (Model, tea.Cmd) {
 			return m.editSelectedStory(stories)
 		case "r":
 			return m.startBacklogLoad()
-		case "P":
-			return m.openSectionForStory(sectionPlanningPoker, stories)
-		case "E":
-			return m.openSectionForStory(sectionEffort, stories)
 		default:
 			m.backlogFiltering = true
 			if value, ok := editText(m.backlogFilter, key); ok {
@@ -229,22 +225,6 @@ func (m Model) editSelectedStory(stories []Story) (Model, tea.Cmd) {
 	}
 	m.Screen, m.backlogForm = "backlog-form", newUpdateForm(stories[m.backlogCursor])
 	return m, nil
-}
-
-// openSectionForStory opens the Estimación or Esfuerzo tab with the highlighted
-// story already chosen, at the step that follows the story selector. Only the
-// usual GET of that step is issued; an empty list does nothing.
-func (m Model) openSectionForStory(kind sectionKind, stories []Story) (Model, tea.Cmd) {
-	if m.backlogCursor < 0 || m.backlogCursor >= len(stories) {
-		return m, nil
-	}
-	m, _ = m.openSection(kind)
-	m.section.selected = storySelectorItem(stories[m.backlogCursor])
-	m.section.preselected = true
-	if kind == sectionEffort {
-		return m.beginSectionStep(sectionStepTasks)
-	}
-	return m.beginSectionStep(sectionStepMembers)
 }
 
 func (m Model) updateBacklogForm(key tea.KeyMsg) (Model, tea.Cmd) {
