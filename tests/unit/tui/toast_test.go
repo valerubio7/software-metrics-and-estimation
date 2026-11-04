@@ -197,6 +197,28 @@ func TestSprintCreateRejectionKeepsTheForm(t *testing.T) {
 	}
 }
 
+func TestEffortToastDisappearsOnNextKeyInDetail(t *testing.T) {
+	server, _ := effortFlowServer(t, effortFlowOptions{})
+	m, _ := registeredFromDetail(t, server.URL)
+	const toast = "Esfuerzo registrado: 3.5 h el 2026-10-05 · Primera historia · Diseñar · Ada Lovelace"
+	if m.Screen != "story-detail" {
+		t.Fatalf("Screen = %q, want the detail", m.Screen)
+	}
+	if view := wideView(m); !strings.Contains(view, "✓ "+toast) {
+		t.Fatalf("the detail should show the toast:\n%s", view)
+	}
+
+	m = press(m, tea.KeyDown)
+
+	view := wideView(m)
+	if strings.Contains(view, toast) {
+		t.Errorf("the toast survived the next key:\n%s", view)
+	}
+	if line := focusedLine(view); !strings.Contains(line, "Registrar esfuerzo") {
+		t.Errorf("the key that cleared the toast should keep its effect (Down), highlighted line %q", line)
+	}
+}
+
 func TestEffortRegistrationReturnsToEffortRootWithToast(t *testing.T) {
 	server, rec := effortFlowServer(t, effortFlowOptions{})
 	m := openEffortFormFor(t, server.URL, 0, 1, 0)

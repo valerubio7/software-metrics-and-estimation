@@ -41,6 +41,16 @@ func (k sectionKind) primaryUsesStories() bool {
 	return false
 }
 
+// firstStep is the selector a flow starts at when it is launched from the story
+// detail, where the story is already chosen: the participants for Planning
+// Poker and the tasks for Esfuerzo.
+func (k sectionKind) firstStep() sectionStep {
+	if k == sectionEffort {
+		return sectionStepTasks
+	}
+	return sectionStepMembers
+}
+
 // storyNextStep is the selector that follows choosing a story; an unknown
 // kind keeps the primary step, so choosing a story is a no-op.
 func (k sectionKind) storyNextStep() sectionStep {
@@ -116,6 +126,7 @@ type sectionState struct {
 type SectionResultMsg struct {
 	Kind     sectionKind
 	Step     sectionStep
+	StoryID  string
 	Response APIResponse
 	Err      error
 }
@@ -125,6 +136,7 @@ type SectionResultMsg struct {
 // breadcrumb and the resume path can use it.
 func (m Model) openSection(kind sectionKind) (Model, tea.Cmd) {
 	m.section.kind = kind
+	m.returnTo = returnDefault
 	if m.activeProjectID == "" {
 		return m.leaveWorkspace()
 	}
@@ -153,42 +165,44 @@ func (m Model) loadSectionStepCmd() tea.Cmd {
 			client := m.backlogClient
 			return func() tea.Msg {
 				response, err := client.List(context.Background(), projectID)
-				return SectionResultMsg{Kind: kind, Step: step, Response: response, Err: err}
+				return SectionResultMsg{Kind: kind, Step: step, StoryID: storyID, Response: response, Err: err}
 			}
 		}
 		client := m.sprintClient
 		return func() tea.Msg {
 			response, err := client.ListOpen(context.Background(), projectID)
-			return SectionResultMsg{Kind: kind, Step: step, Response: response, Err: err}
+			return SectionResultMsg{Kind: kind, Step: step, StoryID: storyID, Response: response, Err: err}
 		}
 	case sectionStepMembers:
 		client := m.memberClient
 		return func() tea.Msg {
 			response, err := client.List(context.Background(), projectID)
-			return SectionResultMsg{Kind: kind, Step: step, Response: response, Err: err}
+			return SectionResultMsg{Kind: kind, Step: step, StoryID: storyID, Response: response, Err: err}
 		}
 	case sectionStepTasks:
 		client := m.taskClient
 		return func() tea.Msg {
 			response, err := client.ListByStory(context.Background(), projectID, storyID)
-			return SectionResultMsg{Kind: kind, Step: step, Response: response, Err: err}
+			return SectionResultMsg{Kind: kind, Step: step, StoryID: storyID, Response: response, Err: err}
 		}
 	case sectionStepSprints:
 		client := m.sprintClient
 		return func() tea.Msg {
 			response, err := client.ListOpen(context.Background(), projectID)
-			return SectionResultMsg{Kind: kind, Step: step, Response: response, Err: err}
+			return SectionResultMsg{Kind: kind, Step: step, StoryID: storyID, Response: response, Err: err}
 		}
 	}
 	return nil
 }
 
 // applySectionResult stores a response only when it still belongs to the active
-// section, step and in-flight request, discarding late responses after a
-// navigation change.
+// section, step, story and in-flight request, discarding late responses after a
+// navigation change. The story matters because a flow launched from the detail
+// of another story reuses the same section, step and loading state.
 func (m Model) applySectionResult(result SectionResultMsg) (Model, tea.Cmd) {
 	if m.Screen != "section" || m.section.kind != result.Kind ||
-		m.section.step != result.Step || !m.section.selector.loading {
+		m.section.step != result.Step || m.section.selected.ID != result.StoryID ||
+		!m.section.selector.loading {
 		return m, nil
 	}
 
@@ -235,6 +249,9 @@ func (m Model) updateSection(key tea.KeyMsg) (Model, tea.Cmd) {
 	case selectorBack:
 		if m.section.step == sectionStepPrimary {
 			return m.leaveWorkspace()
+		}
+		if m.returnTo == returnStoryDetail && m.section.step == m.section.kind.firstStep() {
+			return m.backToStoryDetail()
 		}
 		if m.section.preselected && m.section.step == m.section.kind.storyNextStep() {
 			return m.openBacklog()

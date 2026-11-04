@@ -374,6 +374,68 @@ func openEffortFormFor(t *testing.T, url string, storyIndex, taskIndex, memberIn
 	return m
 }
 
+// openEffortFormFromDetail walks the effort flow launched from the detail of the
+// storyIndex-th story: the task at taskIndex (0 is the whole-story row), then the
+// member at memberIndex, whose Enter opens the form.
+func openEffortFormFromDetail(t *testing.T, url string, storyIndex, taskIndex, memberIndex int) tui.Model {
+	t.Helper()
+	m := openStoryFlowWithProject(t, url, "p1", storyIndex, "t").WithClock(fixedClock)
+	for i := 0; i < taskIndex; i++ {
+		m = press(m, tea.KeyDown)
+	}
+	m = stepRunning(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	for i := 0; i < memberIndex; i++ {
+		m = press(m, tea.KeyDown)
+	}
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.Screen != "effort-form" {
+		t.Fatalf("Screen = %q after choosing the member, want effort-form", m.Screen)
+	}
+	return m
+}
+
+func TestEscFromEffortTasksReturnsToStoryDetailWithoutRequests(t *testing.T) {
+	server, rec := effortFlowServer(t, effortFlowOptions{})
+	m := openStoryFlowWithProject(t, server.URL, "p1", 0, "t")
+	before := len(rec.all())
+
+	m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEsc})
+
+	if m.Screen != "story-detail" || cmd != nil {
+		t.Fatalf("Screen = %q, cmd nil = %v, want story-detail without a command", m.Screen, cmd == nil)
+	}
+	if got := requestLines(rec, before); len(got) != 0 {
+		t.Errorf("Esc emitted requests: %v", got)
+	}
+	if got := fieldValue(t, stripANSI(m.View()), "Título"); got != "Primera historia" {
+		t.Errorf("Título = %q, want the story the flow started from", got)
+	}
+}
+
+func TestEffortEscChainEndsAtStoryDetail(t *testing.T) {
+	server, rec := effortFlowServer(t, effortFlowOptions{})
+	m := openEffortFormFromDetail(t, server.URL, 0, 1, 0)
+	before := len(rec.all())
+
+	for _, step := range []struct{ screen, want string }{
+		{"section", "Esfuerzo · Integrante"},
+		{"section", "Tarea de Primera historia o la historia completa."},
+		{"story-detail", "Primera historia"},
+	} {
+		var cmd tea.Cmd
+		m, cmd = apply(m, tea.KeyMsg{Type: tea.KeyEsc})
+		if cmd != nil {
+			t.Fatalf("Esc towards %q must not emit a command", step.want)
+		}
+		if view := stripANSI(m.View()); m.Screen != step.screen || !strings.Contains(view, step.want) {
+			t.Fatalf("Esc should reach %q (screen %q): %q", step.want, m.Screen, view)
+		}
+	}
+	if got := requestLines(rec, before); len(got) != 0 {
+		t.Errorf("walking back emitted requests: %v (the backlog must not reload)", got)
+	}
+}
+
 func TestEffortEscWalksBackThroughThreeLevels(t *testing.T) {
 	server, rec := effortFlowServer(t, effortFlowOptions{})
 	m := openEffortFormFor(t, server.URL, 0, 1, 0)

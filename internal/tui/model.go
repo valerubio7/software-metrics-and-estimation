@@ -56,6 +56,7 @@ type Model struct {
 	backlogForm          storyForm
 	backlogMessage       string
 	storyDetail          storyDetailState
+	returnTo             returnTarget // where the open story flow goes back to
 	backlogClient        *BacklogClient
 	storyPointsClient    *StoryPointsClient
 	sprintClient         *SprintClient
@@ -765,6 +766,7 @@ func (m Model) crumbParts() []string {
 			parts = append(parts, "Cerrar")
 		}
 	case "section", "planning-poker":
+		parts = append(parts, m.storyFlowCrumb()...)
 		parts = append(parts, m.section.kind.title())
 		switch m.section.step {
 		case sectionStepMembers:
@@ -779,6 +781,7 @@ func (m Model) crumbParts() []string {
 			parts = append(parts, "Sprint")
 		}
 	case "effort-form":
+		parts = append(parts, m.storyFlowCrumb()...)
 		parts = append(parts, sectionEffort.title(), "Registrar")
 	case "dashboard":
 		parts = append(parts, "Dashboard")
@@ -809,6 +812,15 @@ func (m Model) crumbParts() []string {
 		parts = append([]string{"Proyectos", m.projectLabel()}, parts...)
 	}
 	return parts
+}
+
+// storyFlowCrumb is the prefix of the breadcrumb of an action launched from the
+// story detail; the same screens reached from the old tabs have none.
+func (m Model) storyFlowCrumb() []string {
+	if m.inStoryFlow() {
+		return []string{"Backlog", "Detalle"}
+	}
+	return nil
 }
 
 func isProjectScreen(screen string) bool {

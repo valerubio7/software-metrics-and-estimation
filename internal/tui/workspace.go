@@ -47,6 +47,8 @@ func (t workspaceTab) title() string {
 
 // openTab enters the root screen of tab for the open project.
 func (m Model) openTab(t workspaceTab) (Model, tea.Cmd) {
+	// A tab root is never inside a story flow, so a stale return target is dropped.
+	m.returnTo = returnDefault
 	switch t {
 	case tabBacklog:
 		return m.openBacklog()
@@ -73,6 +75,11 @@ func (m Model) currentTab() workspaceTab {
 		return tabBacklog
 	case isSprintScreen(m.Screen):
 		return tabSprints
+	case m.inStoryFlow():
+		// Assumption S1 (not confirmed by the user): the flows launched from the
+		// story detail keep Backlog highlighted. This is the only place where the
+		// rule lives; dropping it makes them highlight their own tab again.
+		return tabBacklog
 	case m.Screen == "defects" || strings.HasPrefix(m.Screen, "defect-"):
 		return tabDefects
 	case m.Screen == "planning-poker":
@@ -88,6 +95,20 @@ func (m Model) currentTab() workspaceTab {
 		}
 	}
 	return tabNone
+}
+
+// inStoryFlow reports whether the active screen is a step of an action launched
+// from the story detail (Estimar or Registrar esfuerzo), as opposed to the same
+// screens reached from the old Estimación and Esfuerzo tabs.
+func (m Model) inStoryFlow() bool {
+	if m.returnTo != returnStoryDetail {
+		return false
+	}
+	switch m.Screen {
+	case "section", "planning-poker", "effort-form":
+		return true
+	}
+	return false
 }
 
 // tabRoot reports whether the active screen is the first screen of its tab,

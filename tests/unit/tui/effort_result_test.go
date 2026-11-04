@@ -92,6 +92,61 @@ func TestEffortToastFallsBackToFormValuesOnUnreadableBody(t *testing.T) {
 	}
 }
 
+// registeredFromDetail registers an effort launched from the detail of the first
+// story (task Diseñar, member Ada Lovelace) and applies the 201.
+func registeredFromDetail(t *testing.T, url string) (tui.Model, tea.Cmd) {
+	t.Helper()
+	return registerEffort(t, openEffortFormFromDetail(t, url, 0, 1, 0))
+}
+
+func TestEffortSuccessFromDetailReturnsToStoryDetailWithToast(t *testing.T) {
+	server, rec := effortFlowServer(t, effortFlowOptions{})
+	before := len(rec.all())
+	m := openEffortFormFromDetail(t, server.URL, 0, 1, 0)
+	flowRequests := len(rec.all())
+
+	m, cmd := registerEffort(t, m)
+
+	if m.Screen != "story-detail" || cmd != nil {
+		t.Fatalf("Screen = %q, cmd nil = %v, want the detail without a reload", m.Screen, cmd == nil)
+	}
+	view := wideView(m)
+	for _, want := range []string{"✓ Esfuerzo registrado: 3.5 h el 2026-10-05 · Primera historia · Diseñar · Ada Lovelace", "Primera historia"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("view lacks %q:\n%s", want, view)
+		}
+	}
+	// Only the POST left after the form opened: no story list, no metrics.
+	if got := requestLines(rec, flowRequests); len(got) != 1 || got[0] != "POST /projects/p1/stories/s1/effort-records" {
+		t.Errorf("requests after the form = %v (from %d), want only the POST", got, before)
+	}
+}
+
+func TestEffortSecondRegistrationFromDetailStartsWithInitialForm(t *testing.T) {
+	server, _ := effortFlowServer(t, effortFlowOptions{})
+	m, _ := registeredFromDetail(t, server.URL)
+	m = stepRunning(t, m.WithClock(fixedClock), keyMsg("t")) // tasks of Primera historia again
+	m = press(m, tea.KeyDown)
+	m = press(m, tea.KeyDown) // Probar
+	m = stepRunning(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = press(m, tea.KeyDown) // Grace Hopper
+	m, _ = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	view := stripANSI(m.View())
+	if m.Screen != "effort-form" || !strings.Contains(view, "Tarea: Probar") || !strings.Contains(view, "Integrante: Grace Hopper") {
+		t.Fatalf("a second registration should open its own form (screen %q): %q", m.Screen, view)
+	}
+	if date := effortDate(t, view); date != [3]string{"2026", "11", "01"} {
+		t.Errorf("the date should be today's, got %v", date)
+	}
+	for _, label := range []string{"Actividad", "Horas"} {
+		if value := fieldValue(t, view, label); value != "" {
+			t.Errorf("%s should start empty, got %q", label, value)
+		}
+	}
+	assertFocus(t, m, "Fecha")
+}
+
 func TestEffortSecondRegistrationStartsWithInitialForm(t *testing.T) {
 	server, _ := effortFlowServer(t, effortFlowOptions{})
 	m := registered(t, server.URL).WithClock(fixedClock)

@@ -35,6 +35,24 @@ func openSectionWithProject(t *testing.T, url, pid, digit string) tui.Model {
 	return m
 }
 
+// openStoryFlowWithProject goes browser -> pid -> Backlog -> detail of the
+// storyIndex-th story, presses actionKey (p or t) and applies the command of the
+// first step of the flow. The flow starts with the story already chosen, so it
+// never passes through a story selector (N1: additive until the old helper goes).
+func openStoryFlowWithProject(t *testing.T, url, pid string, storyIndex int, actionKey string) tui.Model {
+	t.Helper()
+	m := openStoryDetailWithProject(t, url, pid, storyIndex)
+	m, cmd := apply(m, keyMsg(actionKey))
+	if cmd == nil {
+		t.Fatalf("%s on the detail should issue the command of the first step", actionKey)
+	}
+	m = run(t, m, cmd)
+	if m.Screen != "section" {
+		t.Fatalf("Screen = %q after %s on the detail, want section", m.Screen, actionKey)
+	}
+	return m
+}
+
 // sectionServer answers GET /projects plus the paths supplied by the caller.
 func sectionServer(t *testing.T, routes map[string]string) *httptest.Server {
 	t.Helper()

@@ -153,6 +153,9 @@ func (m Model) selectProject(project ProjectSummary) (Model, tea.Cmd) {
 	m.activeProjectName = project.Name
 	m.activeProjectStatus = project.Status
 	m.message = ""
+	// The detail and the return target belong to the previous project's flow.
+	m.storyDetail = storyDetailState{}
+	m.returnTo = returnDefault
 	return m.openDashboard()
 }
 

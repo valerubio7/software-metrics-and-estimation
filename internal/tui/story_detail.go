@@ -7,10 +7,40 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// returnTarget is where a flow goes back to when it is cancelled from its first
+// step or completes. The zero value keeps each flow's own destination.
+type returnTarget int
+
+const (
+	returnDefault returnTarget = iota
+	returnStoryDetail
+)
+
 // storyDetailState references the story by ID; the story itself is always read
 // from m.backlogStories so the detail never shows stale data.
 type storyDetailState struct {
 	storyID string
+	cursor  int // highlighted action row
+}
+
+// storyAction is one action of the detail: its row, its shortcut and its help
+// come from this single table, so they cannot drift apart.
+type storyAction struct {
+	key, label, help string
+	open             func(Model, Story) (Model, tea.Cmd)
+}
+
+var storyActions = []storyAction{
+	{key: "p", label: "Estimar", help: "Estimar la historia con Planning Poker", open: openPokerForStory},
+	{key: "t", label: "Registrar esfuerzo", help: "Registrar esfuerzo de la historia", open: openEffortForStory},
+}
+
+func openPokerForStory(m Model, story Story) (Model, tea.Cmd) {
+	return m.openStoryFlow(sectionPlanningPoker, story)
+}
+
+func openEffortForStory(m Model, story Story) (Model, tea.Cmd) {
+	return m.openStoryFlow(sectionEffort, story)
 }
 
 // openStoryDetail opens the detail of the story highlighted in the backlog.
@@ -48,19 +78,86 @@ func (m Model) storyActionsAvailable() bool {
 }
 
 // updateStoryDetail handles the keys of the story detail. Esc goes back to the
-// backlog without reloading it, so its filter and cursor are kept.
+// backlog without reloading it, so its filter and cursor are kept. Every other
+// key acts only while the detail is ready: during a reload, after a failed one
+// or when the story is gone there are no actions to run.
 func (m Model) updateStoryDetail(key tea.KeyMsg) (Model, tea.Cmd) {
 	if key.Type == tea.KeyEsc {
 		m.Screen = "backlog"
+		return m, nil
+	}
+	if !m.storyActionsAvailable() {
+		return m, nil
+	}
+	story, _ := m.detailStory()
+	switch key.Type {
+	case tea.KeyUp:
+		if m.storyDetail.cursor > 0 {
+			m.storyDetail.cursor--
+		}
+	case tea.KeyDown:
+		if m.storyDetail.cursor < len(storyActions)-1 {
+			m.storyDetail.cursor++
+		}
+	case tea.KeyEnter:
+		return storyActions[m.storyDetail.cursor].open(m, story)
+	case tea.KeyRunes:
+		for _, action := range storyActions {
+			if string(key.Runes) == action.key {
+				return action.open(m, story)
+			}
+		}
 	}
 	return m, nil
 }
 
-// storyDetailBindings lists the keys of the detail. Esc is the only primary one,
-// so the footer ends in "? más"; the global keys (?, q, Ctrl+C) are added by
-// bindings().
+// openStoryFlow starts an action of the detail with the story already chosen:
+// the flow lives in the "section" shell and begins at its first step, so no
+// story selector is shown. Nothing happens unless the detail is ready.
+func (m Model) openStoryFlow(kind sectionKind, story Story) (Model, tea.Cmd) {
+	if !m.storyActionsAvailable() {
+		return m, nil
+	}
+	m.section = sectionState{kind: kind, selected: storySelectorItem(story)}
+	m.effort = effortState{seq: m.effort.seq}
+	m.pokerVotes = map[string]string{}
+	m.returnTo = returnStoryDetail
+	m.Screen = "section"
+	return m.beginSectionStep(kind.firstStep())
+}
+
+// reloadBacklogInPlace reloads the backlog without leaving the current screen,
+// so the detail rereads its story (and shows its loading and error states) when
+// something the detail displays has changed. It is the standard reload of the
+// backlog: the filter is kept and the cursor goes back to the top.
+func (m Model) reloadBacklogInPlace() (Model, tea.Cmd) {
+	return m.startBacklogLoad()
+}
+
+// backToStoryDetail returns to the detail of the story the flow started from,
+// keeping the highlighted action row. It never issues a request.
+func (m Model) backToStoryDetail() (Model, tea.Cmd) {
+	m.Screen = "story-detail"
+	return m, nil
+}
+
+// storyDetailBindings lists the keys valid on the detail. Once it is ready the
+// footer offers moving, Enter and Esc (the action shortcuts are visible in the
+// rows and in the help, so they never push Esc out of the footer); while it
+// reloads, shows an error or misses the story only Esc is valid. The global keys
+// (?, q, Ctrl+C) are added by bindings().
 func (m Model) storyDetailBindings(l *keyList) {
+	ready := m.storyActionsAvailable()
+	if ready {
+		l.add(keyNav, true, "↑/↓", "mover", "Mover la selección")
+		l.add(keyAction, true, "Enter", "elegir acción", "Ejecutar la acción resaltada")
+	}
 	l.add(keyNav, true, "Esc", "backlog", "Volver a la lista del backlog")
+	if ready {
+		for _, action := range storyActions {
+			l.add(keyAction, false, action.key, strings.ToLower(action.label), action.help)
+		}
+	}
 }
 
 func (m Model) viewStoryDetail() string {
@@ -98,6 +195,10 @@ func (m Model) viewStoryDetail() string {
 		{"Horas estimadas", hours},
 	} {
 		b.WriteString(detailField(field.label, field.value) + "\n")
+	}
+	b.WriteString("\n" + panelTitleStyle.Render("Acciones") + "\n")
+	for i, action := range storyActions {
+		b.WriteString(m.row(i == m.storyDetail.cursor, action.key+"  "+action.label) + "\n")
 	}
 	return b.String()
 }

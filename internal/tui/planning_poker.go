@@ -190,6 +190,10 @@ func (m Model) applyPokerSave(result pokerSaveResult) (Model, tea.Cmd) {
 		m.pokerMessage = "No se pudo interpretar la historia guardada."
 		return m, nil
 	}
+	if m.returnTo == returnStoryDetail {
+		m, _ = m.backToStoryDetail()
+		return m.reloadBacklogInPlace()
+	}
 	m.backlogStories = nil
 	m.Screen = "backlog"
 	m.backlogLoading = true
