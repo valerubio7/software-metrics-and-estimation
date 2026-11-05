@@ -3,3 +3,7 @@
 .codegraph/
 .pi/gentle-ai/sdd-preflight.json
 odd/
+
+# Artefactos de cobertura
+coverage.out
+coverage.html
