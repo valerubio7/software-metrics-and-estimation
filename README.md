@@ -4,6 +4,8 @@ API HTTP en Go y una TUI de terminal (Bubble Tea) para gestionar proyectos,
 backlog y Sprints, y para navegar el Dashboard, la estimación con Planning
 Poker, el esfuerzo y los defectos de cada proyecto.
 
+Manual de usuario: [`docs/user-manual.md`](docs/user-manual.md).
+
 ## Requisitos
 
 - Go 1.27+
