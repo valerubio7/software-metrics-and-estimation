@@ -34,25 +34,27 @@ type defectOptionsResult struct {
 	err       error
 }
 
-func (m Model) beginDefectCreation() (Model, tea.Cmd) {
+// beginDefectCreationForStory opens the defect form with the story of the
+// detail already chosen. The story is fixed for the whole flow, so the story
+// selector is never shown. When the detail belongs to a Sprint, that Sprint is
+// also preloaded as the detection Sprint.
+func (m Model) beginDefectCreationForStory(story Story) (Model, tea.Cmd) {
 	m.defectCreateForm = defectCreateForm{severityIndex: 0}
-	m.defectStorySelector, m.defectSprintSelector = selector{}, selector{}
-	// Creating from the Defectos tab goes back to its list; the story detail
-	// overrides this after the call. It is set here so it is never inherited.
-	m.returnTo = returnDefault
+	m.defectSprintSelector = selector{}
+	item := storySelectorItem(story)
+	m.defectCreateForm.storyID, m.defectCreateForm.storyLabel = item.ID, item.Label
+	if m.storyDetail.origin == storyDetailFromSprint {
+		m.defectCreateForm.sprintID = m.selectedSprintID
+		m.defectCreateForm.sprintLabel = m.sprintGoalByID(m.selectedSprintID)
+	}
 	m.Screen = "defect-create-form"
 	return m, nil
 }
 
-// cancelDefectCreation abandons the draft and goes back to where the creation
-// started: the story detail, or the defect list when it began in the Defectos
-// tab. It never issues a request; the next draft always starts empty.
+// cancelDefectCreation abandons the draft and goes back to the story detail.
+// It never issues a request; the next draft always starts empty.
 func (m Model) cancelDefectCreation() (Model, tea.Cmd) {
-	if m.returnTo == returnStoryDetail {
-		return m.backToStoryDetail()
-	}
-	m.Screen = "defects"
-	return m, nil
+	return m.backToStoryDetail()
 }
 
 func (m Model) updateDefectCreateForm(key tea.KeyMsg) (Model, tea.Cmd) {
@@ -71,9 +73,6 @@ func (m Model) updateDefectCreateForm(key tea.KeyMsg) (Model, tea.Cmd) {
 		if form.field < 2 {
 			form.field++
 			return m, nil
-		}
-		if form.storyID == "" {
-			return m.loadDefectStories()
 		}
 		if form.sprintID == "" {
 			return m.loadDefectOpenSprints()
@@ -103,20 +102,6 @@ func cycleOption(index, count, direction int) int {
 	return (index + direction + count) % count
 }
 
-func (m Model) loadDefectStories() (Model, tea.Cmd) {
-	m.Screen = "defect-story-select"
-	m.defectStorySelector = selector{}
-	m.defectStorySelector.startLoading()
-	m.defectRequestSequence++
-	requestID := m.defectRequestSequence
-	m.defectStoryRequestID = requestID
-	client, projectID := m.backlogClient, m.activeProjectID
-	return m, func() tea.Msg {
-		response, err := client.List(context.Background(), projectID)
-		return defectOptionsResult{step: "stories", projectID: projectID, requestID: requestID, response: response, err: err}
-	}
-}
-
 func (m Model) loadDefectOpenSprints() (Model, tea.Cmd) {
 	m.Screen = "defect-sprint-select"
 	m.defectSprintSelector = selector{}
@@ -131,31 +116,10 @@ func (m Model) loadDefectOpenSprints() (Model, tea.Cmd) {
 	}
 }
 
-func (m Model) updateDefectStorySelect(key tea.KeyMsg) (Model, tea.Cmd) {
-	switch m.defectStorySelector.update(key) {
-	case selectorBack:
-		m.Screen = "defect-create-form"
-	case selectorRefresh:
-		return m.loadDefectStories()
-	case selectorChosen:
-		item, ok := m.defectStorySelector.selected()
-		if ok {
-			m.defectCreateForm.storyID, m.defectCreateForm.storyLabel = item.ID, item.Label
-			return m.loadDefectOpenSprints()
-		}
-	}
-	return m, nil
-}
-
 func (m Model) updateDefectSprintSelect(key tea.KeyMsg) (Model, tea.Cmd) {
 	switch m.defectSprintSelector.update(key) {
 	case selectorBack:
-		if m.returnTo == returnStoryDetail {
-			// The story came preloaded from the detail: there is no story step to go back to.
-			m.Screen = "defect-create-form"
-		} else {
-			m.Screen = "defect-story-select"
-		}
+		m.Screen = "defect-create-form"
 	case selectorRefresh:
 		return m.loadDefectOpenSprints()
 	case selectorChosen:
@@ -173,31 +137,11 @@ func (m Model) applyDefectOptionsResult(result defectOptionsResult) (Model, tea.
 		return m, nil
 	}
 	switch result.step {
-	case "stories":
-		if m.Screen != "defect-story-select" || !m.defectStorySelector.loading || result.requestID != m.defectStoryRequestID {
-			return m, nil
-		}
-		if message := defectReadFailure(result.response, result.err); message != "" {
-			m.defectStorySelector.fail(message)
-			return m, nil
-		}
-		var listing struct {
-			Stories []Story `json:"stories"`
-		}
-		if err := json.Unmarshal(result.response.Body, &listing); err != nil {
-			m.defectStorySelector.fail(unreadableResponse(err))
-			return m, nil
-		}
-		items := make([]selectorItem, 0, len(listing.Stories))
-		for _, story := range listing.Stories {
-			items = append(items, storySelectorItem(story))
-		}
-		m.defectStorySelector.setItems(items)
 	case "sprints":
 		if m.Screen != "defect-sprint-select" || !m.defectSprintSelector.loading || result.requestID != m.defectSprintRequestID {
 			return m, nil
 		}
-		if message := defectReadFailure(result.response, result.err); message != "" {
+		if message := readFailure(result.response, result.err); message != "" {
 			m.defectSprintSelector.fail(message)
 			return m, nil
 		}
@@ -224,7 +168,7 @@ func (m Model) applyDefectOptionsResult(result defectOptionsResult) (Model, tea.
 	return m, nil
 }
 
-func defectReadFailure(response APIResponse, err error) string {
+func readFailure(response APIResponse, err error) string {
 	if err != nil {
 		return "Error de conexión: " + err.Error()
 	}
@@ -251,13 +195,11 @@ func (m Model) viewDefectCreateForm() string {
 		b.WriteString("Sprint de detección: " + f.sprintLabel + "\n")
 	}
 	b.WriteString("\n")
-	if f.storyID != "" && f.sprintID != "" {
+	if f.sprintID != "" {
 		b.WriteString(hintStyle.Render("Borrador sin registrar · Esc cancela."))
-	} else if f.storyID != "" {
-		// The story came preloaded from the detail: the last field leads to the Sprint.
-		b.WriteString(hintStyle.Render("Use ←/→ para cambiar severidad o estado; Enter en el último campo elige el Sprint de detección."))
 	} else {
-		b.WriteString(hintStyle.Render("Usá ←/→ para cambiar severidad o estado; Enter en el último campo elige la historia."))
+		// The Sprint came from the Sprint detail or is chosen in the next step.
+		b.WriteString(hintStyle.Render("Usá ←/→ para cambiar severidad o estado; Enter en el último campo elige el Sprint de detección."))
 	}
 	return b.String()
 }

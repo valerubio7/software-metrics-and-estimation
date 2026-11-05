@@ -20,7 +20,11 @@ func (m Model) row(selected bool, text string) string {
 	width := m.innerWidth()
 	marker := "  "
 	if selected {
-		marker = "▸ "
+		if m.quietSelection {
+			marker = "› "
+		} else {
+			marker = "▸ "
+		}
 		text = stripANSI(text)
 	}
 	line := marker + text
@@ -28,6 +32,9 @@ func (m Model) row(selected bool, text string) string {
 		line += strings.Repeat(" ", pad)
 	}
 	if selected {
+		if m.quietSelection {
+			return quietBarStyle.Render(line)
+		}
 		return selectedBarStyle.Render(line)
 	}
 	return rowStyle.Render(line)
@@ -209,6 +216,60 @@ func panel(title, body string) string {
 		content = panelTitleStyle.Render(title) + "\n" + body
 	}
 	return panelStyle.Render(content)
+}
+
+// sectionIntro returns the plain-language orientation of a root tab. Screens
+// that are not section roots return empty strings.
+func (m Model) sectionIntro() (what, can string) {
+	switch m.Screen {
+	case "backlog":
+		return "la lista priorizada de todo lo que el proyecto necesita, todavía sin fechas.",
+			"crear con n, editar con e y abrir una historia con Enter."
+	case "sprints":
+		return "un período de trabajo con un objetivo que agrupa las historias a completar.",
+			"abrir un Sprint con Enter, asignar con a, cerrar con x y ver el historial con h."
+	case "defects":
+		return "un problema detectado en una historia. Acá ves todos los del proyecto, incluso los de Sprints cerrados.",
+			"abrir con Enter y cambiar el estado con u. Para reportar uno, abrí una historia."
+	case "dashboard":
+		return "el avance del proyecto medido en historias, horas y defectos.",
+			"cambiar el ámbito con s, refrescar con r y descargar el PDF con d."
+	}
+	return "", ""
+}
+
+// sectionIntroView renders the orientation block wrapped to width, with the
+// label in its own column so the wrapped text stays aligned. It is empty for
+// screens that are not section roots.
+func (m Model) sectionIntroView(width int) string {
+	what, can := m.sectionIntro()
+	if what == "" {
+		return ""
+	}
+	if width <= 0 {
+		width = 80
+	}
+	return introLine("Qué es", what, width) + "\n" + introLine("Qué podés hacer", can, width)
+}
+
+func introLine(label, text string, width int) string {
+	const gap = 2
+	labelWidth := lipgloss.Width(label + ":")
+	bodyWidth := width - labelWidth - gap
+	if bodyWidth < 12 {
+		bodyWidth = 12
+	}
+	lines := wrapPlain(text, bodyWidth)
+	var b strings.Builder
+	b.WriteString(sectionLabelStyle.Render(label + ":"))
+	b.WriteString(strings.Repeat(" ", gap))
+	b.WriteString(lines[0])
+	for _, line := range lines[1:] {
+		b.WriteString("\n")
+		b.WriteString(strings.Repeat(" ", labelWidth+gap))
+		b.WriteString(line)
+	}
+	return b.String()
 }
 
 // emptyState renders a consistent placeholder for lists with no items.

@@ -369,10 +369,13 @@ func TestBacklogEmptyListShowsMessageAndKeepsNavigatorKeys(t *testing.T) {
 	server, _ := fakeBacklogAPI(t, apiStubs{list: stub{http.StatusOK, storiesBody(t, nil)}})
 	m := openBacklogWithProject(t, server.URL, "p1")
 	view := m.View()
-	for _, want := range []string{"El backlog no tiene historias.", "Presioná n para crear la primera historia.", "Esc vuelve a Proyectos"} {
+	for _, want := range []string{"El backlog no tiene historias.", "Presioná n para crear la primera historia."} {
 		if !strings.Contains(view, want) {
 			t.Errorf("View() = %q, want %q", view, want)
 		}
+	}
+	if footer := footerOf(t, stripANSI(view)); !strings.Contains(footer, "Esc proyectos") {
+		t.Errorf("footer %q does not offer the way back to Proyectos", footer)
 	}
 	for _, gone := range []string{"c cambia de proyecto", "c proyecto"} {
 		if strings.Contains(stripANSI(view), gone) {

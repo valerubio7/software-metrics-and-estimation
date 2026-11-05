@@ -8,20 +8,20 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func TestDefectCreateSuccessReturnsToListWithToast(t *testing.T) {
+func TestDefectCreateSuccessReturnsToStoryDetailWithToast(t *testing.T) {
 	model := NewModel("http://example.invalid")
 	model.Screen, model.activeProjectID = "defect-create-confirm", "p-1"
 	model, _ = model.submitDefectCreate()
 	if model.Screen != "defect-create-confirm" || !strings.Contains(stripANSI(model.View()), "Registrando defecto…") {
 		t.Fatalf("submission should stay on the confirmation with an indicator: screen=%q\n%s", model.Screen, stripANSI(model.View()))
 	}
-	updated, reload := model.Update(defectCreateResult{ProjectID: "p-1", RequestID: model.defectCreateRequestID, Response: APIResponse{StatusCode: http.StatusCreated, Body: []byte(`{"id":"defect-new"}`)}})
+	updated, cmd := model.Update(defectCreateResult{ProjectID: "p-1", RequestID: model.defectCreateRequestID, Response: APIResponse{StatusCode: http.StatusCreated, Body: []byte(`{"id":"defect-new"}`)}})
 	model = updated.(Model)
-	if model.Screen != "defects" || !model.defectLoading || reload == nil {
-		t.Fatalf("success = screen %q loading=%v reload nil=%v, want the list reloading", model.Screen, model.defectLoading, reload == nil)
+	if model.Screen != "story-detail" || cmd != nil {
+		t.Fatalf("success = screen %q cmd nil=%v, want the story detail without a request", model.Screen, cmd == nil)
 	}
 	if !strings.Contains(stripANSI(model.View()), "✓ Defecto registrado") {
-		t.Fatalf("list lacks the toast:\n%s", stripANSI(model.View()))
+		t.Fatalf("detail lacks the toast:\n%s", stripANSI(model.View()))
 	}
 	model = updateStatusTestModel(model, tea.KeyMsg{Type: tea.KeyDown})
 	if strings.Contains(stripANSI(model.View()), "Defecto registrado") {

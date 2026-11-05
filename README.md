@@ -41,16 +41,33 @@ API_URL='http://127.0.0.1:8080' go run ./cmd/tui
 La TUI arranca en el navegador de proyectos («Proyectos»). Si la API devuelve un
 único proyecto, la primera carga abre directamente su espacio de trabajo; al
 volver con `Esc` la TUI se queda en el navegador. `Enter` sobre un proyecto abre
-su espacio de trabajo en la pestaña Dashboard, con una línea con el nombre y el
-estado del proyecto y la barra de pestañas:
+su espacio de trabajo en la pestaña Dashboard, con una barra superior fija: la
+marca y el estado de la API, una línea con la ruta y el proyecto abierto, y la
+barra de pestañas:
 
 `1 Dashboard` · `2 Backlog` · `3 Sprints` · `4 Defectos`
+
+En terminales de 100 columnas o más la ruta y las pestañas comparten una sola
+línea; en terminales angostas van en dos. El cuerpo siempre ocupa el alto
+disponible, entre una línea de estado y el pie de atajos.
+
+La pantalla raíz de cada pestaña empieza con un bloque «Qué es / Qué podés
+hacer» que explica la sección en lenguaje simple y nombra sus acciones con las
+teclas. En terminales anchas, donde Backlog, Sprints y Defectos muestran dos
+paneles, el bloque aparece una sola vez arriba de ambos; los formularios,
+selectores y detalles no lo repiten.
 
 | Tecla               | Acción                                                     |
 | ------------------- | ---------------------------------------------------------- |
 | `Tab` / `Shift+Tab` | Pestaña siguiente / anterior (circular)                    |
 | `1`–`4`             | Abrir la pestaña de esa posición                           |
 | `Esc`               | En la raíz de una pestaña, volver a Proyectos              |
+
+En Backlog, Sprints y Defectos, una terminal ancha muestra dos paneles: la lista
+a la izquierda y el detalle del elemento resaltado a la derecha, de modo que
+moverse por la lista nunca hace perder el contexto. La lista marca la posición
+(`3/40`) y avisa con `▲`/`▼` cuántas filas quedan fuera de la vista; las listas
+largas se desplazan siguiendo al cursor.
 
 Las teclas de pestaña rigen en la pantalla raíz de cada pestaña; dentro de un
 flujo `Esc` retrocede un paso y, con un filtro en edición, los dígitos se
@@ -64,7 +81,7 @@ selectores de las pestañas) comparten el mismo patrón navegable:
 | ------------- | ------------------------------------------------------------- |
 | `↑` / `↓`     | Mover la selección                                            |
 | `Enter`       | Acción primaria de la fila (abrir, editar, desplegar)         |
-| `n`           | Crear                                                         |
+| `n`           | Crear (Backlog y Sprints)                                     |
 | `e`           | Editar (Proyectos y Backlog)                                  |
 | `Space`       | Marcar historias en la multiselección                         |
 | `/`           | Buscar; cualquier otro carácter también inicia la búsqueda    |
@@ -76,16 +93,20 @@ selectores de las pestañas) comparten el mismo patrón navegable:
 | `?`           | Ayuda                                                         |
 | `q` / `Ctrl+C`| Salir (`q` es texto dentro de un campo; `Ctrl+C` sale siempre) |
 
-El pie muestra como máximo cinco atajos, los principales de la pantalla, y
-agrega `? más` cuando hay otros. `?` abre la ayuda con todos los atajos válidos
-de la pantalla agrupados en «Navegación», «Acciones» y «General». En un filtro o
-un campo de texto, `?` es un carácter y el pie no lo ofrece.
+El pie muestra como máximo ocho atajos, los principales de la pantalla, y
+agrega `? más` cuando hay otros. `?` abre «Ayuda»: primero un glosario de
+conceptos (proyecto, backlog, historia, sprint, story points, tarea, esfuerzo y
+defecto) y después todos los atajos válidos de la pantalla agrupados en
+«Navegación», «Acciones» y «General». Si la ayuda no entra en el panel se
+desplaza con `↑`/`↓` y `PgUp`/`PgDn`; `Esc`, `Enter` o `?` la cierran. En un
+filtro o un campo de texto, `?` es un carácter y el pie no lo ofrece.
 
 Al terminar con éxito una escritura (proyecto, historia, Sprint, asignación,
 tarea, cierre, esfuerzo o defecto), la TUI vuelve a la pantalla de origen,
 recarga su lista y muestra un aviso que empieza con `✓`; el aviso desaparece con
-la siguiente tecla (las acciones del detalle de una historia vuelven al detalle,
-ver «Secciones»). Si la API rechaza la operación, el formulario conserva lo
+la siguiente tecla. Las acciones del detalle de una historia vuelven al detalle,
+salvo completar la historia, que vuelve a las historias del Sprint (ver
+«Secciones»). Si la API rechaza la operación, el formulario conserva lo
 escrito y muestra el motivo. Mientras se guarda, la pantalla indica
 «Guardando…» e ignora los reenvíos.
 
@@ -95,19 +116,21 @@ escrito y muestra el motivo. Mientras se guarda, la pantalla indica
 | ---------- | ------------------------------------------------------------- | ------ |
 | Dashboard  | estado y métricas del proyecto o de un Sprint (`s`)           | disponible (TUI-11, TUI-12) |
 | Backlog    | lista → detalle de la historia → Estimar, Registrar esfuerzo o Reportar defecto (crear con `n`, editar con `e`) | disponible |
-| Sprints    | Sprints abiertos → historias del Sprint → tareas; asignar, cerrar, historial | disponible |
-| Defectos   | listado/búsqueda → detalle; alta con historia y Sprint de detección; actualización de estado con Sprint de resolución si queda resuelto | disponible (TUI-09) |
+| Sprints    | Sprints abiertos → historias del Sprint → detalle de la historia con tareas y acciones de ejecución; asignar, cerrar, historial | disponible |
+| Defectos   | listado/búsqueda → detalle; actualización de estado con Sprint de resolución si queda resuelto | disponible (TUI-09) |
 
 Defectos permite consultar, filtrar y abrir el detalle del listado del proyecto,
-registrar un defecto mediante confirmación y cambiar su estado entre las opciones
-admitidas por la API. Los flujos que encadenan selectores consultan la API con
-`GET` y muestran estados de carga, vacío y error.
+y cambiar su estado entre las opciones admitidas por la API. El alta no se inicia
+desde esta pestaña: un defecto se reporta desde el detalle de una historia en
+Backlog o Sprints. Los flujos que encadenan selectores consultan la API con `GET`
+y muestran estados de carga, vacío y error.
 
 En el Backlog, `Enter` abre el detalle de la historia resaltada, `e` la edita,
 `n` crea una historia y `/` inicia la búsqueda; las demás letras no reservadas,
 incluidas `p`, `P` y `E`, también la inician. El detalle muestra los datos de la
 historia y ofrece tres acciones, que se eligen con `↑` / `↓` y `Enter` sobre su
-fila o con su atajo (no hacen nada mientras el backlog se recarga):
+fila o con su atajo (no hacen nada mientras la lista que abrió el detalle se
+recarga):
 
 | Tecla | Acción                                                                 |
 | ----- | ---------------------------------------------------------------------- |
@@ -116,12 +139,26 @@ fila o con su atajo (no hacen nada mientras el backlog se recarga):
 | `d`   | Reportar defecto (la historia ya viene elegida; luego el Sprint de detección) |
 
 `Esc` retrocede un nivel por vez: dentro de una acción vuelve al paso anterior y,
-desde el primero, al detalle; del detalle vuelve al Backlog conservando el filtro
-y el cursor. Al terminar una acción la TUI vuelve al detalle de la misma historia:
-tras estimar relee el backlog y el detalle muestra los Story Points nuevos; tras
-registrar el esfuerzo o el defecto muestra el aviso `✓`. Los defectos también se
-listan, abren y gestionan desde la pestaña Defectos, donde `n` conserva el alta con
-selector de historias.
+desde el primero, al detalle; del detalle vuelve a la lista que lo abrió (el
+Backlog o las historias del Sprint) conservando el filtro y el cursor. Al terminar
+una acción la TUI vuelve al detalle de la misma historia: tras estimar relee la
+lista que lo abrió y el detalle muestra los Story Points nuevos; tras registrar el
+esfuerzo o el defecto muestra el aviso `✓`. En el alta de defecto desde el
+Backlog se elige el Sprint de detección; si el detalle se abrió desde un Sprint,
+ese Sprint queda precargado y no se vuelve a consultar.
+
+El mismo detalle se abre con `Enter` desde las historias de un Sprint. En ese
+contexto muestra las tareas de la historia y agrega tres atajos:
+
+| Tecla | Acción                                                                 |
+| ----- | ---------------------------------------------------------------------- |
+| `n`   | Agregar tarea (título y horas; al crear vuelve al detalle y recarga)   |
+| `c`   | Completar la historia del Sprint                                       |
+| `r`   | Volver a consultar las tareas del detalle                              |
+
+La pestaña resaltada y la miga de pan siguen el origen del detalle: Backlog o
+Sprints. Defectos solo se resalta en su propia lista, en el detalle de un defecto
+y en el cambio de estado.
 
 Registrar esfuerzo envía el registro mediante `POST` y, ante el éxito, vuelve al
 detalle de la historia con un aviso que resume horas, fecha, historia, tarea e

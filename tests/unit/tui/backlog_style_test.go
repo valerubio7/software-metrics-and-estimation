@@ -144,7 +144,6 @@ func TestStyledBacklogEmptyAndLoadingMessagesAreMuted(t *testing.T) {
 	})
 	t.Run("picker loading", func(t *testing.T) {
 		view, _ := startBrowser("http://localhost:8080")
-		wantPlainBody(t, view.View(), "Enter abre el proyecto")
 		wantPlainBody(t, view.View(), "Cargando proyectos…")
 		wantStyled(t, view.View(), "Cargando proyectos…")
 	})
@@ -157,7 +156,6 @@ func TestStyledProjectPickerShowsStatusBadges(t *testing.T) {
 	m = run(t, m, load)
 	view := m.View()
 
-	wantPlainBody(t, view, "Enter abre el proyecto")
 	wantPlainBody(t, view, "Alpha")
 	wantPlainBody(t, view, "EN CURSO")
 	wantStyled(t, view, "Alpha")

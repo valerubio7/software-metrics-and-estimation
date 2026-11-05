@@ -41,11 +41,35 @@ var (
 				Foreground(onAccent).
 				Bold(true)
 
+	// Shell text: hints and notices that sit outside the content panel.
+	appHint = lipgloss.NewStyle().
+		Foreground(muted)
+
+	appHintDim = lipgloss.NewStyle().
+			Foreground(inkFaint)
+
+	appOK = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(ok)
+
+	appErr = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(danger)
+
+	appPaneMeta = lipgloss.NewStyle().
+			Foreground(muted)
+
 	// Selection bar: fills the content width so the focus reads as a bar.
 	selectedBarStyle = lipgloss.NewStyle().
 				Background(accent).
 				Foreground(onAccent).
 				Bold(true)
+
+	// Secondary selection: the master list while the detail pane owns focus.
+	// It stays visible without competing with the bright focus bar.
+	quietBarStyle = lipgloss.NewStyle().
+			Background(line).
+			Foreground(ink)
 
 	rowStyle = lipgloss.NewStyle().
 			Foreground(ink)

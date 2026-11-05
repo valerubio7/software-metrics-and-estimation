@@ -145,8 +145,8 @@ func (m Model) enterSprints() (Model, tea.Cmd) {
 	return m, m.openSprintsCmd()
 }
 
-// openAssignedStories shows the stories assigned to a Sprint, where Enter creates
-// tasks and c completes them.
+// openAssignedStories shows the stories assigned to a Sprint, where Enter opens
+// the story detail and c completes the highlighted story.
 func (m Model) openAssignedStories(sprintID string) (Model, tea.Cmd) {
 	m.Screen, m.sprintStoriesLoading, m.sprintStories = "sprint-assigned-list", true, nil
 	m.sprintCursor, m.sprintFilter, m.sprintFiltering, m.sprintMessage = 0, "", false, ""
@@ -362,8 +362,8 @@ func (m Model) updateSprintForm(key tea.KeyMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// updateAssignedStories drives the stories of a Sprint: Enter creates tasks for
-// the highlighted story and c completes it.
+// updateAssignedStories drives the stories of a Sprint: Enter opens the detail
+// of the highlighted story and c completes it.
 func (m Model) updateAssignedStories(key tea.KeyMsg) (Model, tea.Cmd) {
 	stories := m.visibleSprintStories()
 
@@ -408,7 +408,7 @@ func (m Model) updateAssignedStories(key tea.KeyMsg) (Model, tea.Cmd) {
 			m.sprintCursor++
 		}
 	case tea.KeyEnter:
-		return m.openTaskForm(stories)
+		return m.openSprintStoryDetail(stories)
 	case tea.KeyRunes:
 		switch string(key.Runes) {
 		case "/":
@@ -428,29 +428,21 @@ func (m Model) updateAssignedStories(key tea.KeyMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// openTaskForm opens the task form for the highlighted story, or does nothing on
-// an empty list.
-func (m Model) openTaskForm(stories []Story) (Model, tea.Cmd) {
-	if m.sprintCursor < 0 || m.sprintCursor >= len(stories) {
-		return m, nil
-	}
-	m.taskStoryID = stories[m.sprintCursor].ID
-	m.taskTitle, m.taskHours, m.taskField, m.Screen = "", "", 0, "sprint-task-form"
-	m.sprintMessage = ""
-	return m, nil
-}
-
 // completeSelectedStory sends the completion of the highlighted story; the API
 // owns the business rules for the closure state.
 func (m Model) completeSelectedStory(stories []Story) (Model, tea.Cmd) {
 	if m.sprintCursor < 0 || m.sprintCursor >= len(stories) {
 		return m, nil
 	}
-	storyID := stories[m.sprintCursor].ID
+	return m.completeStory(stories[m.sprintCursor])
+}
+
+// completeStory sends the completion of a story in the open Sprint.
+func (m Model) completeStory(story Story) (Model, tea.Cmd) {
 	client, projectID, sprintID := m.sprintClient, m.activeProjectID, m.selectedSprintID
-	m.sprintSaving, m.sprintMessage, m.sprintSavingLabel = true, "", stories[m.sprintCursor].Title
+	m.sprintSaving, m.sprintMessage, m.sprintSavingLabel = true, "", story.Title
 	return m, func() tea.Msg {
-		response, err := client.Complete(context.Background(), projectID, sprintID, storyID)
+		response, err := client.Complete(context.Background(), projectID, sprintID, story.ID)
 		return SprintResultMsg{Op: "complete", Response: response, Err: err}
 	}
 }
@@ -628,8 +620,10 @@ func (m Model) applySprintResult(result SprintResultMsg) (Model, tea.Cmd) {
 		return m, nil
 	case "backlog", "assigned":
 		m.sprintStoriesLoading = false
-		m.Screen = "sprint-story-select"
-		if result.Op == "assigned" {
+		reloadingDetail := result.Op == "assigned" && m.Screen == "story-detail"
+		if result.Op == "backlog" {
+			m.Screen = "sprint-story-select"
+		} else if !reloadingDetail {
 			m.Screen = "sprint-assigned-list"
 		}
 		if message, failed := sprintFailure(result); failed {
@@ -641,7 +635,13 @@ func (m Model) applySprintResult(result SprintResultMsg) (Model, tea.Cmd) {
 			m.sprintMessage = "No se pudo interpretar la respuesta de la API."
 			return m, nil
 		}
-		m.sprintStories, m.sprintCursor = listed, 0
+		if reloadingDetail {
+			// Keep the list selection that opened the detail; the detail itself
+			// rereads the story from the refreshed collection.
+			m.sprintStories = listed
+		} else {
+			m.sprintStories, m.sprintCursor = listed, 0
+		}
 		if result.Op == "backlog" {
 			m.selectedStories = map[string]bool{}
 		}
@@ -664,7 +664,12 @@ func (m Model) applySprintResult(result SprintResultMsg) (Model, tea.Cmd) {
 		m.toast = "Historias asignadas al Sprint: " + goal
 	case "tasks":
 		m.toast = "Tarea creada: " + m.sprintSavingLabel
-		return m.openAssignedStories(m.selectedSprintID)
+		if m.storyDetail.storyID == "" || m.storyDetail.origin != storyDetailFromSprint {
+			return m.openAssignedStories(m.selectedSprintID)
+		}
+		m.Screen = "story-detail"
+		m.storyDetail.tasksLoading, m.storyDetail.tasksMessage = true, ""
+		return m, m.loadStoryTasksCmd(m.storyDetail.storyID)
 	case "complete":
 		m.toast = "Historia completada: " + m.sprintSavingLabel
 		return m.openAssignedStories(m.selectedSprintID)

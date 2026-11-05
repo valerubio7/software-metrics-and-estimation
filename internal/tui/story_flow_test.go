@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 
@@ -237,75 +238,134 @@ func TestSectionResultWithMatchingStoryIDStillApplies(t *testing.T) {
 	}
 }
 
-func TestSelectProjectResetsStoryDetailAndReturnTo(t *testing.T) {
+func TestSprintStoryDetailAppliesItsTasks(t *testing.T) {
+	m := detailModel()
+	m.Screen = "story-detail"
+	m.sprintStories = []Story{{ID: "s1", Title: "Login"}}
+	m.storyDetail = storyDetailState{storyID: "s1", origin: storyDetailFromSprint, tasksLoading: true}
+
+	m, _ = m.applyStoryTasks(storyTasksResult{StoryID: "s1", Response: APIResponse{
+		StatusCode: http.StatusOK,
+		Body:       []byte(`{"tasks":[{"id":"t1","title":"Diseñar","estimated_hours":2}]}`),
+	}})
+
+	if len(m.storyDetail.tasks) != 1 || m.storyDetail.tasks[0].Title != "Diseñar" {
+		t.Fatalf("tasks = %+v, want the task of the story", m.storyDetail.tasks)
+	}
+	if view := m.View(); !strings.Contains(view, "Diseñar") || !strings.Contains(view, "2 h") {
+		t.Errorf("the detail should render the tasks:\n%s", view)
+	}
+}
+
+func TestSprintStoryDetailDiscardsTasksOfAnotherStory(t *testing.T) {
+	m := detailModel()
+	m.Screen = "story-detail"
+	m.storyDetail = storyDetailState{storyID: "s1", origin: storyDetailFromSprint, tasksLoading: true}
+
+	m, _ = m.applyStoryTasks(storyTasksResult{StoryID: "s2", Response: APIResponse{
+		StatusCode: http.StatusOK,
+		Body:       []byte(`{"tasks":[{"id":"t1","title":"Diseñar"}]}`),
+	}})
+
+	if len(m.storyDetail.tasks) != 0 || !m.storyDetail.tasksLoading {
+		t.Errorf("tasks = %+v loading = %v, want an unanswered request for the open detail", m.storyDetail.tasks, m.storyDetail.tasksLoading)
+	}
+}
+
+func TestCompletingFromSprintDetailSendsCompletion(t *testing.T) {
+	m := detailModel()
+	m.Screen = "story-detail"
+	m.activeProjectID = "p1"
+	m.selectedSprintID = "sp1"
+	m.sprintStories = []Story{{ID: "s1", Title: "Login"}}
+	m.storyDetail = storyDetailState{storyID: "s1", origin: storyDetailFromSprint, cursor: 4}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = updated.(Model)
+	if cmd == nil {
+		t.Fatal("c on the Sprint detail should send the completion")
+	}
+	if result, ok := cmd().(SprintResultMsg); !ok || result.Op != "complete" {
+		t.Fatalf("command result = %#v, want a complete Sprint result", cmd())
+	}
+
+	updated, reload := m.Update(SprintResultMsg{Op: "complete", Response: APIResponse{StatusCode: http.StatusCreated, Body: []byte(`{}`)}})
+	m = updated.(Model)
+	if m.Screen != "sprint-assigned-list" || reload == nil || !strings.Contains(m.toast, "Historia completada") {
+		t.Fatalf("completion = screen %q reload nil %v toast %q, want the Sprint stories with a notice", m.Screen, reload == nil, m.toast)
+	}
+}
+
+func TestTaskCreationFromSprintDetailReturnsToDetail(t *testing.T) {
+	m := detailModel()
+	m.Screen = "sprint-task-form"
+	m.activeProjectID = "p1"
+	m.storyDetail = storyDetailState{storyID: "s1", origin: storyDetailFromSprint}
+	m.sprintSaving, m.sprintSavingLabel = true, "Diseñar"
+
+	updated, cmd := m.Update(SprintResultMsg{Op: "tasks", Response: APIResponse{StatusCode: http.StatusCreated, Body: []byte(`{}`)}})
+	m = updated.(Model)
+
+	if m.Screen != "story-detail" || !m.storyDetail.tasksLoading || cmd == nil {
+		t.Fatalf("task creation = screen %q loading %v cmd nil %v, want the detail reloading its tasks", m.Screen, m.storyDetail.tasksLoading, cmd == nil)
+	}
+	if !strings.Contains(m.toast, "Tarea creada: Diseñar") {
+		t.Errorf("toast = %q, want the task notice", m.toast)
+	}
+}
+
+func TestSelectProjectResetsStoryDetail(t *testing.T) {
 	m := detailModel()
 	m.storyDetail.cursor = 1
-	m.returnTo = returnStoryDetail
 
 	next, _ := m.selectProject(ProjectSummary{ID: "p2", Name: "Beta", Status: "planned"})
 
-	if next.storyDetail != (storyDetailState{}) || next.returnTo != returnDefault {
-		t.Errorf("storyDetail = %+v, returnTo = %v, want the zero values after changing project", next.storyDetail, next.returnTo)
+	if next.storyDetail.storyID != "" || next.storyDetail.origin != storyDetailFromBacklog || next.storyDetail.tasks != nil {
+		t.Errorf("storyDetail = %+v, want the zero value after changing project", next.storyDetail)
 	}
 	if next.activeProjectID != "p2" {
 		t.Errorf("activeProjectID = %q, want p2", next.activeProjectID)
 	}
 }
 
-func TestOpenTabResetsReturnTo(t *testing.T) {
-	for _, tab := range workspaceTabs {
-		t.Run(tab.title(), func(t *testing.T) {
-			m := detailModel()
-			m.returnTo = returnStoryDetail
-
-			next, _ := m.openTab(tab)
-
-			if next.returnTo != returnDefault {
-				t.Errorf("returnTo = %v after opening %s, want returnDefault", next.returnTo, tab.title())
-			}
-		})
-	}
-}
-
 // flowScreenModel builds the model on screen with the flow state of a story flow
-// of kind at step, started from origin.
-func flowScreenModel(screen string, kind sectionKind, step sectionStep, origin returnTarget) Model {
+// of kind at step, started from a detail opened from origin.
+func flowScreenModel(screen string, kind sectionKind, step sectionStep, origin storyDetailOrigin) Model {
 	m := detailModel()
 	m.Screen = screen
 	m.section.kind, m.section.step = kind, step
-	m.returnTo = origin
+	m.storyDetail.origin = origin
 	return m
 }
 
 func TestCurrentTabAndCrumbPerScreenAndOrigin(t *testing.T) {
-	const flow = "Proyectos › Alpha › Backlog › Detalle"
+	const (
+		backlogFlow = "Proyectos › Alpha › Backlog › Detalle"
+		sprintFlow  = "Proyectos › Alpha › Sprints › Historias › Detalle"
+	)
 	for _, tc := range []struct {
 		name     string
 		m        Model
 		wantTab  workspaceTab
 		wantPath string
 	}{
-		{"detalle", flowScreenModel("story-detail", "", sectionStepNone, returnDefault), tabBacklog, flow},
-		{"Estimar participantes desde el detalle", flowScreenModel("section", sectionPlanningPoker, sectionStepMembers, returnStoryDetail), tabBacklog, flow + " › Estimación › Participantes"},
-		{"Planning Poker desde el detalle", flowScreenModel("planning-poker", sectionPlanningPoker, sectionStepMembers, returnStoryDetail), tabBacklog, flow + " › Estimación › Participantes"},
-		{"Esfuerzo tareas desde el detalle", flowScreenModel("section", sectionEffort, sectionStepTasks, returnStoryDetail), tabBacklog, flow + " › Esfuerzo › Tareas"},
-		{"Esfuerzo integrantes desde el detalle", flowScreenModel("section", sectionEffort, sectionStepMembers, returnStoryDetail), tabBacklog, flow + " › Esfuerzo › Integrante"},
-		{"formulario de esfuerzo desde el detalle", flowScreenModel("effort-form", sectionEffort, sectionStepMembers, returnStoryDetail), tabBacklog, flow + " › Esfuerzo › Registrar"},
-		{"formulario de defecto desde el detalle", flowScreenModel("defect-create-form", "", sectionStepNone, returnStoryDetail), tabBacklog, flow + " › Registrar defecto"},
-		{"selector de Sprints del defecto desde el detalle", flowScreenModel("defect-sprint-select", "", sectionStepNone, returnStoryDetail), tabBacklog, flow + " › Elegir Sprint de detección"},
-		{"confirmación del defecto desde el detalle", flowScreenModel("defect-create-confirm", "", sectionStepNone, returnStoryDetail), tabBacklog, flow + " › Confirmar registro"},
-		// [caracterización] Created from the Defectos tab, the same screens keep
-		// highlighting Defectos with their own breadcrumb.
-		{"formulario de defecto desde Defectos", flowScreenModel("defect-create-form", "", sectionStepNone, returnDefault), tabDefects, "Proyectos › Alpha › Defectos › Registrar defecto"},
-		{"selector de historias del defecto desde Defectos", flowScreenModel("defect-story-select", "", sectionStepNone, returnDefault), tabDefects, "Proyectos › Alpha › Defectos › Elegir historia"},
-		{"selector de Sprints del defecto desde Defectos", flowScreenModel("defect-sprint-select", "", sectionStepNone, returnDefault), tabDefects, "Proyectos › Alpha › Defectos › Elegir Sprint de detección"},
-		{"confirmación del defecto desde Defectos", flowScreenModel("defect-create-confirm", "", sectionStepNone, returnDefault), tabDefects, "Proyectos › Alpha › Defectos › Confirmar registro"},
-		{"lista de defectos", flowScreenModel("defects", "", sectionStepNone, returnDefault), tabDefects, "Proyectos › Alpha › Defectos"},
-		{"detalle de un defecto", flowScreenModel("defect-detail", "", sectionStepNone, returnDefault), tabDefects, "Proyectos › Alpha › Defectos › Detalle"},
+		{"detalle desde Backlog", flowScreenModel("story-detail", "", sectionStepNone, storyDetailFromBacklog), tabBacklog, backlogFlow},
+		{"detalle desde Sprints", flowScreenModel("story-detail", "", sectionStepNone, storyDetailFromSprint), tabSprints, sprintFlow},
+		{"Estimar participantes desde el detalle", flowScreenModel("section", sectionPlanningPoker, sectionStepMembers, storyDetailFromBacklog), tabBacklog, backlogFlow + " › Estimación › Participantes"},
+		{"Planning Poker desde el detalle", flowScreenModel("planning-poker", sectionPlanningPoker, sectionStepMembers, storyDetailFromBacklog), tabBacklog, backlogFlow + " › Estimación › Participantes"},
+		{"Esfuerzo tareas desde el detalle", flowScreenModel("section", sectionEffort, sectionStepTasks, storyDetailFromBacklog), tabBacklog, backlogFlow + " › Esfuerzo › Tareas"},
+		{"Esfuerzo integrantes desde el detalle", flowScreenModel("section", sectionEffort, sectionStepMembers, storyDetailFromBacklog), tabBacklog, backlogFlow + " › Esfuerzo › Integrante"},
+		{"formulario de esfuerzo desde el detalle", flowScreenModel("effort-form", sectionEffort, sectionStepMembers, storyDetailFromBacklog), tabBacklog, backlogFlow + " › Esfuerzo › Registrar"},
+		{"formulario de defecto desde el detalle", flowScreenModel("defect-create-form", "", sectionStepNone, storyDetailFromBacklog), tabBacklog, backlogFlow + " › Registrar defecto"},
+		{"selector de Sprints del defecto desde el detalle", flowScreenModel("defect-sprint-select", "", sectionStepNone, storyDetailFromBacklog), tabBacklog, backlogFlow + " › Elegir Sprint de detección"},
+		{"confirmación del defecto desde el detalle", flowScreenModel("defect-create-confirm", "", sectionStepNone, storyDetailFromBacklog), tabBacklog, backlogFlow + " › Confirmar registro"},
+		{"Estimar desde un detalle de Sprints", flowScreenModel("section", sectionPlanningPoker, sectionStepMembers, storyDetailFromSprint), tabSprints, sprintFlow + " › Estimación › Participantes"},
+		{"formulario de esfuerzo desde un detalle de Sprints", flowScreenModel("effort-form", sectionEffort, sectionStepMembers, storyDetailFromSprint), tabSprints, sprintFlow + " › Esfuerzo › Registrar"},
+		{"formulario de defecto desde un detalle de Sprints", flowScreenModel("defect-create-form", "", sectionStepNone, storyDetailFromSprint), tabSprints, sprintFlow + " › Registrar defecto"},
+		{"lista de defectos", flowScreenModel("defects", "", sectionStepNone, storyDetailFromBacklog), tabDefects, "Proyectos › Alpha › Defectos"},
+		{"detalle de un defecto", flowScreenModel("defect-detail", "", sectionStepNone, storyDetailFromBacklog), tabDefects, "Proyectos › Alpha › Defectos › Detalle"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// Assumption S1 (unconfirmed by the user): the flows that start from the
-			// detail highlight Backlog; the rule lives only in currentTab.
 			if got := tc.m.currentTab(); got != tc.wantTab {
 				t.Errorf("currentTab() = %v (%q), want %v (%q)", got, got.title(), tc.wantTab, tc.wantTab.title())
 			}
@@ -316,13 +376,22 @@ func TestCurrentTabAndCrumbPerScreenAndOrigin(t *testing.T) {
 	}
 }
 
-func TestCurrentTabOfStoryDetailIsBacklog(t *testing.T) {
-	m := detailModel()
+func TestCurrentTabOfStoryDetailFollowsOrigin(t *testing.T) {
+	for _, tc := range []struct {
+		origin storyDetailOrigin
+		want   workspaceTab
+	}{
+		{storyDetailFromBacklog, tabBacklog},
+		{storyDetailFromSprint, tabSprints},
+	} {
+		m := detailModel()
+		m.storyDetail.origin = tc.origin
 
-	if got := m.currentTab(); got != tabBacklog {
-		t.Fatalf("currentTab() = %v, want tabBacklog (%v)", got, tabBacklog)
-	}
-	if m.tabRoot() {
-		t.Error("the story detail must not be a tab root: Tab and the digits must not act there")
+		if got := m.currentTab(); got != tc.want {
+			t.Errorf("origin %v: currentTab() = %v, want %v", tc.origin, got, tc.want)
+		}
+		if m.tabRoot() {
+			t.Error("the story detail must not be a tab root: Tab and the digits must not act there")
+		}
 	}
 }

@@ -10,14 +10,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func TestDefectCreationPostsOnceAfterExplicitConfirmationAndReloads(t *testing.T) {
+func TestDefectCreationPostsOnceAfterExplicitConfirmation(t *testing.T) {
 	var requests []string
 	var posted map[string]string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r.Method+" "+r.URL.Path)
 		switch r.URL.Path {
-		case "/projects/p-1/stories":
-			_, _ = w.Write([]byte(`{"stories":[{"id":"story-1","title":"First story"},{"id":"story-2","title":"Chosen story"}]}`))
 		case "/projects/p-1/sprints/open":
 			_, _ = w.Write([]byte(`{"sprints":[{"id":"sprint-open","sprint_goal":"Open sprint","is_closed":false},{"id":"sprint-closed","sprint_goal":"Closed sprint","is_closed":true}]}`))
 		case "/projects/p-1/defects":
@@ -29,7 +27,8 @@ func TestDefectCreationPostsOnceAfterExplicitConfirmationAndReloads(t *testing.T
 				_, _ = w.Write([]byte(`{"id":"defect-new","project_id":"p-1","story_id":"story-2","sprint_id":"sprint-open","description":"Cache crash","severity":"media","status":"en_correccion"}`))
 				return
 			}
-			_, _ = w.Write([]byte(`{"project_id":"p-1","defects":[{"id":"defect-new","description":"Cache crash","severity":"media","status":"en_correccion","story_id":"story-2","sprint_id":"sprint-open","resolution_sprint_id":null}]}`))
+			t.Errorf("unexpected GET on the defect collection")
+			http.NotFound(w, r)
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 			http.NotFound(w, r)
@@ -38,8 +37,10 @@ func TestDefectCreationPostsOnceAfterExplicitConfirmationAndReloads(t *testing.T
 	defer server.Close()
 
 	model := NewModel(server.URL)
-	model.Screen, model.activeProjectID = "defects", "p-1"
-	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	model.Screen, model.activeProjectID = "story-detail", "p-1"
+	model.backlogStories = []Story{{ID: "story-2", Title: "Chosen story"}}
+	model.storyDetail = storyDetailState{storyID: "story-2"}
+	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
 	for _, r := range "Cache crash" {
 		model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
@@ -47,17 +48,10 @@ func TestDefectCreationPostsOnceAfterExplicitConfirmationAndReloads(t *testing.T
 	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyRight})
 	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyTab})
 	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyRight})
-	updated, storiesCmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	if storiesCmd == nil {
-		t.Fatal("description form did not load project stories")
-	}
-	model = updateDefectTestModel(model, storiesCmd())
-	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyDown})
 	updated, sprintsCmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
 	if sprintsCmd == nil {
-		t.Fatal("story selection did not load detection Sprints")
+		t.Fatal("description form did not load detection Sprints")
 	}
 	model = updateDefectTestModel(model, sprintsCmd())
 	if len(model.defectSprintSelector.items) != 1 || model.defectSprintSelector.items[0].ID != "sprint-open" {
@@ -69,7 +63,7 @@ func TestDefectCreationPostsOnceAfterExplicitConfirmationAndReloads(t *testing.T
 	if model.Screen != "defect-create-confirm" || confirmCmd != nil {
 		t.Fatalf("draft confirmation = screen %q, command nil %v", model.Screen, confirmCmd == nil)
 	}
-	if got := strings.Join(requests, "|"); got != "GET /projects/p-1/stories|GET /projects/p-1/sprints/open" {
+	if got := strings.Join(requests, "|"); got != "GET /projects/p-1/sprints/open" {
 		t.Fatalf("requests before confirmation = %q", got)
 	}
 	updated, createCmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
@@ -79,29 +73,22 @@ func TestDefectCreationPostsOnceAfterExplicitConfirmationAndReloads(t *testing.T
 	}
 	updated, duplicate := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
 	model = updated.(Model)
-	if duplicate != nil || len(requests) != 2 {
+	if duplicate != nil || len(requests) != 1 {
 		t.Fatalf("pending duplicate confirmation sent another request: %q", requests)
 	}
-	updated, reloadCmd := model.Update(createCmd())
+	updated, after := model.Update(createCmd())
 	model = updated.(Model)
 	if posted["description"] != "Cache crash" || posted["severity"] != "media" || posted["status"] != "en_correccion" || posted["story_id"] != "story-2" || posted["sprint_id"] != "sprint-open" || len(posted) != 5 {
 		t.Fatalf("POST body = %#v", posted)
 	}
-	if got := strings.Join(requests, "|"); got != "GET /projects/p-1/stories|GET /projects/p-1/sprints/open|POST /projects/p-1/defects" {
+	if got := strings.Join(requests, "|"); got != "GET /projects/p-1/sprints/open|POST /projects/p-1/defects" {
 		t.Fatalf("post-confirmation requests = %q", got)
 	}
 	if !strings.Contains(stripANSI(model.View()), "✓ Defecto registrado: Cache crash") {
 		t.Fatalf("success view missing the toast:\n%s", stripANSI(model.View()))
 	}
-	if model.Screen != "defects" || reloadCmd == nil {
-		t.Fatalf("success return = %q, reload command nil %v", model.Screen, reloadCmd == nil)
-	}
-	model = updateDefectTestModel(model, reloadCmd())
-	if len(model.defects) != 1 || model.defects[0].ID != "defect-new" {
-		t.Fatalf("reloaded defects = %#v", model.defects)
-	}
-	if got := strings.Join(requests, "|"); got != "GET /projects/p-1/stories|GET /projects/p-1/sprints/open|POST /projects/p-1/defects|GET /projects/p-1/defects" {
-		t.Fatalf("final request sequence = %q", got)
+	if model.Screen != "story-detail" || after != nil {
+		t.Fatalf("success return = %q, command nil %v, want the story detail without a request", model.Screen, after == nil)
 	}
 }
 
@@ -111,7 +98,7 @@ func TestDefectCreationCancelAtConfirmationDoesNotPost(t *testing.T) {
 		key  tea.KeyMsg
 		want string
 	}{
-		{name: "cancel draft", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}, want: "defects"},
+		{name: "cancel draft", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}, want: "story-detail"},
 		{name: "back to sprint choice", key: tea.KeyMsg{Type: tea.KeyEsc}, want: "defect-create-form"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -165,7 +152,7 @@ func TestStaleDefectCreateResultCannotCompleteNewerSubmission(t *testing.T) {
 	}
 	updated, _ = model.Update(secondResult)
 	model = updated.(Model)
-	if model.defectCreateLoading || model.Screen != "defects" || !strings.HasPrefix(model.toast, "Defecto registrado") {
+	if model.defectCreateLoading || model.Screen != "story-detail" || !strings.HasPrefix(model.toast, "Defecto registrado") {
 		t.Fatalf("newer submission result was not applied: loading=%v screen=%q toast=%q", model.defectCreateLoading, model.Screen, model.toast)
 	}
 }

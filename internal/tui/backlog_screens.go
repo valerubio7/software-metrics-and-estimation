@@ -449,7 +449,7 @@ func (m Model) viewBacklog() string {
 		b.WriteString(hintStyle.Render("Todavía no elegiste un proyecto."))
 	}
 	b.WriteString("\n")
-	b.WriteString(hintStyle.Render(backlogHint(hasProject)))
+	b.WriteString(m.sectionIntroView(m.innerWidth()))
 	b.WriteString("\n\n")
 
 	if m.backlogFiltering || m.backlogFilter != "" {
@@ -462,7 +462,7 @@ func (m Model) viewBacklog() string {
 		b.WriteString(statusMutedStyle.Render("Cargando backlog…") + "\n")
 		return b.String()
 	case m.backlogMessage != "":
-		b.WriteString(m.errorBlock(m.backlogMessage) + "\n" + hintStyle.Render("r para reintentar.") + "\n")
+		b.WriteString(m.errorBlock(m.backlogMessage) + "\n")
 		return b.String()
 	case !hasProject:
 		b.WriteString(emptyState("◇", "Elegí un proyecto para ver su backlog.", "Presioná c para elegir un proyecto.") + "\n")
@@ -473,26 +473,25 @@ func (m Model) viewBacklog() string {
 	}
 
 	stories := m.visibleStories()
-	b.WriteString(sectionLabel("Historias") + "  " + hintStyle.Render(fmt.Sprintf("(%d)", len(stories))) + "\n")
+	used := strings.Count(b.String(), "\n")
+	available := m.listAreaHeight() - used - 1
+	if m.listAreaHeight() > 0 && available < 1 {
+		available = 1
+	}
+	start, end := windowBounds(m.backlogCursor, len(stories), available)
+	b.WriteString(sectionTitle("Historias", m.backlogCursor, len(stories), start, end) + "\n")
 	if len(stories) == 0 {
 		b.WriteString(emptyState("⌕", "Sin coincidencias.", "Probá con otro título o borrá la búsqueda.") + "\n")
 		return b.String()
 	}
-	for i, story := range stories {
-		b.WriteString(m.row(i == m.backlogCursor, storyRow(story)) + "\n")
+	for i := start; i < end; i++ {
+		b.WriteString(m.row(i == m.backlogCursor, storyRow(stories[i])) + "\n")
 	}
 	return b.String()
 }
 
 // backlogHint advertises the navigator keys of the backlog list so the actions
 // that used to live in rows stay discoverable.
-func backlogHint(hasProject bool) string {
-	if !hasProject {
-		return "Esc vuelve a Proyectos para elegir uno."
-	}
-	return "Enter abre el detalle · e edita · n crea · / busca · Esc vuelve a Proyectos."
-}
-
 func (m Model) viewBacklogForm() string {
 	form := m.backlogForm
 	var b strings.Builder

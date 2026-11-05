@@ -206,6 +206,8 @@ func (m Model) viewDashboard() string {
 	b.WriteString(screenTitleStyle.Render("Dashboard"))
 	b.WriteString("\n")
 	b.WriteString(hintStyle.Render("Proyecto activo: " + m.dashboardProjectName()))
+	b.WriteString("\n")
+	b.WriteString(m.sectionIntroView(m.innerWidth()))
 	b.WriteString("\n\n")
 	b.WriteString("Estado: ")
 	switch {
@@ -235,8 +237,6 @@ func (m Model) viewDashboard() string {
 		b.WriteString(statusMutedStyle.Render("Cargando métricas…"))
 	case m.dashboard.metricsErr != "":
 		b.WriteString(m.errorBlock(m.dashboard.metricsErr))
-		b.WriteString("\n")
-		b.WriteString(hintStyle.Render("r para reintentar · Esc para volver."))
 	case !m.dashboard.metricsOK:
 		b.WriteString(statusMutedStyle.Render("Cargando…"))
 	default:

@@ -23,7 +23,6 @@ type defectStoryAPI struct {
 	posted     map[string]string
 	postStatus int
 	postBody   string
-	defectsTab bool
 }
 
 func newDefectStoryAPI(t *testing.T) *defectStoryAPI {
@@ -36,10 +35,6 @@ func newDefectStoryAPI(t *testing.T) *defectStoryAPI {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/p-1/sprints/open":
 			_, _ = w.Write([]byte(`{"sprints":[{"id":"sp-1","sprint_goal":"Sprint uno","is_closed":false}]}`))
-		case api.defectsTab && r.Method == http.MethodGet && r.URL.Path == "/projects/p-1/stories":
-			_, _ = w.Write([]byte(`{"stories":[{"id":"s-1","title":"Login"}]}`))
-		case api.defectsTab && r.Method == http.MethodGet && r.URL.Path == "/projects/p-1/defects":
-			_, _ = w.Write([]byte(`{"project_id":"p-1","defects":[]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/projects/p-1/defects":
 			if err := json.NewDecoder(r.Body).Decode(&api.posted); err != nil {
 				t.Errorf("decode POST body: %v", err)
@@ -171,9 +166,8 @@ func TestDefectFromStoryRowEnterAndShortcutAreEquivalent(t *testing.T) {
 	byRow, _ = storyStep(byRow, tea.KeyMsg{Type: tea.KeyDown})
 	byRow = openDefectEnter(t, byRow)
 
-	if byRow.defectCreateForm != byShortcut.defectCreateForm || byRow.returnTo != byShortcut.returnTo {
-		t.Errorf("row+Enter opened %+v (returnTo %v), d opened %+v (returnTo %v)",
-			byRow.defectCreateForm, byRow.returnTo, byShortcut.defectCreateForm, byShortcut.returnTo)
+	if byRow.defectCreateForm != byShortcut.defectCreateForm {
+		t.Errorf("row+Enter opened %+v, d opened %+v", byRow.defectCreateForm, byShortcut.defectCreateForm)
 	}
 	if view := stripANSI(byRow.View()); !strings.Contains(view, "Historia relacionada: Login") {
 		t.Errorf("the row should preload the story too:\n%s", view)
@@ -442,14 +436,6 @@ func openDefectEnter(t *testing.T, m Model) Model {
 	return m
 }
 
-// serveDefectsTab also answers the story list and the defect list, which only
-// the flow that starts from the Defectos tab needs.
-func (a *defectStoryAPI) serveDefectsTab() {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.defectsTab = true
-}
-
 // [caracterización] Born green: the failure of the Sprint query is already shown
 // inside the selector, with retry and a way back to the form.
 func TestDefectFromStorySprintQueryFailureShowsErrorAndAllowsRetry(t *testing.T) {
@@ -477,139 +463,61 @@ func TestDefectFromStorySprintQueryFailureShowsErrorAndAllowsRetry(t *testing.T)
 	}
 }
 
-func TestDefectFormHelpDependsOnWhereTheStoryComesFrom(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		form    defectCreateForm
-		want    string
-		notWant string
-	}{
-		{"historia precargada desde el detalle", defectCreateForm{storyID: "s-1", storyLabel: "Login"},
-			"Enter en el último campo elige el Sprint de detección.", "elige la historia"},
-		{"alta desde la pestaña Defectos", defectCreateForm{},
-			"Enter en el último campo elige la historia.", "elige el Sprint"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			m := NewModel("http://example.invalid")
-			m.Screen, m.activeProjectID, m.defectCreateForm = "defect-create-form", "p-1", tc.form
-			m.width = 200 // keep the hint on one line
+func TestDefectFormHelpExplainsSprintStep(t *testing.T) {
+	m := NewModel("http://example.invalid")
+	m.Screen, m.activeProjectID = "defect-create-form", "p-1"
+	m.defectCreateForm = defectCreateForm{storyID: "s-1", storyLabel: "Login"}
+	m.width = 200 // keep the hint on one line
 
-			view := stripANSI(m.viewDefectCreateForm())
+	view := stripANSI(m.viewDefectCreateForm())
 
-			if !strings.Contains(view, tc.want) || strings.Contains(view, tc.notWant) {
-				t.Errorf("hint should contain %q and not %q:\n%s", tc.want, tc.notWant, view)
-			}
-		})
+	if !strings.Contains(view, "Enter en el último campo elige el Sprint de detección.") || strings.Contains(view, "elige la historia") {
+		t.Errorf("hint should describe the Sprint step and not a story step:\n%s", view)
 	}
 }
 
-func TestNInDefectsResetsResidualReturnTo(t *testing.T) {
+func TestNInDefectsDoesNotStartCreation(t *testing.T) {
 	m := NewModel("http://example.invalid")
 	m.Screen, m.activeProjectID = "defects", "p-1"
-	m.returnTo = returnStoryDetail // left over from a flow of the detail
 
-	m, _ = storyStep(m, runeKey("n"))
+	m, cmd := storyStep(m, runeKey("n"))
 
-	if m.Screen != "defect-create-form" || m.returnTo != returnDefault {
-		t.Fatalf("Screen = %q, returnTo = %v, want the form that goes back to the list", m.Screen, m.returnTo)
-	}
-	m.defectCreateForm.storyID, m.defectCreateForm.sprintID, m.defectCreateForm.description = "s-1", "sp-1", "Cache crash"
-	m, _ = m.openDefectCreateConfirm()
-	m, post := m.submitDefectCreate()
-	if post == nil {
-		t.Fatal("the confirmation should send the registration")
-	}
-
-	m, reload := storyStep(m, defectCreateResult{ProjectID: "p-1", RequestID: m.defectCreateRequestID, Response: APIResponse{StatusCode: http.StatusCreated, Body: []byte(`{"id":"defect-new"}`)}})
-
-	if m.Screen != "defects" || !m.defectLoading || reload == nil {
-		t.Errorf("Screen = %q, loading = %v, reload nil = %v, want the defect list reloading", m.Screen, m.defectLoading, reload == nil)
+	if m.Screen != "defects" || cmd != nil {
+		t.Fatalf("n = screen %q, cmd nil = %v; the Defectos tab must not create defects", m.Screen, cmd == nil)
 	}
 }
 
-// defectsTabDraft starts a defect with n from the Defectos tab, walks the story
-// and Sprint selectors and stops on the confirmation.
-func defectsTabDraft(t *testing.T, api *defectStoryAPI, stopAt string) Model {
-	t.Helper()
-	api.serveDefectsTab()
+func TestDefectsEmptyStatePointsToStoryDetail(t *testing.T) {
+	m := NewModel("http://example.invalid")
+	m.Screen, m.activeProjectID, m.activeProjectName = "defects", "p-1", "Alpha"
+
+	view := stripANSI(m.View())
+
+	if !strings.Contains(view, "Reportá uno desde el detalle de una historia") {
+		t.Errorf("the empty state should point to the story detail:\n%s", view)
+	}
+}
+
+func TestDefectFromSprintStoryDetailPreloadsDetectionSprint(t *testing.T) {
+	api := newDefectStoryAPI(t)
 	m := NewModel(api.server.URL)
-	m.Screen, m.activeProjectID = "defects", "p-1"
-	m, _ = storyStep(m, runeKey("n"))
-	m = storyType(m, "Cache crash")
-	m, _ = storyStep(m, tea.KeyMsg{Type: tea.KeyTab})
-	m, _ = storyStep(m, tea.KeyMsg{Type: tea.KeyTab})
-	m, stories := storyStep(m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.Screen != "defect-story-select" || stories == nil {
-		t.Fatalf("Screen = %q, want the story selector of the Defectos flow", m.Screen)
+	m.activeProjectID, m.activeProjectName = "p-1", "Alpha"
+	m.Screen = "story-detail"
+	m.selectedSprintID = "sp-1"
+	m.openSprints = []Sprint{{ID: "sp-1", ProjectID: "p-1", SprintGoal: "Sprint uno"}}
+	m.sprintStories = []Story{{ID: "s-1", ProjectID: "p-1", Title: "Login", Priority: "alta", Status: "pendiente"}}
+	m.storyDetail = storyDetailState{storyID: "s-1", origin: storyDetailFromSprint}
+
+	m = openDefectForm(t, m)
+
+	form := m.defectCreateForm
+	if form.storyID != "s-1" || form.storyLabel != "Login" || form.sprintID != "sp-1" || form.sprintLabel != "Sprint uno" {
+		t.Errorf("form = %+v, want story s-1 and Sprint sp-1 preloaded", form)
 	}
-	if stopAt == "defect-story-select" {
-		return m
+	if got := api.seen(); len(got) != 0 {
+		t.Errorf("requests = %v, want none: both references are already loaded", got)
 	}
-	m, _ = storyStep(m, stories())
-	m, sprints := storyStep(m, tea.KeyMsg{Type: tea.KeyEnter}) // choose the story
-	m, _ = storyStep(m, sprints())
-	if stopAt == "defect-sprint-select" {
-		return m
+	if view := stripANSI(m.View()); !strings.Contains(view, "Sprint de detección: Sprint uno") {
+		t.Errorf("the form should show the preloaded Sprint:\n%s", view)
 	}
-	m, _ = storyStep(m, tea.KeyMsg{Type: tea.KeyEnter}) // choose the Sprint
-	m, _ = storyStep(m, tea.KeyMsg{Type: tea.KeyEnter}) // open the confirmation
-	if m.Screen != "defect-create-confirm" {
-		t.Fatalf("Screen = %q, want the confirmation", m.Screen)
-	}
-	return m
-}
-
-// [caracterización] Born green: the flow of the Defectos tab must not change.
-func TestDefectCreationFromDefectsTabKeepsStoryPickerAndReturnsToList(t *testing.T) {
-	t.Run("Enter en el último campo abre el selector de historias", func(t *testing.T) {
-		m := defectsTabDraft(t, newDefectStoryAPI(t), "defect-story-select")
-
-		if view := stripANSI(m.View()); !strings.Contains(view, "Defecto · Historia") {
-			t.Errorf("want the story selector:\n%s", view)
-		}
-		if m.returnTo != returnDefault {
-			t.Errorf("returnTo = %v, want returnDefault", m.returnTo)
-		}
-	})
-	t.Run("Esc del selector de Sprints vuelve al selector de historias", func(t *testing.T) {
-		m := defectsTabDraft(t, newDefectStoryAPI(t), "defect-sprint-select")
-
-		m, _ = storyStep(m, tea.KeyMsg{Type: tea.KeyEsc})
-
-		if m.Screen != "defect-story-select" {
-			t.Errorf("Screen = %q, want the story selector", m.Screen)
-		}
-	})
-	t.Run("Esc del formulario vuelve a la lista", func(t *testing.T) {
-		m := defectsTabDraft(t, newDefectStoryAPI(t), "defect-create-confirm")
-		m, _ = storyStep(m, tea.KeyMsg{Type: tea.KeyEsc})
-
-		m, _ = storyStep(m, tea.KeyMsg{Type: tea.KeyEsc})
-
-		if m.Screen != "defects" {
-			t.Errorf("Screen = %q, want the defect list", m.Screen)
-		}
-	})
-	t.Run("n en la confirmación vuelve a la lista", func(t *testing.T) {
-		m := defectsTabDraft(t, newDefectStoryAPI(t), "defect-create-confirm")
-
-		m, _ = storyStep(m, runeKey("n"))
-
-		if m.Screen != "defects" {
-			t.Errorf("Screen = %q, want the defect list", m.Screen)
-		}
-	})
-	t.Run("el éxito vuelve a la lista recargada", func(t *testing.T) {
-		m := defectsTabDraft(t, newDefectStoryAPI(t), "defect-create-confirm")
-		m, post := submitDefect(t, m)
-
-		m, reload := storyStep(m, post())
-
-		if m.Screen != "defects" || !m.defectLoading || reload == nil {
-			t.Fatalf("Screen = %q, loading = %v, reload nil = %v, want the list reloading", m.Screen, m.defectLoading, reload == nil)
-		}
-		if view := stripANSI(m.View()); !strings.Contains(view, "✓ Defecto registrado: Cache crash") {
-			t.Errorf("the list lacks the toast:\n%s", view)
-		}
-	})
 }

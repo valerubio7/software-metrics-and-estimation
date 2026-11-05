@@ -52,7 +52,7 @@ func TestSprintBrowserListsOpenSprintsWithNavigatorKeys(t *testing.T) {
 
 	m := openSprintsWithProject(t, server.URL, "p1")
 	view := m.View()
-	for _, want := range []string{"Sprints de Alpha", "Ship the release", "sp1", "/ busca"} {
+	for _, want := range []string{"Sprints de Alpha", "Ship the release", "sp1", "buscar"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("browser view missing %q: %q", want, view)
 		}
@@ -215,11 +215,19 @@ func TestSprintStoryActionsCreateTasksAndComplete(t *testing.T) {
 		return m
 	}
 
-	t.Run("enter opens the task form", func(t *testing.T) {
+	t.Run("enter opens the story detail and n opens the task form", func(t *testing.T) {
 		m := openAssigned(t)
 		m, cmd := apply(m, tea.KeyMsg{Type: tea.KeyEnter})
+		if cmd == nil || m.Screen != "story-detail" {
+			t.Fatalf("story selection = screen %q, cmd nil %v; want the detail loading its tasks", m.Screen, cmd == nil)
+		}
+		m = run(t, m, cmd)
+		if !strings.Contains(m.View(), "Tareas") {
+			t.Fatalf("the Sprint detail should show the task section:\n%s", m.View())
+		}
+		m, cmd = apply(m, keyMsg("n"))
 		if cmd != nil || m.Screen != "sprint-task-form" {
-			t.Fatalf("task selection = screen %q, cmd %v; want task form without API request", m.Screen, cmd != nil)
+			t.Fatalf("n = screen %q, cmd %v; want task form without API request", m.Screen, cmd != nil)
 		}
 	})
 
@@ -297,7 +305,9 @@ func pendingSprintWrite(t *testing.T, op string) tui.Model {
 			m, cmd = apply(m, keyMsg("c"))
 			break
 		}
-		m = press(m, tea.KeyEnter) // task form
+		m, cmd = apply(m, tea.KeyMsg{Type: tea.KeyEnter}) // open the story detail
+		m = run(t, m, cmd)                                // load its tasks
+		m, _ = apply(m, keyMsg("n"))
 		m = typeText(m, "Tarea")
 		m = press(m, tea.KeyEnter) // hours
 		m, cmd = apply(m, tea.KeyMsg{Type: tea.KeyEnter})
