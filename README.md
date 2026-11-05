@@ -430,3 +430,16 @@ Las pruebas de integración requieren PostgreSQL y se ejecutan aparte:
 ```sh
 go test ./tests/integration/...
 ```
+
+### Cobertura
+
+Los tests viven en paquetes propios, así que hace falta `-coverpkg` para medir
+el código de `internal/` y `cmd/` en lugar del paquete de prueba:
+
+```sh
+go test ./tests/... -coverpkg=./internal/...,./cmd/... -coverprofile=coverage.out
+go tool cover -func=coverage.out | tail -1
+go tool cover -html=coverage.out -o coverage.html
+```
+
+El resultado vigente está en [`docs/metrics-report.md`](docs/metrics-report.md).
