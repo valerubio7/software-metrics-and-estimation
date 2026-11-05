@@ -242,8 +242,6 @@ func (m Model) viewSelector(s *selector, title, hint, emptyTitle, emptyHint stri
 
 	if s.err != "" {
 		b.WriteString(m.errorBlock(s.err))
-		b.WriteString("\n\n")
-		b.WriteString(hintStyle.Render("r para reintentar · Esc para volver."))
 		return strings.TrimRight(b.String(), "\n")
 	}
 	if s.loading {

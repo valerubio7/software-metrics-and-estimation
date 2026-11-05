@@ -155,7 +155,6 @@ func (m Model) selectProject(project ProjectSummary) (Model, tea.Cmd) {
 	m.message = ""
 	// The detail and the return target belong to the previous project's flow.
 	m.storyDetail = storyDetailState{}
-	m.returnTo = returnDefault
 	return m.openDashboard()
 }
 
@@ -169,11 +168,12 @@ func isSprintScreen(screen string) bool {
 }
 
 func (m Model) viewProjectPicker() string {
-	title, hint := "Proyectos", "Enter abre el proyecto · n crea · e edita · / busca por nombre o ID."
+	list := m.filteredProjects()
 	var b strings.Builder
-	b.WriteString(screenTitleStyle.Render(title))
-	b.WriteString("\n")
-	b.WriteString(hintStyle.Render(hint))
+	b.WriteString(screenTitleStyle.Render("Proyectos"))
+	if len(list) > 0 {
+		b.WriteString("  " + appPaneMeta.Render(listCounter(m.projectCursor, len(list))))
+	}
 	b.WriteString("\n\n")
 
 	if m.projectFiltering || m.projectFilter != "" {
@@ -194,13 +194,18 @@ func (m Model) viewProjectPicker() string {
 		return b.String()
 	}
 
-	list := m.filteredProjects()
 	if len(list) == 0 {
 		b.WriteString(emptyState("⌕", "Sin coincidencias.", "Probá con otro nombre o borrá el filtro con Esc."))
 		return b.String()
 	}
-	for i, project := range list {
-		b.WriteString(m.row(i == m.projectCursor, projectPickerRow(project, project.ID == m.activeProjectID)) + "\n")
+	used := strings.Count(b.String(), "\n")
+	available := m.listAreaHeight() - used
+	if m.listAreaHeight() > 0 && available < 1 {
+		available = 1
+	}
+	start, end := windowBounds(m.projectCursor, len(list), available)
+	for i := start; i < end; i++ {
+		b.WriteString(m.row(i == m.projectCursor, projectPickerRow(list[i], list[i].ID == m.activeProjectID)) + "\n")
 	}
 	return b.String()
 }

@@ -87,11 +87,11 @@ func (m Model) applyDefectStatusOptionsResult(result defectStatusOptionsResult) 
 		return m, nil
 	}
 	m.defectStatusOptionsLoading = false
-	if message := defectReadFailure(result.Open, result.OpenErr); message != "" {
+	if message := readFailure(result.Open, result.OpenErr); message != "" {
 		m.defectResolutionSelector.fail(message)
 		return m, nil
 	}
-	if message := defectReadFailure(result.History, result.HistoryErr); message != "" {
+	if message := readFailure(result.History, result.HistoryErr); message != "" {
 		m.defectResolutionSelector.fail(message)
 		return m, nil
 	}

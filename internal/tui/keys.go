@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // keyGroup is the heading a shortcut is listed under in the help overlay.
@@ -17,7 +19,7 @@ const (
 var keyGroupTitles = []string{"Navegación", "Acciones", "General"}
 
 // footerLimit is the maximum number of shortcuts shown in the footer.
-const footerLimit = 5
+const footerLimit = 8
 
 // binding is one shortcut of the active screen: desc is the short footer label
 // and help the sentence shown in the help overlay (desc when empty).
@@ -56,7 +58,8 @@ func (m Model) helpAvailable() bool {
 }
 
 // bindings returns, in footer order, exactly the shortcuts valid on the active
-// screen and step. footer() and viewHelp() both read it, so they never disagree.
+// screen and step. footer() and helpContentLines() both read it, so they never
+// disagree.
 func (m Model) bindings() []binding {
 	var l keyList
 	if m.filtering() {
@@ -121,10 +124,10 @@ func (m Model) screenBindings(l *keyList) {
 		l.add(keyAction, true, "n", "nuevo", "Crear un Sprint")
 		l.add(keyNav, true, "/", "buscar", "Buscar o filtrar Sprints")
 		l.add(keyNav, true, "Esc", "proyectos", "Volver a Proyectos")
+		l.add(keyAction, true, "a", "asignar", "Asignar historias del backlog")
+		l.add(keyAction, true, "x", "cerrar", "Cerrar el Sprint resaltado (pide confirmación)")
+		l.add(keyNav, true, "h", "cerrados", "Ver los Sprints cerrados")
 		l.add(keyAction, false, "d", "PDF", "Descargar el reporte PDF del Sprint resaltado")
-		l.add(keyAction, false, "a", "asignar", "Asignar historias del backlog")
-		l.add(keyAction, false, "x", "cerrar", "Cerrar el Sprint resaltado (pide confirmación)")
-		l.add(keyNav, false, "h", "cerrados", "Ver los Sprints cerrados")
 		l.add(keyAction, false, "r", "refrescar", "Refrescar el listado")
 	case "sprint-goal":
 		l.add(keyAction, true, "Enter", "enviar", "Crear el Sprint con el objetivo escrito")
@@ -135,7 +138,7 @@ func (m Model) screenBindings(l *keyList) {
 		quit()
 	case "sprint-assigned-list":
 		l.add(keyNav, true, "↑/↓", "mover", "Mover la selección")
-		l.add(keyAction, true, "Enter", "tareas", "Ver o agregar las tareas de la historia resaltada")
+		l.add(keyAction, true, "Enter", "detalle", "Abrir el detalle de la historia resaltada")
 		l.add(keyAction, true, "c", "completar", "Marcar la historia resaltada como completada")
 		l.add(keyNav, true, "/", "buscar", "Buscar o filtrar historias")
 		l.add(keyNav, true, "Esc", "volver", "Volver a los Sprints")
@@ -180,7 +183,6 @@ func (m Model) screenBindings(l *keyList) {
 			l.add(keyAction, true, "Enter", "detalle", "Ver el detalle del defecto")
 			l.add(keyAction, true, "u", "actualizar estado", "Actualizar el estado del defecto resaltado")
 		}
-		l.add(keyAction, true, "n", "nuevo defecto", "Crear un defecto")
 		l.add(keyNav, true, "Esc", "proyectos", "Volver a Proyectos")
 		l.add(keyNav, true, "/", "buscar", "Buscar o filtrar defectos")
 		l.add(keyAction, false, "r", "refrescar", "Refrescar el listado")
@@ -188,8 +190,6 @@ func (m Model) screenBindings(l *keyList) {
 		l.add(keyAction, true, "u", "cambiar estado", "Cambiar el estado del defecto")
 		l.add(keyNav, true, "Esc", "volver al listado", "Volver al listado")
 		quit()
-	case "defect-story-select":
-		m.selectorBindings(l, &m.defectStorySelector, "elegir historia", "Elegir la opción resaltada", "Volver al borrador del defecto")
 	case "defect-sprint-select":
 		m.selectorBindings(l, &m.defectSprintSelector, "elegir Sprint", "Elegir la opción resaltada", "Volver al borrador del defecto")
 	case "defect-resolution-select":
@@ -297,7 +297,7 @@ func (m Model) pokerBindings(l *keyList) {
 
 func (m Model) footer() string {
 	if m.showHelp {
-		return m.keyHints("Esc", "cerrar ayuda", "?", "cerrar", "Ctrl+C", "salir")
+		return m.keyHints("↑/↓", "mover", "Esc", "cerrar ayuda", "?", "cerrar", "Ctrl+C", "salir")
 	}
 	var pairs []string
 	shown, hidden, help := 0, false, false
@@ -318,22 +318,76 @@ func (m Model) footer() string {
 	return m.keyHints(pairs...)
 }
 
-// viewHelp lists every shortcut of the active screen grouped by keyGroup,
-// omitting empty groups.
-func (m Model) viewHelp() string {
-	var b strings.Builder
-	b.WriteString(screenTitleStyle.Render("Atajos de teclado"))
+// helpConcepts is the plain-language glossary shown before the shortcuts. It
+// explains the domain vocabulary a newcomer needs before reading the screens.
+var helpConcepts = []struct{ term, text string }{
+	{"Proyecto", "el trabajo completo: agrupa backlog, Sprints, integrantes y defectos."},
+	{"Backlog", "la lista priorizada de todo lo que el proyecto necesita, sin fechas."},
+	{"Historia", "una unidad de trabajo del backlog; se estima y se ejecuta en un Sprint."},
+	{"Sprint", "un período corto con un objetivo que agrupa historias y tareas."},
+	{"Tarea", "un paso concreto dentro de una historia, con horas estimadas."},
+	{"Story Points", "el tamaño relativo de una historia; no son horas."},
+	{"Esfuerzo", "las horas reales que registra cada integrante."},
+	{"Defecto", "un problema detectado en una historia; se reporta desde su detalle."},
+	{"Velocidad", "los Story Points completados por Sprint; mide el ritmo del equipo."},
+	{"Desviación", "la diferencia entre las horas estimadas y las horas reales."},
+}
+
+// helpContentLines renders the help as display lines. Concepts and shortcut
+// rows are wrapped here so the screen can scroll by whole lines instead of
+// clipping definitions at narrow widths.
+func (m Model) helpContentLines() []string {
+	width := m.innerWidth()
+	lines := []string{screenTitleStyle.Render("Ayuda"), "", panelTitleStyle.Render("Conceptos")}
+	for _, concept := range helpConcepts {
+		lines = append(lines, helpLines(concept.term, concept.text, width)...)
+	}
+	lines = append(lines, "", panelTitleStyle.Render("Atajos de teclado"))
 	all := m.bindings()
 	for group, title := range keyGroupTitles {
-		var rows strings.Builder
+		var rows []string
 		for _, k := range all {
 			if k.group == keyGroup(group) {
-				rows.WriteString("  " + helpKeyStyle.Render(padRight(k.key, 18)) + hintStyle.Render(k.helpText()) + "\n")
+				rows = append(rows, helpLines(k.key, k.helpText(), width)...)
 			}
 		}
-		if rows.Len() > 0 {
-			b.WriteString("\n\n" + panelTitleStyle.Render(title) + "\n" + strings.TrimRight(rows.String(), "\n"))
+		if len(rows) > 0 {
+			lines = append(lines, "", panelTitleStyle.Render(title))
+			lines = append(lines, rows...)
 		}
 	}
-	return b.String() + "\n"
+	return lines
+}
+
+// helpLines renders one term and its definition in two aligned columns,
+// wrapping the definition without breaking the term column.
+func helpLines(term, text string, width int) []string {
+	prefix := "  " + helpKeyStyle.Render(padRight(term, 18))
+	bodyWidth := width - lipgloss.Width(prefix) - 1
+	if bodyWidth < 12 {
+		bodyWidth = 12
+	}
+	wrapped := wrapPlain(text, bodyWidth)
+	lines := []string{prefix + hintStyle.Render(wrapped[0])}
+	indent := strings.Repeat(" ", lipgloss.Width(prefix))
+	for _, line := range wrapped[1:] {
+		lines = append(lines, indent+hintStyle.Render(line))
+	}
+	return lines
+}
+
+// clampHelpOffset keeps the scroll position inside the rendered help.
+func (m *Model) clampHelpOffset() {
+	height := m.bodyInnerHeight()
+	total := len(m.helpContentLines())
+	maxOffset := 0
+	if height > 0 && total > height {
+		maxOffset = total - height
+	}
+	if m.helpOffset > maxOffset {
+		m.helpOffset = maxOffset
+	}
+	if m.helpOffset < 0 {
+		m.helpOffset = 0
+	}
 }

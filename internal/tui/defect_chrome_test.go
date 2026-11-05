@@ -18,8 +18,6 @@ func TestDefectFlowFootersAdvertiseOnlyAvailableActions(t *testing.T) {
 		{name: "filtered list", screen: "defects", filtering: true, want: []string{"escribí", "para filtrar"}, mustNot: []string{"nuevo defecto", "actualizar estado"}},
 		{name: "detail", screen: "defect-detail", want: []string{"u", "cambiar estado"}},
 		{name: "create form", screen: "defect-create-form", want: []string{"Enter", "continuar"}},
-		{name: "story selector", screen: "defect-story-select", want: []string{"r", "refrescar", "Enter", "elegir"}},
-		{name: "filtered story selector", screen: "defect-story-select", filtering: true, want: []string{"escribí", "para filtrar"}, mustNot: []string{"refrescar", "proyecto"}},
 		{name: "detection Sprint selector", screen: "defect-sprint-select", want: []string{"r", "refrescar", "Enter", "elegir"}},
 		{name: "create confirmation", screen: "defect-create-confirm", want: []string{"s", "confirmar registro", "n", "cancelar"}},
 		{name: "create loading", screen: "defect-create-confirm", loading: true, want: []string{"Ctrl+C", "salir"}, mustNot: []string{"confirmar", "volver", "q", "proyecto"}},
@@ -35,12 +33,10 @@ func TestDefectFlowFootersAdvertiseOnlyAvailableActions(t *testing.T) {
 			if tc.screen == "defects" && !tc.filtering {
 				m.defects = []Defect{{ID: "d-1", Description: "Visible defect"}}
 			}
-			m.defectStorySelector.filtering = tc.filtering && tc.screen == "defect-story-select"
 			m.defectSprintSelector.filtering = tc.filtering && tc.screen == "defect-sprint-select"
 			m.defectResolutionSelector.filtering = tc.filtering && tc.screen == "defect-resolution-select"
 			if !tc.filtering && !tc.loading {
 				item := []selectorItem{{ID: "item-1", Label: "Option"}}
-				m.defectStorySelector.items = item
 				m.defectSprintSelector.items = item
 				m.defectResolutionSelector.items = item
 			}
@@ -60,7 +56,7 @@ func TestDefectFlowFootersAdvertiseOnlyAvailableActions(t *testing.T) {
 }
 
 func TestDefectSelectorFooterDoesNotOfferChooseWhenEmpty(t *testing.T) {
-	for _, screen := range []string{"defect-story-select", "defect-sprint-select", "defect-resolution-select"} {
+	for _, screen := range []string{"defect-sprint-select", "defect-resolution-select"} {
 		t.Run(screen, func(t *testing.T) {
 			m := NewModel("http://localhost:8080")
 			m.Screen = screen
@@ -77,7 +73,7 @@ func TestDefectSelectorFooterDoesNotOfferChooseWhenEmpty(t *testing.T) {
 }
 
 func TestDefectSelectorFooterReflectsLoadingAndError(t *testing.T) {
-	for _, screen := range []string{"defect-story-select", "defect-sprint-select", "defect-resolution-select"} {
+	for _, screen := range []string{"defect-sprint-select", "defect-resolution-select"} {
 		t.Run(screen, func(t *testing.T) {
 			for _, state := range []string{"loading", "error"} {
 				t.Run(state, func(t *testing.T) {
@@ -108,8 +104,6 @@ func TestDefectSelectorFooterReflectsLoadingAndError(t *testing.T) {
 
 func defectSelectorForScreen(m *Model, screen string) *selector {
 	switch screen {
-	case "defect-story-select":
-		return &m.defectStorySelector
 	case "defect-sprint-select":
 		return &m.defectSprintSelector
 	default:
@@ -118,19 +112,25 @@ func defectSelectorForScreen(m *Model, screen string) *selector {
 }
 
 func TestDefectFlowBreadcrumbsUseSpanishLabels(t *testing.T) {
-	labels := map[string]string{
-		"defects": "Defectos", "defect-detail": "Detalle", "defect-create-form": "Registrar defecto",
-		"defect-story-select": "Historia", "defect-sprint-select": "Sprint de detección",
-		"defect-create-confirm": "Confirmar registro",
-		"defect-status-select":  "Cambiar estado", "defect-resolution-select": "Sprint de resolución",
-	}
-	for screen, label := range labels {
-		t.Run(screen, func(t *testing.T) {
+	const (
+		defectsFlow = "Proyectos › Proyecto Alfa › Defectos"
+		storyFlow   = "Proyectos › Proyecto Alfa › Backlog › Detalle"
+	)
+	for _, tc := range []struct{ screen, label, context string }{
+		{"defects", "Defectos", defectsFlow},
+		{"defect-detail", "Detalle", defectsFlow},
+		{"defect-status-select", "Cambiar estado", defectsFlow},
+		{"defect-resolution-select", "Sprint de resolución", defectsFlow},
+		{"defect-create-form", "Registrar defecto", storyFlow},
+		{"defect-sprint-select", "Sprint de detección", storyFlow},
+		{"defect-create-confirm", "Confirmar registro", storyFlow},
+	} {
+		t.Run(tc.screen, func(t *testing.T) {
 			m := NewModel("http://localhost:8080")
-			m.Screen, m.activeProjectID, m.activeProjectName = screen, "p-1", "Proyecto Alfa"
+			m.Screen, m.activeProjectID, m.activeProjectName = tc.screen, "p-1", "Proyecto Alfa"
 			view := stripANSI(m.View())
-			if !strings.Contains(view, label) || !strings.Contains(view, "Proyectos › Proyecto Alfa › Defectos") {
-				t.Errorf("breadcrumb %q does not contain %q and the project context: %q", view, label, view)
+			if !strings.Contains(view, tc.label) || !strings.Contains(view, tc.context) {
+				t.Errorf("breadcrumb %q does not contain %q and the project context %q: %q", view, tc.label, tc.context, view)
 			}
 			for _, raw := range []string{"status-select", "status-result", "create-result", "resolution-select", "sprint-select", "story-select", "create-confirm", "create-form"} {
 				if strings.Contains(view, raw) {
@@ -142,7 +142,7 @@ func TestDefectFlowBreadcrumbsUseSpanishLabels(t *testing.T) {
 }
 
 func TestDefectHelpDescribesSupportedActionsOnly(t *testing.T) {
-	for _, screen := range []string{"defects", "defect-detail", "defect-create-form", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-status-select", "defect-resolution-select"} {
+	for _, screen := range []string{"defects", "defect-detail", "defect-create-form", "defect-sprint-select", "defect-create-confirm", "defect-status-select", "defect-resolution-select"} {
 		t.Run(screen, func(t *testing.T) {
 			m := NewModel("http://localhost:8080")
 			m.Screen, m.showHelp = screen, true
@@ -158,8 +158,8 @@ func TestDefectHelpDescribesSupportedActionsOnly(t *testing.T) {
 					t.Errorf("help advertises unsupported action %q on %s", unsupported, screen)
 				}
 			}
-			if screen == "defects" && (!strings.Contains(view, "Actualizar el estado") || !strings.Contains(view, "Crear un defecto")) {
-				t.Error("defect list help must describe creation and status update")
+			if screen == "defects" && (!strings.Contains(view, "Actualizar el estado") || strings.Contains(view, "Crear un defecto")) {
+				t.Error("defect list help must describe status update and no longer offer creation")
 			}
 			if screen == "defect-detail" && !strings.Contains(view, "Cambiar el estado") {
 				t.Error("defect detail help must describe status update")
@@ -169,7 +169,7 @@ func TestDefectHelpDescribesSupportedActionsOnly(t *testing.T) {
 }
 
 func TestDefectSelectorHelpDistinguishesFilteringFromChoosing(t *testing.T) {
-	for _, screen := range []string{"defect-story-select", "defect-sprint-select", "defect-resolution-select"} {
+	for _, screen := range []string{"defect-sprint-select", "defect-resolution-select"} {
 		t.Run(screen, func(t *testing.T) {
 			for _, filtering := range []bool{false, true} {
 				state := "idle"

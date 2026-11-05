@@ -2,7 +2,6 @@ package tui
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -10,41 +9,21 @@ import (
 )
 
 func TestDefectCreationCanBeCancelledWithoutMutation(t *testing.T) {
-	var methods []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		methods = append(methods, r.Method+" "+r.URL.Path)
-		switch r.URL.Path {
-		case "/projects/p-1/stories":
-			_, _ = w.Write([]byte(`{"stories":[{"id":"story-1","title":"Story"}]}`))
-		case "/projects/p-1/sprints/open":
-			_, _ = w.Write([]byte(`{"sprints":[{"id":"sprint-1","sprint_goal":"Open","is_closed":false}]}`))
-		default:
-			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
+	model := NewModel("http://example.invalid")
+	model.Screen, model.activeProjectID = "story-detail", "p-1"
+	model.backlogStories = []Story{{ID: "story-1", Title: "Story"}}
+	model.storyDetail = storyDetailState{storyID: "story-1"}
 
-	model := NewModel(server.URL)
-	model.Screen, model.activeProjectID = "defects", "p-1"
-	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
-	model = defectFormToStories(t, model)
-	updated, sprintsCmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := model.Update(runeKey("d"))
 	model = updated.(Model)
-	if sprintsCmd == nil {
-		t.Fatal("selecting a story produced no open-Sprint request")
+	if cmd != nil || model.Screen != "defect-create-form" || model.defectCreateForm.storyID != "story-1" {
+		t.Fatalf("opening the form = screen %q story %q cmd nil %v", model.Screen, model.defectCreateForm.storyID, cmd == nil)
 	}
-	model = updateDefectTestModel(model, sprintsCmd())
-	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyEnter})
-	if model.Screen != "defect-create-form" || !strings.Contains(model.View(), "Story") || !strings.Contains(model.View(), "Open") {
-		t.Fatalf("draft did not show selected references: screen=%q\n%s", model.Screen, model.View())
-	}
-	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyEsc})
-	if model.Screen != "defects" {
-		t.Fatalf("Escape did not cancel the draft: screen = %q", model.Screen)
-	}
-	if got := strings.Join(methods, "|"); got != "GET /projects/p-1/stories|GET /projects/p-1/sprints/open" {
-		t.Fatalf("cancel sequence issued a mutation: %q", got)
+
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if cmd != nil || model.Screen != "story-detail" {
+		t.Fatalf("Escape did not cancel the draft: screen = %q, cmd nil = %v", model.Screen, cmd == nil)
 	}
 }
 
@@ -62,22 +41,12 @@ func TestDefectDetectionSprintSelectorExcludesClosedSprints(t *testing.T) {
 	}
 }
 
-func defectFormToStories(t *testing.T, model Model) Model {
-	t.Helper()
-	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyTab})
-	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyTab})
-	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	if cmd == nil {
-		t.Fatal("submitting the defect details produced no story-list request")
-	}
-	return updateDefectTestModel(model, cmd())
-}
-
 func TestDefectCreationFormOffersAPIRegistrationCatalogs(t *testing.T) {
 	model := NewModel("http://example.invalid")
-	model.Screen, model.activeProjectID = "defects", "p-1"
-	model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	model.Screen, model.activeProjectID = "story-detail", "p-1"
+	model.backlogStories = []Story{{ID: "story-1", Title: "Story"}}
+	model.storyDetail = storyDetailState{storyID: "story-1"}
+	model, _ = storyStep(model, runeKey("d"))
 	for _, r := range "Defect description" {
 		model = updateDefectTestModel(model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
@@ -135,65 +104,26 @@ func TestUnsubmittedDefectDraftNeverClaimsReadyForReview(t *testing.T) {
 	}
 }
 
-func TestStaleSameProjectDefectSelectorResultsAreIgnored(t *testing.T) {
-	for _, tc := range []struct {
-		name      string
-		start     func(Model) (Model, tea.Cmd)
-		apply     func(Model, defectOptionsResult) (Model, tea.Cmd)
-		step      string
-		body      string
-		requestID func(Model) uint64
-		items     func(Model) []selectorItem
-	}{
-		{
-			name:  "story options",
-			start: func(model Model) (Model, tea.Cmd) { return model.loadDefectStories() },
-			apply: func(model Model, result defectOptionsResult) (Model, tea.Cmd) {
-				return model.applyDefectOptionsResult(result)
-			},
-			step: "stories", body: `{"stories":[{"id":"story-new","title":"New story"}]}`,
-			requestID: func(model Model) uint64 { return model.defectStoryRequestID },
-			items:     func(model Model) []selectorItem { return model.defectStorySelector.items },
-		},
-		{
-			name:  "open Sprint options",
-			start: func(model Model) (Model, tea.Cmd) { return model.loadDefectOpenSprints() },
-			apply: func(model Model, result defectOptionsResult) (Model, tea.Cmd) {
-				return model.applyDefectOptionsResult(result)
-			},
-			step: "sprints", body: `{"sprints":[{"id":"sprint-new","sprint_goal":"New sprint","is_closed":false}]}`,
-			requestID: func(model Model) uint64 { return model.defectSprintRequestID },
-			items:     func(model Model) []selectorItem { return model.defectSprintSelector.items },
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			model := NewModel("http://example.invalid")
-			model.activeProjectID = "p-1"
-			firstModel, firstCmd := tc.start(model)
-			secondModel, secondCmd := tc.start(firstModel)
-			if firstCmd == nil || secondCmd == nil {
-				t.Fatal("selector load did not return commands")
-			}
-			staleBody := `{"stories":[{"id":"story-stale","title":"Stale story"}],"sprints":[{"id":"sprint-stale","sprint_goal":"Stale sprint","is_closed":false}]}`
-			firstResult := defectOptionsResult{step: tc.step, projectID: "p-1", requestID: tc.requestID(firstModel), response: APIResponse{StatusCode: http.StatusOK, Body: []byte(staleBody)}}
-			secondResult := defectOptionsResult{step: tc.step, projectID: "p-1", requestID: tc.requestID(secondModel), response: APIResponse{StatusCode: http.StatusOK, Body: []byte(tc.body)}}
-
-			pending, _ := tc.apply(secondModel, firstResult)
-			if len(tc.items(pending)) != 0 || !selectorLoading(pending, tc.step) {
-				t.Fatalf("stale %s result completed the newer request: items=%#v loading=%v", tc.step, tc.items(pending), selectorLoading(pending, tc.step))
-			}
-			completed, _ := tc.apply(pending, secondResult)
-			items := tc.items(completed)
-			if len(items) != 1 || items[0].ID == "story-stale" || items[0].ID == "sprint-stale" {
-				t.Fatalf("newer %s result not applied: %#v", tc.step, items)
-			}
-		})
+func TestStaleSameProjectDefectSprintResultsAreIgnored(t *testing.T) {
+	model := NewModel("http://example.invalid")
+	model.activeProjectID = "p-1"
+	firstModel, firstCmd := model.loadDefectOpenSprints()
+	secondModel, secondCmd := firstModel.loadDefectOpenSprints()
+	if firstCmd == nil || secondCmd == nil {
+		t.Fatal("selector load did not return commands")
 	}
-}
+	firstResult := defectOptionsResult{step: "sprints", projectID: "p-1", requestID: firstModel.defectSprintRequestID,
+		response: APIResponse{StatusCode: http.StatusOK, Body: []byte(`{"sprints":[{"id":"sprint-stale","sprint_goal":"Stale sprint","is_closed":false}]}`)}}
+	secondResult := defectOptionsResult{step: "sprints", projectID: "p-1", requestID: secondModel.defectSprintRequestID,
+		response: APIResponse{StatusCode: http.StatusOK, Body: []byte(`{"sprints":[{"id":"sprint-new","sprint_goal":"New sprint","is_closed":false}]}`)}}
 
-func selectorLoading(model Model, step string) bool {
-	if step == "stories" {
-		return model.defectStorySelector.loading
+	pending, _ := secondModel.applyDefectOptionsResult(firstResult)
+	if len(pending.defectSprintSelector.items) != 0 || !pending.defectSprintSelector.loading {
+		t.Fatalf("stale result completed the newer request: items=%#v loading=%v", pending.defectSprintSelector.items, pending.defectSprintSelector.loading)
 	}
-	return model.defectSprintSelector.loading
+	completed, _ := pending.applyDefectOptionsResult(secondResult)
+	items := completed.defectSprintSelector.items
+	if len(items) != 1 || items[0].ID != "sprint-new" {
+		t.Fatalf("newer result not applied: %#v", items)
+	}
 }

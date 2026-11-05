@@ -32,9 +32,13 @@ func TestSprintCloseAndHistoryFlows(t *testing.T) {
 	// Close flow: x asks for confirmation, Esc cancels, s closes.
 	m := openSprintsWithProject(t, server.URL, "p1")
 	view := m.View()
-	for _, want := range []string{"Ship", "x cerrar", "h cerrados", "a asignar"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("Sprint browser missing %q: %q", want, view)
+	if !strings.Contains(view, "Ship") {
+		t.Fatalf("Sprint browser missing the Sprint goal: %q", view)
+	}
+	footer := footerOf(t, stripANSI(view))
+	for _, want := range []string{"x cerrar", "h cerrados", "a asignar"} {
+		if !strings.Contains(footer, want) {
+			t.Fatalf("Sprint footer missing %q: %q", want, footer)
 		}
 	}
 	m, cmd := apply(m, keyMsg("x"))

@@ -41,8 +41,6 @@ func (t workspaceTab) title() string {
 
 // openTab enters the root screen of tab for the open project.
 func (m Model) openTab(t workspaceTab) (Model, tea.Cmd) {
-	// A tab root is never inside a story flow, so a stale return target is dropped.
-	m.returnTo = returnDefault
 	switch t {
 	case tabBacklog:
 		return m.openBacklog()
@@ -61,15 +59,15 @@ func (m Model) currentTab() workspaceTab {
 	switch {
 	case m.Screen == "dashboard" || m.Screen == "dashboard-sprint-select":
 		return tabDashboard
-	case strings.HasPrefix(m.Screen, "backlog"), m.Screen == "story-detail":
+	case strings.HasPrefix(m.Screen, "backlog"):
 		return tabBacklog
+	case m.Screen == "story-detail":
+		return m.storyDetail.tab()
 	case isSprintScreen(m.Screen):
 		return tabSprints
 	case m.inStoryFlow():
-		// Assumption S1 (not confirmed by the user): the flows launched from the
-		// story detail keep Backlog highlighted. This is the only place where the
-		// rule lives; highlighting another tab is a change to this branch alone.
-		return tabBacklog
+		// A flow keeps the tab of the detail it started from: Backlog or Sprints.
+		return m.storyDetail.tab()
 	case m.Screen == "defects" || strings.HasPrefix(m.Screen, "defect-"):
 		return tabDefects
 	}
@@ -77,18 +75,23 @@ func (m Model) currentTab() workspaceTab {
 }
 
 // inStoryFlow reports whether the active screen is a step of an action launched
-// from the story detail (Estimar, Registrar esfuerzo or Reportar defecto). The
-// Estimar and Registrar esfuerzo screens are only reachable from the detail; the
-// defect form, its Sprint selector and its confirmation are shared with the
-// Defectos tab, so there the return target tells the two origins apart.
+// from the story detail (Estimar, Registrar esfuerzo or Reportar defecto).
 func (m Model) inStoryFlow() bool {
 	switch m.Screen {
-	case "section", "planning-poker", "effort-form":
+	case "section", "planning-poker", "effort-form",
+		"defect-create-form", "defect-sprint-select", "defect-create-confirm":
 		return true
-	case "defect-create-form", "defect-sprint-select", "defect-create-confirm":
-		return m.returnTo == returnStoryDetail
 	}
 	return false
+}
+
+// tab returns the workspace tab that owns the detail, based on where it was
+// opened from.
+func (s storyDetailState) tab() workspaceTab {
+	if s.origin == storyDetailFromSprint {
+		return tabSprints
+	}
+	return tabBacklog
 }
 
 // tabRoot reports whether the active screen is the first screen of its tab,

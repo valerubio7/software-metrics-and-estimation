@@ -30,14 +30,27 @@ La TUI DEBERÁ mostrar el contenido de cada pantalla dentro de un panel con bord
 - **WHEN** la terminal es más angosta que la marca más el indicador de conexión
 - **THEN** la barra superior conserva el indicador de conexión y el resto del contenido se mantiene dentro del ancho disponible
 
-### Requirement: Mostrar la ayuda de teclado
-La TUI DEBERÁ ofrecer una ayuda de teclado accesible con `?` desde las pantallas que no son de entrada de texto, y cerrarla con `Esc`, `Enter` o `?`. Dentro de un campo de texto o de un filtro de búsqueda, `?` se trata como un carácter más. La ayuda y el pie DEBERÁN mostrar únicamente las teclas válidas para la pantalla y el paso activos; no se listarán acciones que no estén disponibles.
+### Requirement: Mostrar la ayuda de conceptos y teclado
+La TUI DEBERÁ ofrecer una ayuda accesible con `?` desde las pantallas que no son de entrada de texto, y cerrarla con `Esc`, `Enter` o `?`. Dentro de un campo de texto o de un filtro de búsqueda, `?` se trata como un carácter más. La ayuda DEBERÁ titularse «Ayuda» y abrir con el grupo «Conceptos», un glosario breve en lenguaje simple de los términos del negocio (Proyecto, Backlog, Historia, Sprint, Story Points, Tarea, Esfuerzo y Defecto), antes del grupo «Atajos de teclado». Cuando el contenido no entra en el alto del panel, DEBERÁ desplazarse con `↑`/`↓` y `PgUp`/`PgDn` en lugar de recortarse, y el pie DEBERÁ ofrecer esas teclas. La ayuda y el pie DEBERÁN mostrar únicamente las teclas válidas para la pantalla y el paso activos; no se listarán acciones que no estén disponibles.
 
 #### Scenario: Abrir y cerrar la ayuda
 - **GIVEN** que una pantalla que no es de entrada de texto está activa
 - **WHEN** el usuario presiona `?`
 - **THEN** la TUI muestra la ayuda con las teclas principales
 - **AND** al presionar `Esc` la ayuda se cierra y se vuelve a la pantalla previa
+
+#### Scenario: La ayuda explica los conceptos antes de los atajos
+- **GIVEN** que una pantalla que no es de entrada de texto está activa
+- **WHEN** el usuario presiona `?`
+- **THEN** la ayuda muestra el grupo «Conceptos» antes de «Atajos de teclado»
+- **AND** define en lenguaje simple al menos Backlog, Historia, Sprint, Story Points, Esfuerzo y Defecto
+
+#### Scenario: La ayuda se desplaza en terminales bajas
+- **GIVEN** que la ayuda tiene más líneas que el alto disponible del panel
+- **WHEN** el usuario presiona `↓` o `PgDn`
+- **THEN** la ayuda avanza y deja ver las últimas líneas
+- **AND** `↑` y `PgUp` retroceden sin salir del contenido
+- **AND** el pie ofrece las teclas de desplazamiento
 
 #### Scenario: `?` se escribe en un campo de texto
 - **GIVEN** que el foco está en un campo de texto o en un filtro de búsqueda
@@ -590,8 +603,8 @@ Luego de revisar la ronda, el facilitador DEBERÁ elegir explícitamente un Stor
 - **AND** la respuesta se descarta
 
 ### Requirement: Operar los Sprints mediante la TUI
-La TUI DEBERÁ permitir operar los Sprints del proyecto del espacio de trabajo desde la pestaña Sprints, que muestra el navegador de Sprints abiertos. Desde el navegador el usuario abre las historias de un Sprint (`Enter`), asigna historias del backlog al Sprint resaltado (`a`), cierra el Sprint resaltado (`x`, con confirmación), crea un Sprint (`n`) y consulta los Sprints cerrados con `h`. Las pantallas de asignación (multiselección con `Space`) y de historias del Sprint reutilizan el patrón navegable (Requirement: Listas navegables con teclas uniformes) y consumen la API existente sin incorporar reglas de negocio. El éxito y el rechazo de cada escritura se resuelven según Requirement: Avisos efímeros en lugar de pantallas de resultado; los errores de las consultas se muestran en la pantalla que las pidió.
-(Previously: los Sprints se abrían desde la opción «Sprints» del menú, pedían un proyecto si no había uno activo y cada operación terminaba en una pantalla de resultado.)
+La TUI DEBERÁ permitir operar los Sprints del proyecto del espacio de trabajo desde la pestaña Sprints, que muestra el navegador de Sprints abiertos. Desde el navegador el usuario abre las historias de un Sprint (`Enter`), asigna historias del backlog al Sprint resaltado (`a`), cierra el Sprint resaltado (`x`, con confirmación), crea un Sprint (`n`) y consulta los Sprints cerrados con `h`. En la lista de historias del Sprint, `Enter` abre el detalle de la historia (Requirement: Detalle de la historia con sus acciones) y `c` completa la historia resaltada; las tareas se consultan y se crean dentro de ese detalle. Las pantallas de asignación (multiselección con `Space`) y de historias del Sprint reutilizan el patrón navegable (Requirement: Listas navegables con teclas uniformes) y consumen la API existente sin incorporar reglas de negocio. El éxito y el rechazo de cada escritura se resuelven según Requirement: Avisos efímeros en lugar de pantallas de resultado; los errores de las consultas se muestran en la pantalla que las pidió.
+(Previously: `Enter` sobre una historia del Sprint abría directamente el formulario de tareas, sin pasar por el detalle.)
 
 #### Scenario: La opción Sprints abre el navegador
 - **GIVEN** que el espacio de trabajo de un proyecto está abierto
@@ -623,12 +636,23 @@ La TUI DEBERÁ permitir operar los Sprints del proyecto del espacio de trabajo d
 - **AND** si el usuario cancela no se emite ningún request
 - **AND** si la API rechaza el cierre la confirmación permanece con el motivo informado
 
-#### Scenario: Crear tareas y completar historias desde el Sprint
+#### Scenario: Abrir el detalle de una historia del Sprint
 - **GIVEN** que el usuario abrió las historias de un Sprint abierto
-- **WHEN** resalta una historia y presiona `Enter` o `c`
-- **THEN** `Enter` abre el formulario de tareas de esa historia
-- **AND** `c` envía `POST /projects/{pid}/sprints/{sid}/stories/{story_id}/completion`
-- **AND** ante el éxito de cualquiera de las dos la TUI vuelve a las historias del Sprint recargadas con un aviso que empieza con `✓`
+- **WHEN** resalta una historia y presiona `Enter`
+- **THEN** la TUI abre el detalle de esa historia, muestra sus tareas y consulta `GET /projects/{pid}/stories/{story_id}/tasks`
+- **AND** la pestaña resaltada y la miga de pan corresponden a Sprints, no a Backlog
+
+#### Scenario: Crear una tarea desde el detalle del Sprint
+- **GIVEN** el detalle de una historia abierto desde las historias del Sprint
+- **WHEN** el usuario presiona `n`, completa el título y las horas y confirma
+- **THEN** la TUI envía `POST /projects/{pid}/sprints/{sid}/stories/{story_id}/tasks`
+- **AND** ante el éxito vuelve al detalle de esa historia, recarga sus tareas y muestra un aviso que empieza con `✓`
+
+#### Scenario: Completar una historia del Sprint
+- **GIVEN** que el usuario está en las historias de un Sprint abierto o en el detalle de una de ellas
+- **WHEN** presiona `c`
+- **THEN** la TUI envía `POST /projects/{pid}/sprints/{sid}/stories/{story_id}/completion`
+- **AND** ante el éxito vuelve a las historias del Sprint recargadas con un aviso que empieza con `✓`
 
 #### Scenario: Consultar los Sprints cerrados
 - **GIVEN** que el navegador de Sprints está activo
@@ -642,8 +666,8 @@ La TUI DEBERÁ permitir operar los Sprints del proyecto del espacio de trabajo d
 - **THEN** la TUI lo informa y no emite ningún request de asignación
 
 ### Requirement: Elegir integrantes, historias, tareas y Sprints con selectores navegables
-La TUI DEBERÁ ofrecer selectores de integrante, historia, tarea y Sprint como listas navegables con el mismo patrón de las colecciones existentes: la búsqueda se activa con `/` o al empezar a escribir, `↑`/`↓` mueven la selección, `Enter` ejecuta la acción primaria, `Esc` limpia el filtro y luego vuelve, `r` refresca y `?` abre la ayuda. Ningún selector DEBERÁ pedir un identificador escrito a mano. Los selectores DEBERÁN mostrar un estado de carga, un estado vacío y el error de la API sin cerrar la TUI. El selector de tareas de Esfuerzo es la excepción del estado vacío: antepone la fila «Toda la historia (sin tarea)» (Requirement: Elegir historia, tarea e integrante para registrar esfuerzo), por lo que ante una historia sin tareas muestra esa fila e indica que la historia no tiene tareas, en lugar de un estado vacío bloqueante. Los selectores de historia subsisten en la asignación de historias a un Sprint y en el alta de defecto iniciada desde la pestaña Defectos; Estimar, Registrar esfuerzo y Reportar defecto desde el detalle ya parten de la historia elegida y no usan un selector de historias.
-(Previously: la lista de selectores incluía los selectores de historia de las pestañas Estimación y Esfuerzo, que se retiran.)
+La TUI DEBERÁ ofrecer selectores de integrante, tarea y Sprint como listas navegables con el mismo patrón de las colecciones existentes: la búsqueda se activa con `/` o al empezar a escribir, `↑`/`↓` mueven la selección, `Enter` ejecuta la acción primaria, `Esc` limpia el filtro y luego vuelve, `r` refresca y `?` abre la ayuda. Ningún selector DEBERÁ pedir un identificador escrito a mano. Los selectores DEBERÁN mostrar un estado de carga, un estado vacío y el error de la API sin cerrar la TUI. El selector de tareas de Esfuerzo es la excepción del estado vacío: antepone la fila «Toda la historia (sin tarea)» (Requirement: Elegir historia, tarea e integrante para registrar esfuerzo), por lo que ante una historia sin tareas muestra esa fila e indica que la historia no tiene tareas, en lugar de un estado vacío bloqueante. No existe un selector de historia de selección simple: Estimar, Registrar esfuerzo y Reportar defecto parten de la historia elegida en el detalle, y la asignación de historias a un Sprint conserva su lista de multiselección.
+(Previously: el alta de defecto iniciada desde la pestaña Defectos usaba un selector de historia; ese alta ya no existe.)
 
 #### Scenario: Buscar en un selector
 - **GIVEN** que un selector muestra una colección
@@ -676,8 +700,8 @@ La TUI DEBERÁ ofrecer selectores de integrante, historia, tarea y Sprint como l
 - **AND** permite volver o refrescar sin cerrarse
 
 #### Scenario: Los tipos de selector son navegables
-- **GIVEN** que el usuario recorre Estimar y Registrar esfuerzo desde el detalle de una historia, y el alta de defecto desde la pestaña Defectos
-- **WHEN** elige un integrante, una tarea, una historia (en el alta de defecto desde Defectos) y un Sprint
+- **GIVEN** que el usuario recorre Estimar, Registrar esfuerzo y Reportar defecto desde el detalle de una historia
+- **WHEN** elige un integrante, una tarea y un Sprint de detección
 - **THEN** cada colección se presenta como una lista navegable con las teclas comunes
 - **AND** la selección de una fila no emite requests que modifiquen datos
 
@@ -686,6 +710,12 @@ La TUI DEBERÁ ofrecer selectores de integrante, historia, tarea y Sprint como l
 - **WHEN** el usuario inicia Estimar o Registrar esfuerzo
 - **THEN** el primer selector mostrado es el de participantes o el de tareas, respectivamente
 - **AND** la TUI no presenta ningún selector de historias en esos flujos
+
+#### Scenario: Reportar defecto no muestra un selector de historias
+- **GIVEN** el detalle de una historia
+- **WHEN** el usuario inicia Reportar defecto
+- **THEN** el formulario muestra la historia del detalle como «Historia relacionada»
+- **AND** no existe un paso de selección de historia en ese flujo
 
 ### Requirement: Elegir historia, tarea e integrante para registrar esfuerzo
 El registro de esfuerzo DEBERÁ iniciarse desde la acción «Registrar esfuerzo» del detalle de la historia (Requirement: Detalle de la historia con sus acciones), que deja la historia ya elegida y abre directamente el selector de tareas. El flujo DEBERÁ guiarse con los selectores navegables existentes, en este orden: tarea de esa historia (o la historia completa) e integrante del proyecto activo; no existe un selector de historias propio de Esfuerzo. Una vez cargadas las tareas de la historia elegida, el selector de tareas DEBERÁ anteponer, como primera fila, la fila sintética «Toda la historia (sin tarea)», seguida de las tareas en el orden informado por la API; la fila sintética DEBERÁ estar presente también cuando la historia no tiene tareas. Elegir una tarea registra el esfuerzo sobre esa tarea; elegir la fila sintética lo registra sobre la historia completa. Elegir cualquiera de las dos filas DEBERÁ abrir el selector de integrantes del proyecto activo, que en Esfuerzo es de selección simple: `Enter` elige el integrante resaltado y abre el formulario de esfuerzo (Requirement: Completar el formulario de esfuerzo), y `Space` no marca integrantes. Ningún paso DEBERÁ pedir un identificador escrito a mano. El avance entre selectores y la apertura del formulario NO DEBERÁN emitir requests que modifiquen datos. Si el proyecto no tiene integrantes, el selector de integrantes DEBERÁ mostrar un estado vacío propio que informe que el proyecto no tiene integrantes registrados, que indique que los integrantes se dan de alta mediante la API y que permita volver con `Esc` y refrescar con `r`.
@@ -1027,8 +1057,8 @@ La TUI MUST arrancar en el navegador de proyectos y emitir `GET /projects` al in
 ### Requirement: Espacio de trabajo del proyecto con pestañas
 Elegir un proyecto en el navegador con `Enter` DEBERÁ fijarlo como proyecto de la sesión y abrir su espacio de trabajo. El espacio de trabajo DEBERÁ mostrar, debajo de la barra superior, una línea con el nombre y el estado del proyecto y una barra de pestañas con, en este orden: Dashboard, Backlog, Sprints y Defectos, resaltando la pestaña activa. No existen las pestañas Estimación ni Esfuerzo: Planning Poker y el registro de esfuerzo se inician desde el detalle de una historia (Requirement: Detalle de la historia con sus acciones). En la pantalla raíz de una pestaña, y sin un filtro en edición, `Tab` y `Shift+Tab` DEBERÁN pasar a la pestaña siguiente y anterior (en forma circular), y las teclas `1` a `4` DEBERÁN abrir la pestaña de esa posición; el detalle de la historia y los pasos de los flujos de acción no son pantallas raíz y no responden a estas teclas. `Esc` en la pantalla raíz de una pestaña, sin filtro aplicado, DEBERÁ volver al navegador de proyectos. Todas las pestañas DEBERÁN operar sobre el proyecto del espacio de trabajo sin volver a pedirlo. La miga de pan DEBERÁ empezar con «Proyectos», seguir con el nombre del proyecto y la pestaña activa, y terminar en el paso actual del flujo.
 
-La pestaña activa se determina por el origen de la pantalla. Supuesto S1 de la propuesta, no consultado con el usuario y válido por defecto: la barra DEBERÁ resaltar Backlog en el detalle de la historia y en los flujos de acción que parten de él (selector de participantes, Planning Poker, selector de tareas, selectores de integrantes, formulario de esfuerzo y alta de defecto iniciada desde la historia), y Defectos solo en la lista de defectos, su detalle, el cambio de estado y el alta iniciada desde la pestaña Defectos.
-(Previously: la barra tenía seis pestañas (Dashboard, Backlog, Sprints, Estimación, Esfuerzo y Defectos), los dígitos eran `1` a `6`, y las pantallas `defect-*` resaltaban siempre Defectos.)
+La pestaña activa se determina por el origen de la pantalla. La barra DEBERÁ resaltar Backlog en el detalle de una historia abierta desde el backlog y en los flujos de acción que parten de él (selector de participantes, Planning Poker, selector de tareas, selectores de integrantes, formulario de esfuerzo y alta de defecto); y Sprints en el detalle de una historia abierta desde las historias de un Sprint y en los flujos de acción que parten de ese detalle. Defectos se resalta solo en la lista de defectos, su detalle y el cambio de estado.
+(Previously: el detalle y todos sus flujos resaltaban Backlog, y el alta de defecto iniciada desde la pestaña Defectos resaltaba Defectos.)
 
 #### Scenario: Elegir un proyecto abre el Dashboard
 - **GIVEN** que el navegador muestra varios proyectos
@@ -1074,21 +1104,49 @@ La pestaña activa se determina por el origen de la pantalla. Supuesto S1 de la 
 - **WHEN** presiona `Esc`
 - **THEN** la TUI vuelve a la lista del backlog sin salir del espacio de trabajo
 
-#### Scenario: El detalle y los flujos de acción resaltan Backlog
-- **GIVEN** el detalle de una historia, y a partir de él cada una de las acciones Estimar, Registrar esfuerzo y Reportar defecto
+#### Scenario: El detalle y los flujos de acción resaltan la pestaña de su origen
+- **GIVEN** el detalle de una historia abierto desde el backlog, y a partir de él cada una de las acciones Estimar, Registrar esfuerzo y Reportar defecto
 - **WHEN** la TUI dibuja la barra de pestañas y la miga de pan en cada pantalla de esos flujos
-- **THEN** la pestaña resaltada es siempre Backlog
-- **AND** la miga empieza con «Proyectos», el nombre del proyecto y Backlog, y termina en el paso actual
+- **THEN** la pestaña resaltada es Backlog y la miga pasa por «Backlog › Detalle»
+- **AND** si el detalle se abrió desde las historias de un Sprint, la pestaña resaltada es Sprints y la miga pasa por «Sprints › Historias › Detalle»
 
-#### Scenario: Defectos resalta su pestaña solo en su propio flujo
+#### Scenario: Defectos resalta su pestaña solo en sus propias pantallas
 - **GIVEN** que el usuario abre la pestaña Defectos
-- **WHEN** recorre la lista, el detalle de un defecto y el alta iniciada con `n`
+- **WHEN** recorre la lista, el detalle de un defecto y el cambio de estado
 - **THEN** la pestaña resaltada es Defectos en todas esas pantallas
+- **AND** `n` en la lista no inicia ningún alta ni cambia de pestaña
 
 #### Scenario: Cambiar de proyecto
 - **GIVEN** que el usuario trabaja en el proyecto A
 - **WHEN** vuelve al navegador con `Esc` y elige el proyecto B
 - **THEN** el espacio de trabajo muestra el proyecto B y todas las pestañas usan B
+
+### Requirement: Orientar en cada pestaña con un bloque «Qué es / Qué podés hacer»
+La pantalla raíz de cada pestaña del espacio de trabajo (Dashboard, Backlog, Sprints y Defectos) DEBERÁ mostrar, debajo del título, un bloque de dos líneas en lenguaje simple: «Qué es», que define la sección, y «Qué podés hacer», que nombra las acciones disponibles con sus teclas. El bloque DEBERÁ ser solo informativo: no emite requests ni altera la navegación. En el layout de dos paneles, DEBERÁ dibujarse una sola vez arriba de ambos paneles y descontarse del alto compartido; si el alto disponible no deja espacio útil para los paneles, DEBERÁ omitirse. Las pantallas de formulario, los selectores, el detalle de la historia, el detalle del defecto y la ayuda NO DEBERÁN repetir el bloque. La pestaña Defectos DEBERÁ explicar que reúne los defectos de todo el proyecto y que se reportan desde el detalle de una historia.
+
+#### Scenario: Cada pestaña raíz explica su propósito
+- **GIVEN** que el usuario abre una pestaña del espacio de trabajo
+- **WHEN** la pantalla raíz se dibuja
+- **THEN** muestra «Qué es» con una definición en lenguaje simple de la sección
+- **AND** muestra «Qué podés hacer» con sus acciones principales y las teclas que las inician
+
+#### Scenario: El bloque no se repite en los flujos
+- **GIVEN** que el usuario abrió un formulario, un selector o un detalle desde una pestaña
+- **WHEN** la pantalla del flujo se dibuja
+- **THEN** el bloque «Qué es / Qué podés hacer» no aparece
+- **AND** el alto disponible se usa para el contenido del flujo
+
+#### Scenario: Dos paneles con el bloque arriba
+- **GIVEN** una terminal ancha que activa el layout de dos paneles en Backlog, Sprints o Defectos
+- **WHEN** la pantalla raíz se dibuja
+- **THEN** el bloque aparece una sola vez arriba de los dos paneles
+- **AND** ambos paneles conservan el mismo alto, descontado el bloque
+
+#### Scenario: Defectos explica de dónde salen
+- **GIVEN** que el usuario abre la pestaña Defectos
+- **WHEN** lee el bloque «Qué es»
+- **THEN** entiende que reúne los defectos de todo el proyecto, incluso los de Sprints cerrados
+- **AND** el bloque «Qué podés hacer» indica que se reportan desde el detalle de una historia
 
 ### Requirement: Dashboard con las métricas del proyecto y de un Sprint
 La pestaña Dashboard DEBERÁ integrar la consulta de métricas: muestra el estado del proyecto y las métricas del ámbito elegido, que por defecto es el proyecto completo. La tecla `s` DEBERÁ abrir un selector con la fila «Proyecto completo» seguida de los Sprints abiertos del proyecto; elegir un Sprint DEBERÁ consultar `GET /projects/{project_id}/sprints/{sprint_id}/metrics` y mostrar sus métricas con las mismas barras, indicando el ámbito en el título del bloque. `Esc` en el selector DEBERÁ volver al Dashboard sin cambiar el ámbito. `d` DEBERÁ descargar el reporte PDF del ámbito mostrado (proyecto o Sprint). `r` DEBERÁ recargar el ámbito mostrado. La TUI MUST NOT ofrecer una sección Métricas separada.
@@ -1110,7 +1168,7 @@ La pestaña Dashboard DEBERÁ integrar la consulta de métricas: muestra el esta
 - **THEN** la TUI descarga el reporte PDF de ese Sprint
 
 ### Requirement: Avisos efímeros en lugar de pantallas de resultado
-Cuando una operación de escritura termina con éxito (crear o modificar un proyecto, crear o modificar una historia, crear un Sprint, asignar historias, completar una historia, crear una tarea, cerrar un Sprint, registrar esfuerzo, registrar un defecto o cambiar su estado), la TUI DEBERÁ volver a la pantalla desde la que se inició el flujo, recargar su colección cuando esa pantalla muestra una y mostrar un aviso de éxito con el prefijo `✓` al inicio del panel. Los destinos son: el navegador de proyectos (recargando `GET /projects`, sin abrir automáticamente un proyecto único) para los proyectos; la lista del backlog para las historias; la lista de Sprints abiertos para crear un Sprint, asignar historias y cerrar un Sprint; las historias del Sprint para completar una historia y crear una tarea; el detalle de la historia desde la que se inició el flujo para el registro de esfuerzo, con un aviso que resume horas, fecha, historia, tarea e integrante, y para el registro de un defecto iniciado desde la historia; la lista de defectos (recargada) para registrar un defecto iniciado desde la pestaña Defectos; y el detalle del defecto, actualizado con la respuesta de la API, para el cambio de estado. El guardado del Story Points de Planning Poker no emite aviso, pero vuelve igualmente al detalle de la historia con el backlog recargado (Requirement: Estimar historias con Planning Poker). El aviso DEBERÁ desaparecer con la siguiente tecla, que conserva su efecto normal; no se usan temporizadores. Mientras una escritura está en curso, la pantalla DEBERÁ mostrar un indicador de envío e ignorar las repeticiones del envío. Cuando la API rechaza la operación, la TUI DEBERÁ permanecer en el formulario o la pantalla de confirmación, conservar los valores escritos y mostrar el motivo informado por la API. Una respuesta de escritura que llega sin un envío en curso DEBERÁ descartarse sin cambiar de pantalla. La TUI MUST NOT mostrar pantallas de resultado que exijan una tecla adicional para continuar.
+Cuando una operación de escritura termina con éxito (crear o modificar un proyecto, crear o modificar una historia, crear un Sprint, asignar historias, completar una historia, crear una tarea, cerrar un Sprint, registrar esfuerzo, registrar un defecto o cambiar su estado), la TUI DEBERÁ volver a la pantalla desde la que se inició el flujo, recargar su colección cuando esa pantalla muestra una y mostrar un aviso de éxito con el prefijo `✓` al inicio del panel. Los destinos son: el navegador de proyectos (recargando `GET /projects`, sin abrir automáticamente un proyecto único) para los proyectos; la lista del backlog para las historias; la lista de Sprints abiertos para crear un Sprint, asignar historias y cerrar un Sprint; las historias del Sprint para completar una historia; el detalle de la historia desde la que se inició el flujo para crear una tarea desde el detalle del Sprint (con sus tareas recargadas), para el registro de esfuerzo, con un aviso que resume horas, fecha, historia, tarea e integrante, y para el registro de un defecto iniciado desde la historia; y el detalle del defecto, actualizado con la respuesta de la API, para el cambio de estado. El guardado del Story Points de Planning Poker no emite aviso, pero vuelve igualmente al detalle de la historia con la lista que la contiene recargada (Requirement: Estimar historias con Planning Poker). El aviso DEBERÁ desaparecer con la siguiente tecla, que conserva su efecto normal; no se usan temporizadores. Mientras una escritura está en curso, la pantalla DEBERÁ mostrar un indicador de envío e ignorar las repeticiones del envío. Cuando la API rechaza la operación, la TUI DEBERÁ permanecer en el formulario o la pantalla de confirmación, conservar los valores escritos y mostrar el motivo informado por la API. Una respuesta de escritura que llega sin un envío en curso DEBERÁ descartarse sin cambiar de pantalla. La TUI MUST NOT mostrar pantallas de resultado que exijan una tecla adicional para continuar.
 (Previously: el registro de esfuerzo volvía al selector de historias de la pestaña Esfuerzo y todo registro de defecto volvía a la lista de defectos.)
 
 #### Scenario: Crear una historia vuelve al backlog con un aviso
@@ -1138,15 +1196,10 @@ Cuando una operación de escritura termina con éxito (crear o modificar un proy
 - **THEN** la TUI vuelve al detalle de «Login» con el aviso «✓ Defecto registrado: No guarda»
 - **AND** el aviso desaparece con la siguiente tecla, que conserva su efecto normal
 
-#### Scenario: Registrar un defecto desde la pestaña Defectos vuelve a la lista
-- **GIVEN** la confirmación de un defecto iniciado con `n` desde la pestaña Defectos
-- **WHEN** la API responde con éxito
-- **THEN** la TUI vuelve a la lista de defectos recargada con un aviso que empieza con `✓`
-
 #### Scenario: Estimar vuelve al detalle sin aviso
 - **GIVEN** una estimación confirmada desde el detalle de «Login»
 - **WHEN** la API responde con éxito
-- **THEN** la TUI vuelve al detalle de «Login» y recarga el backlog
+- **THEN** la TUI vuelve al detalle de «Login» y recarga la lista que lo abrió (el backlog o las historias del Sprint)
 - **AND** el detalle muestra el Story Points guardado
 
 #### Scenario: Cambiar el estado de un defecto vuelve a su detalle
@@ -1160,13 +1213,13 @@ Cuando una operación de escritura termina con éxito (crear o modificar un proy
 - **THEN** la TUI no emite otra request y muestra «Guardando…»
 
 ### Requirement: Pie de teclas acotado y ayuda agrupada
-El pie DEBERÁ mostrar como máximo cinco atajos, los principales de la pantalla y el paso activos, y agregar `? más` cuando la pantalla tenga más atajos disponibles y `?` abra la ayuda en ese paso. La ayuda abierta con `?` DEBERÁ listar todos los atajos válidos de la pantalla activa agrupados en «Navegación», «Acciones» y «General», omitiendo los grupos vacíos. Las teclas de cambio de pestaña DEBERÁN figurar en la ayuda de las pantallas raíz del espacio de trabajo, con los dígitos `1` a `4`, y no en las demás pantallas.
-(Previously: la ayuda de las pantallas raíz listaba los dígitos `1–6`.)
+El pie DEBERÁ mostrar como máximo ocho atajos, los principales de la pantalla y el paso activos, y agregar `? más` cuando la pantalla tenga más atajos disponibles y `?` abra la ayuda en ese paso. La ayuda abierta con `?` DEBERÁ comenzar con el grupo «Conceptos» (Requirement: Mostrar la ayuda de conceptos y teclado) y luego listar todos los atajos válidos de la pantalla activa agrupados en «Navegación», «Acciones» y «General», omitiendo los grupos vacíos. Cuando la ayuda exceda el alto del panel, DEBERÁ desplazarse con `↑`/`↓` y `PgUp`/`PgDn`. Las teclas de cambio de pestaña DEBERÁN figurar en la ayuda de las pantallas raíz del espacio de trabajo, con los dígitos `1` a `4`, y no en las demás pantallas.
+(Previously: el pie mostraba como máximo cinco atajos y la ayuda de las pantallas raíz listaba los dígitos `1–6`.)
 
 #### Scenario: Pie de la lista de Sprints
 - **GIVEN** que la pestaña Sprints muestra su lista
 - **WHEN** la TUI dibuja el pie
-- **THEN** muestra como máximo cinco atajos y `? más`
+- **THEN** muestra como máximo ocho atajos y `? más`
 
 #### Scenario: La ayuda lista todos los atajos agrupados
 - **GIVEN** que la pestaña Sprints muestra su lista
@@ -1230,7 +1283,7 @@ El usuario DEBERÁ poder salir limpiamente con `Ctrl+C` desde cualquier pantalla
 - **THEN** la TUI se cierra con código 0 sin traza de error
 
 ### Requirement: Retroceder en el flujo de esfuerzo y descartar respuestas tardías
-`Esc` DEBERÁ retroceder un nivel por vez en el flujo de Esfuerzo iniciado desde el detalle de una historia: del formulario al selector de integrantes, del selector de integrantes al de tareas y del selector de tareas, primer paso del flujo, al detalle de la historia. Cada retroceso DEBERÁ restaurar el paso anterior tal como estaba al elegir su fila (filas, cursor y filtro), sin emitir requests; en un selector con filtro aplicado, el primer `Esc` limpia el filtro y el siguiente retrocede. Salir del formulario con `Esc` descarta lo escrito. Tras un registro exitoso la TUI vuelve al detalle de la historia y el siguiente registro empieza con el formulario inicial. Cambiar de proyecto desde el navegador DEBERÁ descartar el estado del flujo (historia, tarea, integrante y formulario), el detalle y su destino de retorno, y abrir el espacio de trabajo del nuevo proyecto en el Dashboard. La TUI DEBERÁ descartar sin efecto toda respuesta que ya no corresponda a la pantalla, el paso o la consulta activos: una respuesta de tareas o de integrantes tras haber retrocedido y un resultado de guardado sin un guardado en curso. Estas guardas se conservan sin cambios respecto del flujo anterior.
+`Esc` DEBERÁ retroceder un nivel por vez en el flujo de Esfuerzo iniciado desde el detalle de una historia: del formulario al selector de integrantes, del selector de integrantes al de tareas y del selector de tareas, primer paso del flujo, al detalle de la historia. Cada retroceso DEBERÁ restaurar el paso anterior tal como estaba al elegir su fila (filas, cursor y filtro), sin emitir requests; en un selector con filtro aplicado, el primer `Esc` limpia el filtro y el siguiente retrocede. Salir del formulario con `Esc` descarta lo escrito. Tras un registro exitoso la TUI vuelve al detalle de la historia y el siguiente registro empieza con el formulario inicial. Cambiar de proyecto desde el navegador DEBERÁ descartar el estado del flujo (historia, tarea, integrante y formulario), el detalle y su origen, y abrir el espacio de trabajo del nuevo proyecto en el Dashboard. La TUI DEBERÁ descartar sin efecto toda respuesta que ya no corresponda a la pantalla, el paso o la consulta activos: una respuesta de tareas o de integrantes tras haber retrocedido y un resultado de guardado sin un guardado en curso. Estas guardas se conservan sin cambios respecto del flujo anterior.
 (Previously: el primer paso era el selector de historias de la pestaña Esfuerzo, el último `Esc` volvía al navegador de proyectos, y un registro exitoso volvía a ese selector; con la historia preelegida mediante `E`, el `Esc` del primer paso volvía a la lista del backlog.)
 
 #### Scenario: `Esc` recorre formulario, integrantes y tareas hasta el detalle
@@ -1281,13 +1334,13 @@ El usuario DEBERÁ poder salir limpiamente con `Ctrl+C` desde cualquier pantalla
 - **AND** la pantalla no conserva el aviso, el registro ni las selecciones de `p-1`
 
 ### Requirement: Detalle de la historia con sus acciones
-Desde la lista del backlog, `Enter` sobre la historia resaltada DEBERÁ abrir el detalle de esa historia (pantalla `story-detail`) sin emitir ninguna request. El detalle DEBERÁ mostrar únicamente los campos de la historia: título, descripción, prioridad, estado, story points, criterios de aceptación y horas estimadas, con «—» cuando un valor es nulo o está vacío. El detalle NO DEBERÁ mostrar tareas, defectos asociados ni registros de esfuerzo, ni emitir requests para obtenerlos o para obtener la historia por separado: la TUI conserva solo el identificador de la historia elegida y DEBERÁ releerla de la lista del backlog cargada cada vez que dibuja el detalle, de modo que nunca muestre datos anteriores a una estimación, una modificación o una recarga.
+Desde la lista del backlog, `Enter` sobre la historia resaltada DEBERÁ abrir el detalle de esa historia (pantalla `story-detail`) sin emitir ninguna request. Desde las historias de un Sprint, `Enter` DEBERÁ abrir el mismo detalle de esa historia y consultar únicamente sus tareas (`GET /projects/{pid}/stories/{sid}/tasks`). El detalle DEBERÁ mostrar los campos de la historia: título, descripción, prioridad, estado, story points, criterios de aceptación y horas estimadas, con «—» cuando un valor es nulo o está vacío. En el detalle abierto desde el backlog NO DEBERÁ mostrar tareas, defectos asociados ni registros de esfuerzo, ni emitir requests para obtenerlos. En el detalle abierto desde un Sprint DEBERÁ mostrar además el Sprint de origen y la lista de tareas de la historia, y `r` DEBERÁ volver a consultarlas. En ambos casos la TUI conserva solo el identificador de la historia elegida y su origen, y DEBERÁ releer la historia de la lista que la abrió cada vez que dibuja el detalle, de modo que nunca muestre datos anteriores a una estimación, una modificación o una recarga.
 
-El detalle DEBERÁ ofrecer tres acciones como filas seleccionables, en este orden: «Estimar» (Planning Poker), «Registrar esfuerzo» y «Reportar defecto». `↑`/`↓` mueven la fila resaltada (inicialmente la primera) y `Enter` ejecuta la acción resaltada. Cada acción DEBERÁ tener además un atajo de una tecla, sin importar la fila resaltada: `p` Estimar, `t` Registrar esfuerzo y `d` Reportar defecto. Las acciones se inician con la historia ya elegida: Estimar abre directamente el selector de participantes, Registrar esfuerzo abre directamente el selector de tareas y Reportar defecto abre el formulario de alta con la historia precargada (Requirement: Reportar un defecto desde la historia). El detalle NO DEBERÁ ofrecer modificar la historia; eso se hace con `e` desde la lista.
+El detalle DEBERÁ ofrecer acciones como filas seleccionables. En el detalle abierto desde el backlog, en este orden: «Estimar» (Planning Poker), «Registrar esfuerzo» y «Reportar defecto». En el detalle abierto desde un Sprint, esas tres acciones y además «Agregar tarea» y «Completar historia», en ese orden. `↑`/`↓` mueven la fila resaltada (inicialmente la primera) y `Enter` ejecuta la acción resaltada. Cada acción DEBERÁ tener además un atajo de una tecla, sin importar la fila resaltada: `p` Estimar, `t` Registrar esfuerzo, `d` Reportar defecto, `n` Agregar tarea y `c` Completar historia. Las acciones se inician con la historia ya elegida: Estimar abre directamente el selector de participantes, Registrar esfuerzo abre directamente el selector de tareas y Reportar defecto abre el formulario de alta con la historia precargada (Requirement: Reportar un defecto desde la historia); Agregar tarea abre el formulario de tarea y Completar historia envía la finalización al Sprint. El detalle NO DEBERÁ ofrecer modificar la historia; eso se hace con `e` desde la lista.
 
-Todo flujo iniciado desde el detalle DEBERÁ tomar el detalle de esa historia como destino de retorno: al completarse con éxito y al cancelar con `Esc` desde su primer paso, la TUI vuelve al detalle. Los pasos posteriores retroceden de a un nivel, según el requisito de cada flujo. `Esc` en el detalle DEBERÁ volver a la lista del backlog sin emitir requests, con el filtro y el cursor que tenía al abrir el detalle; si el backlog se recargó mientras tanto (por ejemplo, tras estimar), la lista se comporta como tras cualquier recarga del backlog.
+Todo flujo iniciado desde el detalle DEBERÁ tomar el detalle de esa historia como destino de retorno: al completarse con éxito y al cancelar con `Esc` desde su primer paso, la TUI vuelve al detalle. El formulario de tarea iniciado con `n` vuelve al detalle y recarga sus tareas tras crear la tarea. Los pasos posteriores retroceden de a un nivel, según el requisito de cada flujo. `Esc` en el detalle DEBERÁ volver a la lista que lo abrió (el backlog o las historias del Sprint) sin emitir requests, con el filtro y el cursor que tenía al abrir el detalle; si esa lista se recargó mientras tanto (por ejemplo, tras estimar), se comporta como tras cualquier recarga.
 
-Cuando el backlog se está recargando, el detalle DEBERÁ indicar la carga y no ofrecer acciones. Si la historia ya no está en el backlog cargado (por ejemplo, fue quitada antes de una recarga), el detalle DEBERÁ informarlo, no ofrecer acciones y permitir volver con `Esc`. Si la recarga falla, el detalle DEBERÁ mostrar el motivo dentro de la pantalla sin cerrarse, no ofrecer acciones y permitir volver con `Esc`. Cambiar de proyecto DEBERÁ descartar el detalle, el identificador de la historia y el destino de retorno. El detalle no es una pantalla raíz de pestaña: `Tab`, `Shift+Tab` y los dígitos no cambian de pestaña. La barra de pestañas DEBERÁ resaltar Backlog en el detalle (Requirement: Espacio de trabajo del proyecto con pestañas).
+Cuando la lista que abrió el detalle se está recargando, el detalle DEBERÁ indicar la carga y no ofrecer acciones. Si la historia ya no está en esa lista, el detalle DEBERÁ informarlo («La historia ya no está en el backlog.» o «La historia ya no está en el Sprint.» según el origen), no ofrecer acciones y permitir volver con `Esc`. Si la recarga falla, el detalle DEBERÁ mostrar el motivo dentro de la pantalla sin cerrarse, no ofrecer acciones y permitir volver con `Esc`. Cambiar de proyecto DEBERÁ descartar el detalle y su origen. El detalle no es una pantalla raíz de pestaña: `Tab`, `Shift+Tab` y los dígitos no cambian de pestaña. La barra de pestañas DEBERÁ resaltar Backlog o Sprints según el origen del detalle (Requirement: Espacio de trabajo del proyecto con pestañas).
 
 #### Scenario: Enter abre el detalle con los campos de la historia
 - **GIVEN** una lista de backlog con la historia «Login», prioridad «alta», estado «pendiente», 5 story points, criterios `["A", "B"]`, 8 horas estimadas y la descripción «Ingreso de usuarios»
@@ -1295,14 +1348,20 @@ Cuando el backlog se está recargando, el detalle DEBERÁ indicar la carga y no 
 - **THEN** la TUI abre la pantalla `story-detail` mostrando título, descripción, prioridad, estado, story points, criterios de aceptación y horas estimadas de «Login»
 - **AND** no se emite ninguna request
 
+#### Scenario: Enter desde las historias del Sprint abre el detalle con sus tareas
+- **GIVEN** que el usuario abrió las historias de un Sprint abierto y la historia «Login» tiene la tarea «Diseñar»
+- **WHEN** resalta «Login» y presiona `Enter`
+- **THEN** la TUI abre el detalle de «Login» mostrando además el Sprint de origen y la tarea «Diseñar»
+- **AND** emite únicamente `GET /projects/{pid}/stories/{sid}/tasks`
+
 #### Scenario: Los valores faltantes se muestran como «—»
 - **GIVEN** una historia con `story_points` nulo, `estimated_hours` nulo, descripción vacía y sin criterios de aceptación
 - **WHEN** el usuario abre su detalle
 - **THEN** cada uno de esos campos muestra «—»
 
-#### Scenario: El detalle no muestra tareas, defectos ni esfuerzo
+#### Scenario: El detalle abierto desde el backlog no muestra tareas, defectos ni esfuerzo
 - **GIVEN** una historia con tareas, defectos y registros de esfuerzo en la API
-- **WHEN** el usuario abre su detalle
+- **WHEN** el usuario abre su detalle desde el backlog
 - **THEN** la pantalla muestra solo los siete campos de la historia
 - **AND** no se emite ninguna request, incluida cualquier consulta de tareas, de defectos o de registros de esfuerzo
 
@@ -1324,10 +1383,15 @@ Cuando el backlog se está recargando, el detalle DEBERÁ indicar la carga y no 
 - **AND** un `Enter` posterior sobre la fila resaltada abre su detalle
 
 #### Scenario: Las acciones se ofrecen como filas en orden
-- **GIVEN** el detalle de una historia abierto
+- **GIVEN** el detalle de una historia abierto desde el backlog
 - **WHEN** la TUI lo dibuja
 - **THEN** muestra las filas «Estimar», «Registrar esfuerzo» y «Reportar defecto», en ese orden, con la primera resaltada
 - **AND** `↓` resalta la siguiente fila y `↑` la anterior
+
+#### Scenario: El detalle del Sprint agrega las acciones de ejecución
+- **GIVEN** el detalle de una historia abierto desde las historias de un Sprint
+- **WHEN** la TUI lo dibuja
+- **THEN** muestra las filas «Estimar», «Registrar esfuerzo», «Reportar defecto», «Agregar tarea» y «Completar historia», en ese orden
 
 #### Scenario: Enter ejecuta la acción resaltada
 - **GIVEN** el detalle de la historia «Login» con la fila «Registrar esfuerzo» resaltada
@@ -1340,6 +1404,24 @@ Cuando el backlog se está recargando, el detalle DEBERÁ indicar la carga y no 
 - **THEN** `p` abre el selector de participantes de Planning Poker para «Login»
 - **AND** `t` abre el selector de tareas de «Login»
 - **AND** `d` abre el formulario de alta de defecto con «Login» precargada
+- **AND** en el detalle abierto desde un Sprint, `n` abre el formulario de tarea y `c` completa la historia
+
+#### Scenario: n abre el formulario de tarea y el éxito vuelve al detalle
+- **GIVEN** el detalle de «Login» abierto desde un Sprint
+- **WHEN** el usuario presiona `n`, completa el título y las horas, y la API acepta la tarea
+- **THEN** la TUI vuelve al detalle de «Login» y recarga sus tareas
+- **AND** muestra un aviso que empieza con `✓`
+
+#### Scenario: c completa la historia desde el detalle
+- **GIVEN** el detalle de «Login» abierto desde un Sprint
+- **WHEN** el usuario presiona `c`
+- **THEN** la TUI envía `POST /projects/{pid}/sprints/{sid}/stories/{sid}/completion`
+- **AND** ante el éxito vuelve a las historias del Sprint recargadas con un aviso que empieza con `✓`
+
+#### Scenario: r refresca las tareas del detalle del Sprint
+- **GIVEN** el detalle de «Login» abierto desde un Sprint
+- **WHEN** el usuario presiona `r`
+- **THEN** la TUI vuelve a consultar `GET /projects/{pid}/stories/{sid}/tasks` y actualiza la lista sin salir del detalle
 
 #### Scenario: Estimar desde el detalle y volver con Esc
 - **GIVEN** que el usuario abrió Estimar desde el detalle de «Login» y está en el selector de participantes
@@ -1348,32 +1430,38 @@ Cuando el backlog se está recargando, el detalle DEBERÁ indicar la carga y no 
 
 #### Scenario: El detalle refleja los Story Points tras estimar
 - **GIVEN** el detalle de «Login» con story points «—» y una estimación de 8 confirmada con éxito
-- **WHEN** la TUI vuelve al detalle y recarga el backlog
-- **THEN** el detalle muestra 8 story points de «Login», releídos del backlog recargado y no de la copia anterior
+- **WHEN** la TUI vuelve al detalle y recarga la lista que lo abrió
+- **THEN** el detalle muestra 8 story points de «Login», releídos de la lista recargada y no de la copia anterior
 
-#### Scenario: Mientras el backlog se recarga el detalle indica la carga
-- **GIVEN** que una estimación se guardó con éxito y la recarga del backlog sigue en curso
+#### Scenario: Mientras la lista se recarga el detalle indica la carga
+- **GIVEN** que una estimación se guardó con éxito y la recarga de la lista que abrió el detalle sigue en curso
 - **WHEN** la TUI muestra el detalle de la historia
 - **THEN** indica que está cargando y no muestra el mensaje de historia inexistente
-- **AND** no ofrece acciones ni responde a `p`, `t` ni `d`
+- **AND** no ofrece acciones ni responde a `p`, `t`, `d`, `n` ni `c`
 
 #### Scenario: La historia ya no está tras la recarga
-- **GIVEN** el detalle de «Login» abierto y un backlog recargado que ya no contiene esa historia
+- **GIVEN** el detalle de «Login» abierto y una lista recargada que ya no contiene esa historia
 - **WHEN** la TUI dibuja el detalle
-- **THEN** informa que la historia ya no está en el backlog y no ofrece acciones
-- **AND** `p`, `t` y `d` no abren ningún flujo
-- **AND** `Esc` vuelve a la lista del backlog
+- **THEN** informa que la historia ya no está en el backlog o en el Sprint, según el origen, y no ofrece acciones
+- **AND** `p`, `t`, `d`, `n` y `c` no abren ningún flujo
+- **AND** `Esc` vuelve a la lista que abrió el detalle
 
-#### Scenario: Falla la recarga del backlog
-- **GIVEN** que tras una acción exitosa la recarga del backlog responde HTTP 500
+#### Scenario: Falla la recarga de la lista
+- **GIVEN** que tras una acción exitosa la recarga de la lista responde HTTP 500
 - **WHEN** la TUI presenta el detalle
 - **THEN** muestra el error de la API dentro de la pantalla sin cerrarse y sin ofrecer acciones
-- **AND** `Esc` vuelve a la lista del backlog
+- **AND** `Esc` vuelve a la lista que abrió el detalle
 
 #### Scenario: Esc vuelve al backlog con el filtro y el cursor
 - **GIVEN** una lista con el filtro «pa» aplicado y la segunda fila resaltada, de la que se abrió el detalle
 - **WHEN** el usuario presiona `Esc` en el detalle, sin que el backlog se haya recargado
 - **THEN** la TUI vuelve a la lista con el filtro «pa» y la segunda fila resaltada
+- **AND** no emite ninguna request
+
+#### Scenario: Esc vuelve a las historias del Sprint
+- **GIVEN** el detalle de «Login» abierto desde las historias de un Sprint
+- **WHEN** el usuario presiona `Esc`
+- **THEN** la TUI vuelve a las historias del Sprint con el filtro y el cursor que tenía
 - **AND** no emite ninguna request
 
 #### Scenario: El detalle no ofrece modificar la historia
@@ -1387,11 +1475,11 @@ Cuando el backlog se está recargando, el detalle DEBERÁ indicar la carga y no 
 - **THEN** muestra el error dentro del selector sin cerrarse y sin ofrecer la fila «Toda la historia (sin tarea)»
 - **AND** `Esc` vuelve al detalle de la misma historia
 
-#### Scenario: El detalle resalta la pestaña Backlog
+#### Scenario: El detalle resalta la pestaña de su origen
 - **GIVEN** el detalle de una historia abierto
 - **WHEN** la TUI dibuja la barra de pestañas y la miga de pan
-- **THEN** la pestaña resaltada es Backlog
-- **AND** la miga empieza con «Proyectos», el nombre del proyecto y Backlog, y termina en el detalle de la historia
+- **THEN** si se abrió desde el backlog, la pestaña resaltada es Backlog y la miga es «Proyectos › Proyecto › Backlog › Detalle»
+- **AND** si se abrió desde las historias de un Sprint, la pestaña resaltada es Sprints y la miga es «Proyectos › Proyecto › Sprints › Historias › Detalle»
 
 #### Scenario: Tab y los dígitos no cambian de pestaña en el detalle
 - **GIVEN** el detalle de una historia abierto
@@ -1401,20 +1489,21 @@ Cuando el backlog se está recargando, el detalle DEBERÁ indicar la carga y no 
 #### Scenario: Pie y ayuda del detalle
 - **GIVEN** el detalle de una historia abierto
 - **WHEN** la TUI dibuja el pie y el usuario abre la ayuda con `?`
-- **THEN** el pie muestra como máximo cinco atajos, entre ellos `Enter` y `Esc`, y `? más` si hay otros
+- **THEN** el pie muestra como máximo ocho atajos, entre ellos `Enter` y `Esc`, y `? más` si hay otros
 - **AND** la ayuda lista en «Acciones» `p` (estimar), `t` (registrar esfuerzo) y `d` (reportar defecto)
+- **AND** en el detalle abierto desde un Sprint agrega `n` (agregar tarea), `c` (completar historia) y `r` (refrescar tareas)
 - **AND** la ayuda no lista `Tab/Shift+Tab` ni `1–4`
 
-#### Scenario: Cambiar de proyecto descarta el detalle y el destino de retorno
+#### Scenario: Cambiar de proyecto descarta el detalle y su origen
 - **GIVEN** el detalle de «Login» del proyecto `p-1` abierto
-- **WHEN** el usuario vuelve a Proyectos con `Esc` (desde la lista del backlog), abre el proyecto `p-2` y abre su pestaña Backlog
+- **WHEN** el usuario vuelve a Proyectos con `Esc` (desde la lista que abrió el detalle), abre el proyecto `p-2` y abre su pestaña Backlog
 - **THEN** la TUI muestra la lista del backlog de `p-2`, no el detalle de «Login»
 - **AND** iniciar y cancelar una acción desde una historia de `p-2` vuelve al detalle de esa historia y no al de `p-1`
 
 ### Requirement: Reportar un defecto desde la historia
-La acción «Reportar defecto» del detalle de la historia DEBERÁ abrir el formulario de alta de defecto con la historia del detalle ya elegida y mostrada como «Historia relacionada», omitiendo el selector de historias del alta (`defect-story-select`). La historia NO DEBERÁ poder cambiarse en este flujo. Con la historia precargada, `Enter` en el último campo del formulario DEBERÁ abrir directamente el selector de Sprints abiertos; al elegir un Sprint se vuelve al formulario y `Enter` abre la confirmación, que envía `POST /projects/{pid}/defects` con el identificador de la historia precargada. `Esc` en el selector de Sprints DEBERÁ volver al formulario conservando el borrador, y `Esc` en la confirmación DEBERÁ volver al formulario.
+La acción «Reportar defecto» del detalle de la historia DEBERÁ abrir el formulario de alta de defecto con la historia del detalle ya elegida y mostrada como «Historia relacionada», sin selector de historias. La historia NO DEBERÁ poder cambiarse en este flujo y el alta NO DEBERÁ poder iniciarse desde la pestaña Defectos: esa pestaña queda como consulta y cambio de estado. Con la historia precargada, `Enter` en el último campo del formulario DEBERÁ abrir directamente el selector de Sprints abiertos; al elegir un Sprint se vuelve al formulario y `Enter` abre la confirmación. Si el detalle se abrió desde un Sprint, ese Sprint DEBERÁ quedar precargado como Sprint de detección y `Enter` en el último campo DEBERÁ abrir la confirmación sin consultar los Sprints abiertos. La confirmación envía `POST /projects/{pid}/defects` con el identificador de la historia precargada. `Esc` en el selector de Sprints DEBERÁ volver al formulario conservando el borrador, y `Esc` en la confirmación DEBERÁ volver al formulario.
 
-El destino de retorno de este flujo es el detalle de la historia: `Esc` en el formulario (que descarta el borrador), cancelar la confirmación con `n` y el éxito del registro DEBERÁN volver al detalle. El éxito DEBERÁ mostrar en el detalle el aviso «✓ Defecto registrado: » seguido de la descripción, sin abrir la lista de defectos. Se conservan sin cambios el indicador y el bloqueo de repeticiones mientras el `POST` está en curso (la confirmación ignora `s`, `n` y `Esc`, de modo que no se emite una segunda request), la presentación del rechazo de la API en la confirmación con los valores conservados, y el descarte de toda respuesta (de Sprints o del registro) que ya no corresponda a la pantalla, a la consulta o al proyecto activos. Mientras el alta se hace desde la historia, la barra de pestañas DEBERÁ resaltar Backlog y no Defectos (Requirement: Espacio de trabajo del proyecto con pestañas). El alta iniciada con `n` desde la pestaña Defectos DEBERÁ conservar su flujo actual, con selector de historias, y su destino de retorno sigue siendo la lista de defectos.
+El destino de retorno de este flujo es el detalle de la historia: `Esc` en el formulario (que descarta el borrador), cancelar la confirmación con `n` y el éxito del registro DEBERÁN volver al detalle, conservando el origen con el que se abrió. El éxito DEBERÁ mostrar en el detalle el aviso «✓ Defecto registrado: » seguido de la descripción, sin abrir la lista de defectos. Se conservan el indicador y el bloqueo de repeticiones mientras el `POST` está en curso (la confirmación ignora `s`, `n` y `Esc`, de modo que no se emite una segunda request), la presentación del rechazo de la API en la confirmación con los valores conservados, y el descarte de toda respuesta (de Sprints o del registro) que ya no corresponda a la pantalla, a la consulta o al proyecto activos. La barra de pestañas DEBERÁ resaltar la pestaña del detalle de origen (Backlog o Sprints) en el formulario, el selector de Sprints y la confirmación (Requirement: Espacio de trabajo del proyecto con pestañas).
 
 #### Scenario: El formulario se abre con la historia precargada
 - **GIVEN** el detalle de la historia «Login»
@@ -1423,10 +1512,15 @@ El destino de retorno de este flujo es el detalle de la historia: `Esc` en el fo
 - **AND** no se muestra el selector de historias ni se emite una consulta de historias
 
 #### Scenario: Enter en el último campo abre el selector de Sprints
-- **GIVEN** el formulario de alta iniciado desde el detalle, con descripción escrita y el foco en el último campo
+- **GIVEN** el formulario de alta iniciado desde el detalle del backlog, con descripción escrita y el foco en el último campo
 - **WHEN** el usuario presiona `Enter`
 - **THEN** la TUI emite `GET /projects/{pid}/sprints/open` y muestra el selector de Sprints abiertos
-- **AND** no pasa por `defect-story-select`
+
+#### Scenario: El Sprint de detección se precarga desde el detalle del Sprint
+- **GIVEN** el detalle de «Login» abierto desde el Sprint «Meta» y el formulario de alta iniciado desde ese detalle
+- **WHEN** el usuario presiona `Enter` en el último campo
+- **THEN** el formulario muestra «Sprint de detección: Meta» y abre directamente la confirmación
+- **AND** no emite `GET /projects/{pid}/sprints/open`
 
 #### Scenario: Esc en el selector de Sprints vuelve al formulario
 - **GIVEN** el selector de Sprints abierto desde un alta iniciada en el detalle
@@ -1473,7 +1567,7 @@ El destino de retorno de este flujo es el detalle de la historia: `Esc` en el fo
 - **THEN** la TUI no emite otra request, no sale de la confirmación y mantiene el indicador de registro
 
 #### Scenario: Falla la consulta de Sprints
-- **GIVEN** un alta iniciada desde el detalle y la API responde HTTP 500 a la consulta de Sprints abiertos
+- **GIVEN** un alta iniciada desde el detalle del backlog y la API responde HTTP 500 a la consulta de Sprints abiertos
 - **WHEN** la TUI presenta el selector de Sprints
 - **THEN** muestra el error dentro del selector sin cerrarse
 - **AND** permite reintentar con `r` o volver al formulario con `Esc`
@@ -1488,14 +1582,14 @@ El destino de retorno de este flujo es el detalle de la historia: `Esc` en el fo
 - **WHEN** la TUI recibe la respuesta
 - **THEN** la descarta sin cambiar de pantalla ni mostrar avisos de `p-1`
 
-#### Scenario: La pestaña resaltada depende del origen del alta
+#### Scenario: La pestaña resaltada depende del origen del detalle
 - **GIVEN** un alta de defecto en curso
 - **WHEN** la TUI dibuja la barra de pestañas
-- **THEN** si se inició desde el detalle de una historia resalta Backlog en el formulario, el selector de Sprints y la confirmación
-- **AND** si se inició con `n` desde la pestaña Defectos resalta Defectos
+- **THEN** si se inició desde un detalle abierto en el backlog resalta Backlog en el formulario, el selector de Sprints y la confirmación
+- **AND** si se inició desde un detalle abierto en Sprints resalta Sprints en esas pantallas
 
-#### Scenario: El alta desde la pestaña Defectos conserva su flujo
-- **GIVEN** la lista de defectos y el usuario presiona `n`
-- **WHEN** completa el formulario y presiona `Enter` en el último campo
-- **THEN** la TUI abre el selector de historias del alta
-- **AND** `Esc`, cancelar con `n` y el éxito del registro vuelven a la lista de defectos, como antes de este cambio
+#### Scenario: La pestaña Defectos no inicia el alta
+- **GIVEN** la lista de defectos abierta
+- **WHEN** el usuario presiona `n`
+- **THEN** la TUI permanece en la lista y no emite requests
+- **AND** el estado vacío indica que los defectos se reportan desde el detalle de una historia

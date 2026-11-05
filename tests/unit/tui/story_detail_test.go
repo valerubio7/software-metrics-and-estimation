@@ -361,14 +361,16 @@ func TestBacklogFooterOffersDetailAndEditWithoutExceedingTheLimit(t *testing.T) 
 	}
 }
 
-func TestBacklogHintAnnouncesDetailAndEdit(t *testing.T) {
+func TestBacklogFooterAnnouncesDetailAndEdit(t *testing.T) {
 	url, _ := detailServer(t, detailStories())
 	m := openBacklogWithProject(t, url, "p1")
 
-	view := stripANSI(m.View())
+	footer := footerOf(t, stripANSI(m.View()))
 
-	if !strings.Contains(view, "Enter abre el detalle · e edita") {
-		t.Errorf("the backlog hint should announce Enter as detail and e as edit:\n%s", view)
+	for _, want := range []string{"Enter detalle", "e editar"} {
+		if !strings.Contains(footer, want) {
+			t.Errorf("footer %q does not announce %q", footer, want)
+		}
 	}
 }
 

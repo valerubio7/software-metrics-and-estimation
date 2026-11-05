@@ -162,8 +162,6 @@ func (m Model) updateDefects(key tea.KeyMsg) (Model, tea.Cmd) {
 		}
 	case tea.KeyRunes:
 		switch string(key.Runes) {
-		case "n":
-			return m.beginDefectCreation()
 		case "u":
 			visible := m.visibleDefects()
 			if m.defectCursor >= 0 && m.defectCursor < len(visible) {
@@ -213,7 +211,7 @@ func (m Model) viewDefects() string {
 	var b strings.Builder
 	b.WriteString(screenTitleStyle.Render("Defectos del proyecto " + m.projectLabel()))
 	b.WriteString("\n")
-	b.WriteString(hintStyle.Render("Listado de solo lectura · Enter muestra detalle."))
+	b.WriteString(m.sectionIntroView(m.innerWidth()))
 	b.WriteString("\n\n")
 	if m.defectFiltering || m.defectFilter != "" {
 		b.WriteString(searchLine(m.defectFilter, m.defectFiltering) + "\n\n")
@@ -224,10 +222,9 @@ func (m Model) viewDefects() string {
 		return strings.TrimRight(b.String(), "\n")
 	case m.defectError != "":
 		b.WriteString(m.errorBlock(m.defectError))
-		b.WriteString("\n\n" + hintStyle.Render("r para reintentar."))
 		return strings.TrimRight(b.String(), "\n")
 	case len(m.defects) == 0:
-		b.WriteString(emptyState("◇", "No hay defectos registrados.", "Los defectos se registran desde el flujo explícito de alta."))
+		b.WriteString(emptyState("◇", "No hay defectos registrados.", "Reportá uno desde el detalle de una historia en Backlog o Sprints."))
 		return strings.TrimRight(b.String(), "\n")
 	}
 	visible := m.visibleDefects()
@@ -235,8 +232,15 @@ func (m Model) viewDefects() string {
 		b.WriteString(emptyState("⌕", "Sin coincidencias.", "Probá con otro texto o borrá el filtro con Esc."))
 		return strings.TrimRight(b.String(), "\n")
 	}
-	b.WriteString(sectionLabel("Defectos") + "  " + hintStyle.Render(fmt.Sprintf("(%d)", len(visible))) + "\n")
-	for i, defect := range visible {
+	used := strings.Count(b.String(), "\n")
+	available := m.listAreaHeight() - used - 1
+	if m.listAreaHeight() > 0 && available < 1 {
+		available = 1
+	}
+	start, end := windowBounds(m.defectCursor, len(visible), available)
+	b.WriteString(sectionTitle("Defectos", m.defectCursor, len(visible), start, end) + "\n")
+	for i := start; i < end; i++ {
+		defect := visible[i]
 		resolution := stringValue(defect.ResolutionSprintID)
 		if resolution == "" {
 			resolution = "—"
@@ -268,6 +272,5 @@ func (m Model) viewDefectDetail() string {
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString(hintStyle.Render("u cambia el estado · Esc vuelve al listado."))
 	return strings.TrimRight(b.String(), "\n")
 }

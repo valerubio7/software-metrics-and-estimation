@@ -41,15 +41,15 @@ func hasPair(pairs []string, key, label string) bool {
 	return false
 }
 
-func TestSprintListFooterShowsAtMostFiveShortcutsAndMore(t *testing.T) {
+func TestSprintListFooterShowsPrimaryShortcutsAndMore(t *testing.T) {
 	pairs := footerPairs(openSprintList(t))
 	if !hasPair(pairs, "?", "más") {
 		t.Fatalf("footer %q lacks ? más", pairs)
 	}
-	if shortcuts := len(pairs) - 1; shortcuts > 5 {
-		t.Errorf("footer shows %d shortcuts, want at most 5: %q", shortcuts, pairs)
+	if shortcuts := len(pairs) - 1; shortcuts > 8 {
+		t.Errorf("footer shows %d shortcuts, want at most 8: %q", shortcuts, pairs)
 	}
-	for _, want := range [][2]string{{"↑/↓", "mover"}, {"Enter", "historias"}, {"n", "nuevo"}, {"/", "buscar"}, {"Esc", "proyectos"}} {
+	for _, want := range [][2]string{{"↑/↓", "mover"}, {"Enter", "historias"}, {"n", "nuevo"}, {"/", "buscar"}, {"Esc", "proyectos"}, {"a", "asignar"}, {"x", "cerrar"}, {"h", "cerrados"}} {
 		if !hasPair(pairs, want[0], want[1]) {
 			t.Errorf("footer %q lacks %s %s", pairs, want[0], want[1])
 		}
@@ -114,5 +114,35 @@ func TestFilterAndTextFieldFootersDoNotAdvertiseHelp(t *testing.T) {
 	m, _ = apply(m, keyMsg("n"))
 	if pairs := footerPairs(m); strings.Contains(strings.Join(pairs, "|"), "?") {
 		t.Errorf("text field footer %q advertises ?", pairs)
+	}
+}
+
+func TestHelpShowsConceptsBeforeShortcuts(t *testing.T) {
+	m, _ := apply(openSprintList(t), keyMsg("?"))
+	help := stripANSI(m.View())
+	concepts, shortcuts := strings.Index(help, "Conceptos"), strings.Index(help, "Atajos de teclado")
+	if concepts < 0 || shortcuts < 0 || concepts > shortcuts {
+		t.Fatalf("help must show Conceptos before Atajos de teclado: %q", help)
+	}
+	for _, want := range []string{"Proyecto", "Backlog", "Historia", "Sprint", "Tarea", "Story Points", "Esfuerzo", "Defecto", "Velocidad", "Desviación"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("help lacks the concept %q: %q", want, help)
+		}
+	}
+}
+
+func TestHelpScrollsOnShortTerminal(t *testing.T) {
+	m, _ := apply(openSprintList(t), keyMsg("?"))
+	m, _ = apply(m, tea.WindowSizeMsg{Width: 120, Height: 18})
+	if help := stripANSI(m.View()); strings.Contains(help, "Desviación") {
+		t.Fatalf("short help should start at the top, before Desviación: %q", help)
+	}
+	m = press(m, tea.KeyPgDown)
+	help := stripANSI(m.View())
+	if !strings.Contains(help, "Desviación") {
+		t.Errorf("PgDn did not reveal the end of the concepts: %q", help)
+	}
+	if !strings.Contains(help, "↑/↓") || !strings.Contains(help, "mover") {
+		t.Errorf("help footer lacks the scroll keys: %q", help)
 	}
 }

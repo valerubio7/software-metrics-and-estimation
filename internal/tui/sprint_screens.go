@@ -15,8 +15,7 @@ func (m Model) updateSprintTaskForm(key tea.KeyMsg) (Model, tea.Cmd) {
 		value = &m.taskHours
 	}
 	if key.Type == tea.KeyEsc {
-		m.Screen = "sprint-assigned-list"
-		return m, nil
+		return m.backToStoryDetail()
 	}
 	if key.Type == tea.KeyTab || key.Type == tea.KeyDown || key.Type == tea.KeyUp {
 		m.taskField = (m.taskField + 1) % 2
@@ -57,7 +56,7 @@ func (m Model) viewSprints() string {
 	var b strings.Builder
 	b.WriteString(screenTitleStyle.Render("Sprints de " + m.projectLabel()))
 	b.WriteString("\n")
-	b.WriteString(hintStyle.Render("Enter historias · d PDF · a asignar · x cerrar · h cerrados · / busca."))
+	b.WriteString(m.sectionIntroView(m.innerWidth()))
 	b.WriteString("\n\n")
 	b.WriteString(m.sprintStatusLines())
 	if m.sprintFiltering || m.sprintFilter != "" {
@@ -77,13 +76,19 @@ func (m Model) viewSprints() string {
 		return b.String()
 	}
 	sprints := m.visibleOpenSprints()
-	b.WriteString(sectionLabel("Abiertos") + "  " + hintStyle.Render(fmt.Sprintf("(%d)", len(sprints))) + "\n")
+	used := strings.Count(b.String(), "\n")
+	available := m.listAreaHeight() - used - 1
+	if m.listAreaHeight() > 0 && available < 1 {
+		available = 1
+	}
+	start, end := windowBounds(m.sprintCursor, len(sprints), available)
+	b.WriteString(sectionTitle("Abiertos", m.sprintCursor, len(sprints), start, end) + "\n")
 	if len(sprints) == 0 {
 		b.WriteString(emptyState("⌕", "Sin coincidencias.", "Probá con otro objetivo o borrá la búsqueda.") + "\n")
 		return b.String()
 	}
-	for i, sprint := range sprints {
-		b.WriteString(m.row(i == m.sprintCursor, sprintRow(sprint)) + "\n")
+	for i := start; i < end; i++ {
+		b.WriteString(m.row(i == m.sprintCursor, sprintRow(sprints[i])) + "\n")
 	}
 	return b.String()
 }
@@ -107,8 +112,6 @@ func (m Model) viewSprintConfirm() string {
 	b.WriteString("Sprint: " + m.sprintGoalByID(m.selectedSprintID) + hintStyle.Render("   "+shortID(m.selectedSprintID)))
 	b.WriteString("\n\n")
 	b.WriteString(hintStyle.Render("¿Cerrar este Sprint? Las historias planificadas y completadas quedarán en el historial."))
-	b.WriteString("\n")
-	b.WriteString(hintStyle.Render("s confirma · n o Esc cancela."))
 	b.WriteString("\n\n")
 	b.WriteString(m.sprintStatusLines())
 	return strings.TrimRight(b.String(), "\n")
@@ -134,8 +137,6 @@ func (m Model) viewSprintHistory() string {
 	b.WriteString(screenTitleStyle.Render("Historial de Sprints cerrados"))
 	b.WriteString("\n")
 	b.WriteString(hintStyle.Render("Proyecto: " + m.projectLabel()))
-	b.WriteString("\n")
-	b.WriteString(hintStyle.Render("Enter despliega las historias · / busca · Esc vuelve."))
 	b.WriteString("\n\n")
 	b.WriteString(m.sprintStatusLines())
 	if m.sprintFiltering || m.sprintFilter != "" {
@@ -219,8 +220,6 @@ func (m Model) viewSprintGoal() string {
 func (m Model) viewSprintStorySelect() string {
 	var b strings.Builder
 	b.WriteString(screenTitleStyle.Render("Elegí historias para asignar"))
-	b.WriteString("\n")
-	b.WriteString(hintStyle.Render("Space marca o desmarca · Enter confirma · / busca · Esc vuelve."))
 	b.WriteString("\n\n")
 	b.WriteString(m.sprintStatusLines())
 	if m.sprintFiltering || m.sprintFilter != "" {
@@ -254,13 +253,11 @@ func (m Model) viewSprintStorySelect() string {
 	return b.String()
 }
 
-// viewAssignedStories renders the stories of the open Sprint: Enter creates tasks,
-// c completes the highlighted story.
+// viewAssignedStories renders the stories of the open Sprint: Enter opens the
+// story detail and c completes the highlighted story.
 func (m Model) viewAssignedStories() string {
 	var b strings.Builder
 	b.WriteString(screenTitleStyle.Render("Historias del Sprint · " + m.sprintGoalByID(m.selectedSprintID)))
-	b.WriteString("\n")
-	b.WriteString(hintStyle.Render("Enter crea tareas · c completa la historia · / busca · Esc vuelve."))
 	b.WriteString("\n\n")
 	b.WriteString(m.sprintStatusLines())
 	if m.sprintFiltering || m.sprintFilter != "" {

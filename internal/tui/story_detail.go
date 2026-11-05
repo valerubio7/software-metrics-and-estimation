@@ -1,28 +1,36 @@
 package tui
 
 import (
+	"context"
+	"encoding/json"
 	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// returnTarget is where a flow goes back to when it is cancelled from its first
-// step or completes. The zero value is the defect creation started from the
-// Defectos tab, which keeps its own destination (the defect list); Estimar and
-// Registrar esfuerzo always go back to the detail.
-type returnTarget int
+// storyDetailOrigin is the list the detail was opened from. It decides where
+// Esc returns, which tab stays highlighted and whether the detail also shows
+// the tasks of the Sprint.
+type storyDetailOrigin int
 
 const (
-	returnDefault returnTarget = iota
-	returnStoryDetail
+	storyDetailFromBacklog storyDetailOrigin = iota
+	storyDetailFromSprint
 )
 
 // storyDetailState references the story by ID; the story itself is always read
-// from m.backlogStories so the detail never shows stale data.
+// from the list it came from, so the detail never shows stale data.
 type storyDetailState struct {
 	storyID string
 	cursor  int // highlighted action row
+	origin  storyDetailOrigin
+
+	// The tasks of the story are only loaded when the detail is opened from a
+	// Sprint: the Backlog detail stays a pure read of the backlog collection.
+	tasks        []Task
+	tasksLoading bool
+	tasksMessage string
 }
 
 // storyAction is one action of the detail: its row, its shortcut and its help
@@ -38,6 +46,11 @@ var storyActions = []storyAction{
 	{key: "d", label: "Reportar defecto", help: "Reportar un defecto de la historia", open: openDefectForStory},
 }
 
+var sprintStoryActions = []storyAction{
+	{key: "n", label: "Agregar tarea", help: "Agregar una tarea a la historia del Sprint", open: openTaskForStory},
+	{key: "c", label: "Completar historia", help: "Marcar la historia del Sprint como completada", open: completeStoryForStory},
+}
+
 func openPokerForStory(m Model, story Story) (Model, tea.Cmd) {
 	return m.openStoryFlow(sectionPlanningPoker, story)
 }
@@ -50,16 +63,26 @@ func openDefectForStory(m Model, story Story) (Model, tea.Cmd) {
 	return m.beginDefectCreationForStory(story)
 }
 
-// beginDefectCreationForStory opens the defect form with the story of the detail
-// already chosen, so the story selector is skipped (the form jumps from its last
-// field to the Sprint selector while storyID is set) and the story cannot change.
-// The draft always starts empty, and the flow goes back to the detail.
-func (m Model) beginDefectCreationForStory(story Story) (Model, tea.Cmd) {
-	m, cmd := m.beginDefectCreation()
-	item := storySelectorItem(story)
-	m.defectCreateForm.storyID, m.defectCreateForm.storyLabel = item.ID, item.Label
-	m.returnTo = returnStoryDetail
-	return m, cmd
+func openTaskForStory(m Model, story Story) (Model, tea.Cmd) {
+	m.taskStoryID = story.ID
+	m.taskTitle, m.taskHours, m.taskField, m.Screen = "", "", 0, "sprint-task-form"
+	m.sprintMessage = ""
+	return m, nil
+}
+
+func completeStoryForStory(m Model, story Story) (Model, tea.Cmd) {
+	return m.completeStory(story)
+}
+
+// storyDetailActions returns the actions of the detail in display order. The
+// Sprint context adds the two execution actions after the shared ones.
+func (m Model) storyDetailActions() []storyAction {
+	actions := make([]storyAction, 0, len(storyActions)+len(sprintStoryActions))
+	actions = append(actions, storyActions...)
+	if m.storyDetail.origin == storyDetailFromSprint {
+		actions = append(actions, sprintStoryActions...)
+	}
+	return actions
 }
 
 // openStoryDetail opens the detail of the story highlighted in the backlog.
@@ -75,10 +98,32 @@ func (m Model) openStoryDetail(stories []Story) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// detailStory rereads the story of the detail from the loaded backlog by ID, so
-// a reload or an estimate is reflected the next time the detail is drawn.
+// openSprintStoryDetail opens the detail of the story highlighted in a Sprint.
+// The detail reuses the loaded Sprint stories and queries only the tasks of
+// that story, because the Sprint context shows and creates them.
+func (m Model) openSprintStoryDetail(stories []Story) (Model, tea.Cmd) {
+	if m.sprintCursor < 0 || m.sprintCursor >= len(stories) {
+		return m, nil
+	}
+	story := stories[m.sprintCursor]
+	m.storyDetail = storyDetailState{
+		storyID:      story.ID,
+		origin:       storyDetailFromSprint,
+		tasksLoading: true,
+	}
+	m.sprintMessage = ""
+	m.Screen = "story-detail"
+	return m, m.loadStoryTasksCmd(story.ID)
+}
+
+// detailStory rereads the story of the detail from the list it came from by ID,
+// so a reload is reflected the next time the detail is drawn.
 func (m Model) detailStory() (Story, bool) {
-	for _, story := range m.backlogStories {
+	stories := m.backlogStories
+	if m.storyDetail.origin == storyDetailFromSprint {
+		stories = m.sprintStories
+	}
+	for _, story := range stories {
 		if story.ID == m.storyDetail.storyID {
 			return story, true
 		}
@@ -86,10 +131,15 @@ func (m Model) detailStory() (Story, bool) {
 	return Story{}, false
 }
 
-// storyActionsAvailable reports whether the detail may offer actions: the backlog
-// is not reloading, the reload did not fail and the story is still in it.
+// storyActionsAvailable reports whether the detail may offer actions: its
+// source list is not reloading, the reload did not fail and the story is still
+// in it.
 func (m Model) storyActionsAvailable() bool {
-	if m.backlogLoading || m.backlogMessage != "" {
+	if m.storyDetail.origin == storyDetailFromSprint {
+		if m.sprintStoriesLoading || m.sprintMessage != "" {
+			return false
+		}
+	} else if m.backlogLoading || m.backlogMessage != "" {
 		return false
 	}
 	_, found := m.detailStory()
@@ -97,35 +147,51 @@ func (m Model) storyActionsAvailable() bool {
 }
 
 // updateStoryDetail handles the keys of the story detail. Esc goes back to the
-// backlog without reloading it, so its filter and cursor are kept. Every other
-// key acts only while the detail is ready: during a reload, after a failed one
-// or when the story is gone there are no actions to run.
+// list it came from without reloading it, so its filter and cursor are kept.
+// Every other key acts only while the detail is ready: during a reload, after a
+// failed one or when the story is gone there are no actions to run.
 func (m Model) updateStoryDetail(key tea.KeyMsg) (Model, tea.Cmd) {
 	if key.Type == tea.KeyEsc {
-		m.Screen = "backlog"
-		return m, nil
+		return m.backToStoryList()
 	}
 	if !m.storyActionsAvailable() {
 		return m, nil
 	}
 	story, _ := m.detailStory()
+	actions := m.storyDetailActions()
 	switch key.Type {
 	case tea.KeyUp:
 		if m.storyDetail.cursor > 0 {
 			m.storyDetail.cursor--
 		}
 	case tea.KeyDown:
-		if m.storyDetail.cursor < len(storyActions)-1 {
+		if m.storyDetail.cursor < len(actions)-1 {
 			m.storyDetail.cursor++
 		}
 	case tea.KeyEnter:
-		return storyActions[m.storyDetail.cursor].open(m, story)
+		if m.storyDetail.cursor >= 0 && m.storyDetail.cursor < len(actions) {
+			return actions[m.storyDetail.cursor].open(m, story)
+		}
 	case tea.KeyRunes:
-		for _, action := range storyActions {
+		if string(key.Runes) == "r" && m.storyDetail.origin == storyDetailFromSprint {
+			return m.reloadStoryTasks()
+		}
+		for _, action := range actions {
 			if string(key.Runes) == action.key {
 				return action.open(m, story)
 			}
 		}
+	}
+	return m, nil
+}
+
+// backToStoryList returns to the list that opened the detail, keeping its
+// filter and cursor. It never issues a request.
+func (m Model) backToStoryList() (Model, tea.Cmd) {
+	if m.storyDetail.origin == storyDetailFromSprint {
+		m.Screen = "sprint-assigned-list"
+	} else {
+		m.Screen = "backlog"
 	}
 	return m, nil
 }
@@ -140,16 +206,19 @@ func (m Model) openStoryFlow(kind sectionKind, story Story) (Model, tea.Cmd) {
 	m.section = sectionState{kind: kind, selected: storySelectorItem(story)}
 	m.effort = effortState{seq: m.effort.seq}
 	m.pokerVotes = map[string]string{}
-	m.returnTo = returnStoryDetail
 	m.Screen = "section"
 	return m.beginSectionStep(kind.firstStep())
 }
 
-// reloadBacklogInPlace reloads the backlog without leaving the current screen,
-// so the detail rereads its story (and shows its loading and error states) when
-// something the detail displays has changed. It is the standard reload of the
-// backlog: the filter is kept and the cursor goes back to the top.
-func (m Model) reloadBacklogInPlace() (Model, tea.Cmd) {
+// reloadDetailStoryInPlace reloads the list that owns the story of the detail,
+// so the detail rereads it when something it displays has changed. The Backlog
+// detail keeps the Backlog reload contract; the Sprint detail reloads the
+// assigned stories without leaving the detail.
+func (m Model) reloadDetailStoryInPlace() (Model, tea.Cmd) {
+	if m.storyDetail.origin == storyDetailFromSprint {
+		m.sprintStoriesLoading, m.sprintMessage = true, ""
+		return m, m.listAssignedSprintStoriesCmd(m.selectedSprintID)
+	}
 	return m.startBacklogLoad()
 }
 
@@ -158,6 +227,50 @@ func (m Model) reloadBacklogInPlace() (Model, tea.Cmd) {
 func (m Model) backToStoryDetail() (Model, tea.Cmd) {
 	m.Screen = "story-detail"
 	return m, nil
+}
+
+// loadStoryTasksCmd fetches the tasks of the story shown by a Sprint detail.
+func (m Model) loadStoryTasksCmd(storyID string) tea.Cmd {
+	client, projectID := m.taskClient, m.activeProjectID
+	return func() tea.Msg {
+		response, err := client.ListByStory(context.Background(), projectID, storyID)
+		return storyTasksResult{StoryID: storyID, Response: response, Err: err}
+	}
+}
+
+type storyTasksResult struct {
+	StoryID  string
+	Response APIResponse
+	Err      error
+}
+
+// applyStoryTasks stores the tasks only while the same Sprint detail is showing
+// them, discarding answers that belong to a detail that was already left.
+func (m Model) applyStoryTasks(result storyTasksResult) (Model, tea.Cmd) {
+	if m.Screen != "story-detail" || m.storyDetail.origin != storyDetailFromSprint ||
+		m.storyDetail.storyID != result.StoryID || !m.storyDetail.tasksLoading {
+		return m, nil
+	}
+	m.storyDetail.tasksLoading = false
+	if message := readFailure(result.Response, result.Err); message != "" {
+		m.storyDetail.tasksMessage = message
+		return m, nil
+	}
+	var listing struct {
+		Tasks []Task `json:"tasks"`
+	}
+	if err := json.Unmarshal(result.Response.Body, &listing); err != nil {
+		m.storyDetail.tasksMessage = unreadableResponse(err)
+		return m, nil
+	}
+	m.storyDetail.tasks, m.storyDetail.tasksMessage = listing.Tasks, ""
+	return m, nil
+}
+
+// reloadStoryTasks refreshes the task list of the Sprint detail in place.
+func (m Model) reloadStoryTasks() (Model, tea.Cmd) {
+	m.storyDetail.tasksLoading, m.storyDetail.tasksMessage = true, ""
+	return m, m.loadStoryTasksCmd(m.storyDetail.storyID)
 }
 
 // storyDetailBindings lists the keys valid on the detail. Once it is ready the
@@ -171,10 +284,17 @@ func (m Model) storyDetailBindings(l *keyList) {
 		l.add(keyNav, true, "↑/↓", "mover", "Mover la selección")
 		l.add(keyAction, true, "Enter", "elegir acción", "Ejecutar la acción resaltada")
 	}
-	l.add(keyNav, true, "Esc", "backlog", "Volver a la lista del backlog")
+	if m.storyDetail.origin == storyDetailFromSprint {
+		l.add(keyNav, true, "Esc", "Sprint", "Volver a las historias del Sprint")
+	} else {
+		l.add(keyNav, true, "Esc", "backlog", "Volver a la lista del backlog")
+	}
 	if ready {
-		for _, action := range storyActions {
+		for _, action := range m.storyDetailActions() {
 			l.add(keyAction, false, action.key, strings.ToLower(action.label), action.help)
+		}
+		if m.storyDetail.origin == storyDetailFromSprint {
+			l.add(keyAction, false, "r", "refrescar tareas", "Volver a consultar las tareas de la historia")
 		}
 	}
 }
@@ -182,19 +302,32 @@ func (m Model) storyDetailBindings(l *keyList) {
 func (m Model) viewStoryDetail() string {
 	var b strings.Builder
 	b.WriteString(screenTitleStyle.Render("Detalle de la historia"))
+	if m.storyDetail.origin == storyDetailFromSprint {
+		b.WriteString("  " + appPaneMeta.Render("Sprint: "+m.sprintGoalByID(m.selectedSprintID)))
+	}
 	b.WriteString("\n\n")
 	// The four states are evaluated in this order: loading, error, missing, ready.
 	switch {
-	case m.backlogLoading:
+	case m.storyDetail.origin == storyDetailFromSprint && m.sprintStoriesLoading:
+		b.WriteString(statusMutedStyle.Render("Cargando historias…") + "\n")
+		return b.String()
+	case m.storyDetail.origin == storyDetailFromSprint && m.sprintMessage != "":
+		b.WriteString(m.errorBlock(m.sprintMessage) + "\n")
+		return b.String()
+	case m.storyDetail.origin == storyDetailFromBacklog && m.backlogLoading:
 		b.WriteString(statusMutedStyle.Render("Cargando backlog…") + "\n")
 		return b.String()
-	case m.backlogMessage != "":
+	case m.storyDetail.origin == storyDetailFromBacklog && m.backlogMessage != "":
 		b.WriteString(m.errorBlock(m.backlogMessage) + "\n")
 		return b.String()
 	}
 	story, found := m.detailStory()
 	if !found {
-		b.WriteString(emptyState("◇", "La historia ya no está en el backlog.", "Presione Esc para volver a la lista.") + "\n")
+		if m.storyDetail.origin == storyDetailFromSprint {
+			b.WriteString(emptyState("◇", "La historia ya no está en el Sprint.", "Presione Esc para volver a la lista.") + "\n")
+		} else {
+			b.WriteString(emptyState("◇", "La historia ya no está en el backlog.", "Presione Esc para volver a la lista.") + "\n")
+		}
 		return b.String()
 	}
 	points, hours := "", ""
@@ -215,9 +348,34 @@ func (m Model) viewStoryDetail() string {
 	} {
 		b.WriteString(detailField(field.label, field.value) + "\n")
 	}
+	if m.storyDetail.origin == storyDetailFromSprint {
+		b.WriteString("\n" + panelTitleStyle.Render("Tareas") + "\n")
+		b.WriteString(m.storyTasksView())
+	}
 	b.WriteString("\n" + panelTitleStyle.Render("Acciones") + "\n")
-	for i, action := range storyActions {
+	for i, action := range m.storyDetailActions() {
 		b.WriteString(m.row(i == m.storyDetail.cursor, action.key+"  "+action.label) + "\n")
+	}
+	return b.String()
+}
+
+// storyTasksView renders the read-only task list of the Sprint detail.
+func (m Model) storyTasksView() string {
+	switch {
+	case m.storyDetail.tasksLoading:
+		return statusMutedStyle.Render("Cargando tareas…") + "\n"
+	case m.storyDetail.tasksMessage != "":
+		return m.errorBlock(m.storyDetail.tasksMessage) + "\n"
+	case len(m.storyDetail.tasks) == 0:
+		return hintStyle.Render("Sin tareas todavía.") + "\n"
+	}
+	var b strings.Builder
+	for _, task := range m.storyDetail.tasks {
+		b.WriteString("• " + task.Title)
+		if task.EstimatedHours != nil {
+			b.WriteString(hintStyle.Render("  " + strconv.FormatFloat(*task.EstimatedHours, 'f', -1, 64) + " h"))
+		}
+		b.WriteString("\n")
 	}
 	return b.String()
 }

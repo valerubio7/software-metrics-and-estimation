@@ -21,7 +21,16 @@ type Model struct {
 
 	width, height int
 	showHelp      bool
+	helpOffset    int    // first visible line of the help screen
 	toast         string // last success notice, cleared by the next key
+
+	// Pane geometry for the master-detail workspace. Zero means the body uses
+	// the whole content area.
+	paneWidth  int
+	paneHeight int
+	// quietSelection draws the secondary list selection with a softer marker,
+	// so only the pane the user is acting on owns the bright focus bar.
+	quietSelection bool
 
 	// Session context shared by every screen.
 	activeProjectID     string
@@ -56,7 +65,6 @@ type Model struct {
 	backlogForm          storyForm
 	backlogMessage       string
 	storyDetail          storyDetailState
-	returnTo             returnTarget // where the open story flow goes back to
 	backlogClient        *BacklogClient
 	storyPointsClient    *StoryPointsClient
 	sprintClient         *SprintClient
@@ -108,12 +116,10 @@ type Model struct {
 	defectError           string
 	defectDetail          Defect
 	defectCreateForm      defectCreateForm
-	defectStorySelector   selector
 	defectSprintSelector  selector
 	defectCreateLoading   bool
 	defectCreateMessage   string
 	defectRequestSequence uint64
-	defectStoryRequestID  uint64
 	defectSprintRequestID uint64
 	defectCreateRequestID uint64
 
@@ -185,6 +191,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if result, ok := msg.(SprintResultMsg); ok {
 		return m.applySprintResult(result)
 	}
+	if result, ok := msg.(storyTasksResult); ok {
+		return m.applyStoryTasks(result)
+	}
 	if result, ok := msg.(SectionResultMsg); ok {
 		return m.applySectionResult(result)
 	}
@@ -227,13 +236,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if m.showHelp {
-		if key.Type == tea.KeyEsc || key.Type == tea.KeyEnter || (key.Type == tea.KeyRunes && string(key.Runes) == "?") {
-			m.showHelp = false
+		switch {
+		case key.Type == tea.KeyEsc || key.Type == tea.KeyEnter || (key.Type == tea.KeyRunes && string(key.Runes) == "?"):
+			m.showHelp, m.helpOffset = false, 0
+		case key.Type == tea.KeyUp:
+			if m.helpOffset > 0 {
+				m.helpOffset--
+			}
+		case key.Type == tea.KeyDown:
+			m.helpOffset++
+		case key.Type == tea.KeyPgUp:
+			m.helpOffset -= 5
+			if m.helpOffset < 0 {
+				m.helpOffset = 0
+			}
+		case key.Type == tea.KeyPgDown:
+			m.helpOffset += 5
 		}
+		m.clampHelpOffset()
 		return m, nil
 	}
 	if key.Type == tea.KeyRunes && string(key.Runes) == "?" && m.helpAvailable() {
-		m.showHelp = true
+		m.showHelp, m.helpOffset = true, 0
 		return m, nil
 	}
 	if m.tabRoot() && !m.filtering() {
@@ -244,7 +268,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if isQuitRune(key) && quitsOnQ(m.Screen) && !m.filtering() && !m.defectSubmissionInFlight() {
 		return m, tea.Quit
 	}
-	if m.sprintSaving && isSprintScreen(m.Screen) {
+	if m.sprintSaving && (isSprintScreen(m.Screen) || (m.Screen == "story-detail" && m.storyDetail.origin == storyDetailFromSprint)) {
 		// A Sprint write is in flight: no key may send it again or leave.
 		return m, nil
 	}
@@ -298,8 +322,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateDefectResolutionSelect(key)
 	case "defect-create-form":
 		return m.updateDefectCreateForm(key)
-	case "defect-story-select":
-		return m.updateDefectStorySelect(key)
 	case "defect-sprint-select":
 		return m.updateDefectSprintSelect(key)
 	case "defect-create-confirm":
@@ -326,7 +348,7 @@ func entersText(screen string) bool {
 // listed, so q is a plain character there; Ctrl+C always quits.
 func quitsOnQ(screen string) bool {
 	switch screen {
-	case "project-picker", "backlog", "story-detail", "sprints", "sprint-history", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "dashboard", "dashboard-sprint-select", "planning-poker", "defects", "defect-detail", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-status-select", "defect-resolution-select":
+	case "project-picker", "backlog", "story-detail", "sprints", "sprint-history", "sprint-confirm", "sprint-assigned-list", "sprint-story-select", "section", "dashboard", "dashboard-sprint-select", "planning-poker", "defects", "defect-detail", "defect-sprint-select", "defect-create-confirm", "defect-status-select", "defect-resolution-select":
 		return true
 	}
 	return false
@@ -341,7 +363,6 @@ func isQuitRune(key tea.KeyMsg) bool {
 func (m Model) filtering() bool {
 	return (m.Screen == "backlog" && m.backlogFiltering) ||
 		(m.Screen == "defects" && m.defectFiltering) ||
-		(m.Screen == "defect-story-select" && m.defectStorySelector.filtering) ||
 		(m.Screen == "defect-sprint-select" && m.defectSprintSelector.filtering) ||
 		(m.Screen == "defect-resolution-select" && m.defectResolutionSelector.filtering) ||
 		(m.Screen == "project-picker" && m.projectFiltering) ||
@@ -568,32 +589,29 @@ func (m Model) applyProjectResult(result ProjectResultMsg) (Model, tea.Cmd) {
 	return m.reopenProjectPicker()
 }
 
-// View implements tea.Model.
+// View implements tea.Model. The shell is fixed: the app bar, the project and
+// tab header, a live status line, the body and a wrapped footer. The body
+// always fills the terminal so the layout never jumps between screens.
 func (m Model) View() string {
-	var content strings.Builder
 	if m.showHelp {
-		content.WriteString(m.viewHelp())
-	} else {
-		if m.toast != "" {
-			content.WriteString(m.okBlock("✓ " + m.toast))
-			content.WriteString("\n\n")
-		}
-		if m.APIErr != nil {
-			content.WriteString(m.errorBlock("API no disponible: " + m.APIErr.Error()))
-			content.WriteString("\n")
-			content.WriteString(errorHintStyle.Render("Revisá API_URL o levantá la API; la navegación sigue disponible."))
-			content.WriteString("\n\n")
-		}
-		content.WriteString(m.viewBody())
+		return m.helpView()
 	}
-	var b strings.Builder
-	b.WriteString(m.chrome())
-	b.WriteString("\n")
-	b.WriteString(m.card(content.String()))
-	b.WriteString("\n")
-	b.WriteString(m.footer())
-	return b.String()
+	m.paneWidth, m.paneHeight = 0, m.bodyInnerHeight()
+	body := ""
+	if m.masterDetail() {
+		body = m.masterDetailView()
+	} else {
+		body = m.card(m.viewBody())
+	}
+	view := m.headerView() + "\n" + m.statusView() + "\n" + body + "\n" + m.footerView()
+	if m.height > 0 {
+		view = fitHeight(view, m.height)
+	}
+	return view
 }
+
+// viewBody dispatches the screen body. It never draws the outer frame; the
+// shell owns it, so narrow and wide layouts share every screen.
 func (m Model) viewBody() string {
 	switch m.Screen {
 	case "project-picker":
@@ -640,8 +658,6 @@ func (m Model) viewBody() string {
 		return strings.TrimRight(m.viewSelector(&m.defectResolutionSelector, "Defecto · Sprint de resolución", "Elegí un Sprint abierto o cerrado del proyecto.", "No hay Sprints disponibles.", "Creá un Sprint desde Sprints y volvé a intentar."), "\n") + m.defectStatusLines()
 	case "defect-create-form":
 		return m.viewDefectCreateForm()
-	case "defect-story-select":
-		return m.viewSelector(&m.defectStorySelector, "Defecto · Historia", "Elegí la historia relacionada.", "No hay historias en el backlog.", "Creá una historia desde Backlog y volvé a intentar.")
 	case "defect-sprint-select":
 		return m.viewSelector(&m.defectSprintSelector, "Defecto · Sprint de detección", "Elegí un Sprint abierto del proyecto.", "No hay Sprints abiertos.", "Creá un Sprint desde Sprints y volvé a intentar.")
 	case "defect-create-confirm":
@@ -688,46 +704,285 @@ func (m Model) viewProjectForm() string {
 	return b.String()
 }
 
-// chrome renders the persistent top bar: a solid app bar with the brand and
-// the connection state, followed by the breadcrumb trail and a rule.
-func (m Model) chrome() string {
+// headerLines is how many lines the shell spends above the body and status.
+// Wide workspaces merge the breadcrumb and the tabs on one line.
+func (m Model) headerLines() int {
+	if m.inWorkspace() {
+		if m.compactHeader() {
+			return 2
+		}
+		return 3
+	}
+	if m.Screen == "create-project" || m.Screen == "edit-project" {
+		return 2
+	}
+	return 1
+}
+
+// compactHeader reports whether the breadcrumb and tabs fit side by side.
+func (m Model) compactHeader() bool {
+	return m.contentWidth() >= 100
+}
+
+// footerHeight is how many lines the wrapped footer needs.
+func (m Model) footerHeight() int {
+	lines := strings.Count(m.footer(), "\n") + 1
+	if lines < 1 {
+		return 1
+	}
+	if lines > 3 {
+		return 3
+	}
+	return lines
+}
+
+// bodyOuterHeight is the height reserved for the framed body, borders included.
+func (m Model) bodyOuterHeight() int {
+	if m.height <= 0 {
+		return 0
+	}
+	h := m.height - m.headerLines() - 1 - m.footerHeight() // status + footer
+	if h < 3 {
+		return 3
+	}
+	return h
+}
+
+// bodyInnerHeight is the usable height inside the body frame.
+func (m Model) bodyInnerHeight() int {
+	outer := m.bodyOuterHeight()
+	if outer <= 0 {
+		return 0
+	}
+	if outer < 3 {
+		return 1
+	}
+	return outer - 2
+}
+
+// headerView renders the app bar, the project context line (inside a workspace)
+// and the tab row. The project form keeps its breadcrumb on the second line.
+func (m Model) headerView() string {
+	width := m.contentWidth()
+	lines := []string{m.appBar()}
+	if m.inWorkspace() {
+		if m.compactHeader() {
+			lines = append(lines, m.breadcrumbTabsLine())
+		} else {
+			lines = append(lines, m.contextLine(), m.tabBar())
+		}
+	} else if m.Screen == "create-project" || m.Screen == "edit-project" {
+		lines = append(lines, ansi.Truncate(breadcrumb(m.crumbParts()...), width, "…"))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// breadcrumbTabsLine is the wide workspace header: the path on the left and
+// the tabs on the right.
+func (m Model) breadcrumbTabsLine() string {
+	width := m.contentWidth()
+	crumbs := breadcrumb(m.crumbParts()...)
+	tabs := m.tabsView(true)
+	if lipgloss.Width(crumbs)+lipgloss.Width(tabs)+1 > width {
+		tabs = m.tabsView(false)
+	}
+	if lipgloss.Width(crumbs)+lipgloss.Width(tabs)+1 > width {
+		parts := m.crumbParts()
+		if len(parts) > 1 {
+			crumbs = breadcrumb(parts[len(parts)-1])
+		}
+	}
+	available := width - lipgloss.Width(tabs) - 1
+	if available < 0 {
+		available = 0
+	}
+	crumbs = ansi.Truncate(crumbs, available, "…")
+	gap := width - lipgloss.Width(crumbs) - lipgloss.Width(tabs)
+	if gap < 1 {
+		gap = 1
+	}
+	return crumbs + strings.Repeat(" ", gap) + tabs
+}
+
+// contextLine shows where the user is and which project is open. The
+// breadcrumb is truncated before the project, so the project never disappears.
+func (m Model) contextLine() string {
+	width := m.contentWidth()
+	project := titleStyle.Render("◆ " + m.projectLabel())
+	if m.activeProjectStatus != "" {
+		project += "  " + projectStatusBadge(m.activeProjectStatus)
+	}
+	projectWidth := lipgloss.Width(project)
+	if projectWidth >= width {
+		return ansi.Truncate(project, width, "…")
+	}
+	crumbs := breadcrumb(m.crumbParts()...)
+	available := width - projectWidth - 2
+	if available < 8 {
+		return project
+	}
+	crumbs = ansi.Truncate(crumbs, available, "…")
+	gap := width - lipgloss.Width(crumbs) - projectWidth
+	if gap < 1 {
+		gap = 1
+	}
+	return crumbs + strings.Repeat(" ", gap) + project
+}
+
+// appBar is the single top line: brand and connection state.
+func (m Model) appBar() string {
 	width := m.contentWidth()
 	status, statusStyle := "● API conectada", appBarOkStyle
 	if m.APIErr != nil {
 		status, statusStyle = "● API caída", appBarDangerStyle
 	}
-	var b strings.Builder
-	b.WriteString(m.appBar(statusStyle, status))
-	b.WriteString("\n")
-	if m.inWorkspace() {
-		b.WriteString(m.workspaceHeader())
-		b.WriteString("\n")
-	}
-	b.WriteString(ansi.Truncate(breadcrumb(m.crumbParts()...), width, "…"))
-	b.WriteString("\n")
-	b.WriteString(ruleStyle.Render(strings.Repeat("─", width)))
-	return b.String()
-}
-
-// appBar renders the solid top band. On narrow terminals it drops the brand
-// text (keeping the marker) so the connection badge always stays visible.
-func (m Model) appBar(statusStyle lipgloss.Style, status string) string {
-	width := m.contentWidth()
 	right := statusStyle.Render(" " + status + " ")
 	rw := lipgloss.Width(right)
 	if width <= rw {
 		return statusStyle.Render(ansi.Truncate(" "+status+" ", width, "…"))
 	}
-	brand := " ◆ Software Metrics & Estimation "
-	left := appBarBrandStyle.Render(brand)
-	if lipgloss.Width(left)+rw+1 > width {
-		left = appBarBrandStyle.Render(" ◆ ")
+	brand := appBarBrandStyle.Render(" ◆ Software Metrics & Estimation ")
+	if lipgloss.Width(brand)+rw+1 > width {
+		brand = appBarBrandStyle.Render(" ◆ ")
 	}
-	gap := width - lipgloss.Width(left) - rw
+	gap := width - lipgloss.Width(brand) - rw
 	if gap < 0 {
 		gap = 0
 	}
-	return left + appBarFillStyle.Render(strings.Repeat(" ", gap)) + right
+	return brand + appBarFillStyle.Render(strings.Repeat(" ", gap)) + right
+}
+
+// tabBar renders the workspace tabs on their own line for narrow terminals,
+// dropping the digits only when they cannot fit.
+func (m Model) tabBar() string {
+	width := m.contentWidth()
+	tabs := m.tabsView(true)
+	if lipgloss.Width(tabs) > width {
+		tabs = m.tabsView(false)
+	}
+	return ansi.Truncate(tabs, width, "")
+}
+
+// tabsView renders the tab chips. The active tab is a filled accent chip.
+func (m Model) tabsView(numbered bool) string {
+	current := m.currentTab()
+	parts := make([]string, 0, len(workspaceTabs))
+	for i, t := range workspaceTabs {
+		label := t.title()
+		if numbered {
+			label = fmt.Sprintf("%d %s", i+1, label)
+		}
+		if t == current {
+			parts = append(parts, tabActiveStyle.Render(" "+label+" "))
+		} else {
+			parts = append(parts, tabIdleStyle.Render(" "+label+" "))
+		}
+	}
+	return strings.Join(parts, "")
+}
+
+// statusView is the live line above the footer: the last success notice, an
+// API failure or a short summary of the current collection.
+func (m Model) statusView() string {
+	width := m.contentWidth()
+	left := ""
+	switch {
+	case m.toast != "":
+		left = appOK.Render("✓ " + m.toast)
+	case m.APIErr != nil:
+		left = appErr.Render("✗ API no disponible: " + m.APIErr.Error())
+	case m.message != "":
+		left = appErr.Render("✗ " + m.message)
+	default:
+		left = appHint.Render(m.contextSummary())
+	}
+	return ansi.Truncate(left, width, "…")
+}
+
+// contextSummary is the calm state of the status line: what the user is looking
+// at and how much of it there is. It never replaces an inline error.
+func (m Model) contextSummary() string {
+	switch m.Screen {
+	case "project-picker":
+		if m.projectsLoading {
+			return "Cargando proyectos…"
+		}
+		return countLabel(len(m.projects), "proyecto", "proyectos")
+	case "backlog":
+		stories := m.visibleStories()
+		done := 0
+		for _, story := range stories {
+			if normalizeStoryStatus(story.Status) == "completada" {
+				done++
+			}
+		}
+		if m.backlogLoading {
+			return "Cargando backlog…"
+		}
+		return fmt.Sprintf("%s · %s", countLabel(len(stories), "historia", "historias"), countLabel(done, "completada", "completadas"))
+	case "story-detail":
+		if story, ok := m.detailStory(); ok {
+			return "Historia " + shortID(story.ID) + " · " + story.Title
+		}
+		return "Detalle de la historia"
+	case "sprints":
+		return countLabel(len(m.openSprints), "Sprint abierto", "Sprints abiertos")
+	case "sprint-assigned-list":
+		return fmt.Sprintf("%s en el Sprint", countLabel(len(m.sprintStories), "historia", "historias"))
+	case "defects":
+		open := 0
+		for _, defect := range m.visibleDefects() {
+			if defect.Status != "resuelto" {
+				open++
+			}
+		}
+		return fmt.Sprintf("%s · %d sin resolver", countLabel(len(m.visibleDefects()), "defecto", "defectos"), open)
+	case "defect-detail":
+		return "Defecto " + shortID(m.defectDetail.ID) + " · " + m.defectDetail.Status
+	case "dashboard":
+		if m.dashboard.sprintID != "" {
+			return "Estado y métricas · Sprint " + m.dashboard.sprintLabel
+		}
+		return "Estado y métricas del proyecto"
+	}
+	parts := m.crumbParts()
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, " › ")
+}
+
+// footerView is the shortcut line. It wraps whole key pairs instead of
+// clipping them, and the shell reserves exactly the lines it needs.
+func (m Model) footerView() string {
+	lines := strings.Split(m.footer(), "\n")
+	for i, line := range lines {
+		lines[i] = ansi.Truncate(line, m.contentWidth(), "…")
+	}
+	return strings.Join(lines, "\n")
+}
+
+// helpView is the full-screen reference for concepts and shortcuts. It is the
+// only screen that replaces the workspace: it is a lookup, not a step in a
+// flow. It windows the content to the body height so a short terminal scrolls
+// instead of dropping the end of the list.
+func (m Model) helpView() string {
+	m.paneWidth, m.paneHeight = 0, 0
+	lines := m.helpContentLines()
+	height := m.bodyInnerHeight()
+	offset := m.helpOffset
+	if height > 0 && len(lines) > height {
+		maxOffset := len(lines) - height
+		if offset > maxOffset {
+			offset = maxOffset
+		}
+		if offset < 0 {
+			offset = 0
+		}
+		lines = lines[offset : offset+height]
+	}
+	body := m.cardAt(m.contentWidth(), height, strings.Join(lines, "\n"))
+	return m.headerView() + "\n" + m.statusView() + "\n" + body + "\n" + m.footerView()
 }
 
 func (m Model) crumbParts() []string {
@@ -748,7 +1003,11 @@ func (m Model) crumbParts() []string {
 			parts = append(parts, "Historia")
 		}
 	case "story-detail":
-		parts = append(parts, "Backlog", "Detalle")
+		if m.storyDetail.origin == storyDetailFromSprint {
+			parts = append(parts, "Sprints", "Historias", "Detalle")
+		} else {
+			parts = append(parts, "Backlog", "Detalle")
+		}
 	case "sprints", "sprint-goal", "sprint-story-select", "sprint-assigned-list", "sprint-task-form", "sprint-history", "sprint-confirm":
 		parts = append(parts, "Sprints")
 		switch m.Screen {
@@ -785,7 +1044,7 @@ func (m Model) crumbParts() []string {
 		parts = append(parts, "Dashboard")
 	case "dashboard-sprint-select":
 		parts = append(parts, "Dashboard", "Elegir ámbito")
-	case "defects", "defect-detail", "defect-create-form", "defect-story-select", "defect-sprint-select", "defect-create-confirm", "defect-status-select", "defect-resolution-select":
+	case "defects", "defect-detail", "defect-create-form", "defect-sprint-select", "defect-create-confirm", "defect-status-select", "defect-resolution-select":
 		if prefix := m.storyFlowCrumb(); prefix != nil {
 			parts = append(parts, prefix...) // reported from the story detail
 		} else {
@@ -796,8 +1055,6 @@ func (m Model) crumbParts() []string {
 			parts = append(parts, "Detalle")
 		case "defect-create-form":
 			parts = append(parts, "Registrar defecto")
-		case "defect-story-select":
-			parts = append(parts, "Elegir historia")
 		case "defect-sprint-select":
 			parts = append(parts, "Elegir Sprint de detección")
 		case "defect-create-confirm":
@@ -819,10 +1076,13 @@ func (m Model) crumbParts() []string {
 // storyFlowCrumb is the prefix of the breadcrumb of an action launched from the
 // story detail; the defect screens reached from the Defectos tab have none.
 func (m Model) storyFlowCrumb() []string {
-	if m.inStoryFlow() {
-		return []string{"Backlog", "Detalle"}
+	if !m.inStoryFlow() {
+		return nil
 	}
-	return nil
+	if m.storyDetail.origin == storyDetailFromSprint {
+		return []string{"Sprints", "Historias", "Detalle"}
+	}
+	return []string{"Backlog", "Detalle"}
 }
 
 func isProjectScreen(screen string) bool {
@@ -840,6 +1100,14 @@ func padRight(s string, width int) string {
 	return s + strings.Repeat(" ", width-lipgloss.Width(s))
 }
 
+// countLabel renders a count with the right singular or plural noun.
+func countLabel(n int, singular, plural string) string {
+	if n == 1 {
+		return "1 " + singular
+	}
+	return fmt.Sprintf("%d %s", n, plural)
+}
+
 func (m Model) contentWidth() int {
 	if m.width > 0 {
 		return m.width
@@ -847,32 +1115,102 @@ func (m Model) contentWidth() int {
 	return 80
 }
 
-// innerWidth is the usable width inside the content panel (borders and
-// horizontal padding subtracted), used by rows and form fields so their
-// selection bar fills the panel.
+// innerWidth is the usable width inside the active frame: the whole body in
+// narrow layouts, or one master-detail pane when paneWidth is set.
 func (m Model) innerWidth() int {
-	if w := m.contentWidth() - 4; w > 10 {
+	base := m.contentWidth()
+	if m.paneWidth > 0 {
+		base = m.paneWidth
+	}
+	if w := base - 4; w > 10 {
 		return w
 	}
 	return 10
 }
 
-// card frames the body in a rounded panel sized to the content width. Plain
-// text wraps to the inner width; already-styled lines are truncated as a
-// safety net so a stray long row cannot widen the panel.
+// listAreaHeight is the number of lines a list may use. Zero means unbounded,
+// which keeps tests and headless renders from clipping.
+func (m Model) listAreaHeight() int {
+	if m.paneHeight > 0 {
+		return m.paneHeight
+	}
+	return m.bodyInnerHeight()
+}
+
+// card frames body in a rounded panel that fills the available body height.
+// Plain text wraps to the inner width; styled lines are truncated as a safety
+// net so a stray long row cannot widen the panel.
 func (m Model) card(body string) string {
-	inner := m.innerWidth()
-	var lines []string
+	return m.cardAt(m.contentWidth(), m.bodyInnerHeight(), body)
+}
+
+func (m Model) cardAt(width, innerHeight int, body string) string {
+	inner := width - 4
+	if inner < 10 {
+		inner = 10
+	}
+	lines := m.renderLines(body, inner)
+	if innerHeight > 0 {
+		lines = clipPad(lines, innerHeight)
+	}
+	style := panelStyle.Width(width - 2)
+	if innerHeight > 0 {
+		style = style.Height(innerHeight)
+	}
+	return style.Render(strings.Join(lines, "\n"))
+}
+
+// renderLines wraps unstyled text and truncates styled lines to width, padding
+// every line to an exact display width so panes and overlays align.
+func (m Model) renderLines(body string, width int) []string {
+	var out []string
 	for _, line := range strings.Split(body, "\n") {
 		if ansiPattern.MatchString(line) {
-			lines = append(lines, padToWidth(ansi.Truncate(line, inner, "…"), inner))
+			out = append(out, padToWidth(ansi.Truncate(line, width, "…"), width))
 			continue
 		}
-		for _, wrapped := range wrapPlain(line, inner) {
-			lines = append(lines, padToWidth(wrapped, inner))
+		for _, wrapped := range wrapPlain(line, width) {
+			out = append(out, padToWidth(wrapped, width))
 		}
 	}
-	return panelStyle.Width(m.contentWidth() - 2).Render(strings.Join(lines, "\n"))
+	return out
+}
+
+// shortName clips a name to width columns, adding an ellipsis.
+func shortName(name string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(name) <= width {
+		return name
+	}
+	return ansi.Truncate(name, width, "…")
+}
+
+// fitHeight clips or pads an already-styled view to exactly height lines.
+func fitHeight(view string, height int) string {
+	lines := strings.Split(view, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
+// clipPad trims or pads lines to exactly height.
+func clipPad(lines []string, height int) []string {
+	if height <= 0 {
+		return lines
+	}
+	if len(lines) > height {
+		return lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return lines
 }
 
 // padToWidth right-pads s with spaces to width using its display width.

@@ -78,10 +78,7 @@ func (m Model) applyDefectCreateResult(result defectCreateResult) (Model, tea.Cm
 		return m, nil
 	}
 	m.toast = "Defecto registrado: " + m.defectCreateForm.description
-	if m.returnTo == returnStoryDetail {
-		return m.backToStoryDetail()
-	}
-	return m.openDefects()
+	return m.backToStoryDetail()
 }
 
 func (m Model) viewDefectCreateConfirm() string {

@@ -67,7 +67,6 @@ func TestDefectFlowTextAndFilterOwnershipSuppressGlobalShortcuts(t *testing.T) {
 		setup  func(*Model)
 	}{
 		{name: "description form", screen: "defect-create-form", setup: func(m *Model) { m.defectCreateForm.field = 0 }},
-		{name: "story filtering", screen: "defect-story-select", setup: func(m *Model) { m.defectStorySelector.filtering = true }},
 		{name: "detection Sprint filtering", screen: "defect-sprint-select", setup: func(m *Model) { m.defectSprintSelector.filtering = true }},
 		{name: "resolution Sprint filtering", screen: "defect-resolution-select", setup: func(m *Model) { m.defectResolutionSelector.filtering = true }},
 	}
