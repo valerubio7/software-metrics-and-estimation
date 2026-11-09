@@ -6,11 +6,14 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 type MetricsClient struct{ api apiClient }
 
-func NewMetricsClient(baseURL string) *MetricsClient { return &MetricsClient{api: newAPIClient(baseURL)} }
+func NewMetricsClient(baseURL string) *MetricsClient {
+	return &MetricsClient{api: newAPIClient(baseURL)}
+}
 
 // Project fetches read-only project metrics.
 func (c *MetricsClient) Project(ctx context.Context, projectID string) (APIResponse, error) {
@@ -45,11 +48,17 @@ func parseMetricsPayload(body []byte) (metricsPayload, bool) {
 	return payload, true
 }
 
+// formatMetric renders an API value with at most two decimals and no trailing
+// zeros, so long floating point results stay readable without losing precision.
 func formatMetric(value *float64, unit string) string {
 	if value == nil {
 		return "sin datos"
 	}
-	text := strconv.FormatFloat(*value, 'f', -1, 64)
+	text := strconv.FormatFloat(*value, 'f', 2, 64)
+	text = strings.TrimRight(strings.TrimRight(text, "0"), ".")
+	if text == "-0" {
+		text = "0"
+	}
 	if unit == "" {
 		return text
 	}

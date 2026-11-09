@@ -3,10 +3,12 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // dashboardState is the read-only state of the project Dashboard. Both reads
@@ -199,37 +201,25 @@ func (m Model) viewDashboardScopes() string {
 	return m.viewSelector(&m.dashboard.scopes, "Dashboard · Ámbito", "Elegí el proyecto completo o un Sprint abierto.", "No hay ámbitos disponibles.", "")
 }
 
-// viewDashboard renders the project status and the metrics returned by the API.
-// The values are never calculated here; formatMetric keeps nil as «sin datos».
+// viewDashboard renders the status and the metrics of the active scope. The
+// values are never calculated here; formatMetric keeps nil as «sin datos».
 func (m Model) viewDashboard() string {
 	var b strings.Builder
-	b.WriteString(screenTitleStyle.Render("Dashboard"))
-	b.WriteString("\n")
-	b.WriteString(hintStyle.Render("Proyecto activo: " + m.dashboardProjectName()))
+	scope := "Métricas del proyecto completo"
+	if m.dashboard.sprintID != "" {
+		scope = "Métricas del Sprint · " + m.dashboard.sprintLabel
+	}
+	b.WriteString(screenHeader("", scope, "Proyecto activo: "+m.dashboardProjectName()))
 	b.WriteString("\n")
 	b.WriteString(m.sectionIntroView(m.innerWidth()))
 	b.WriteString("\n\n")
-	b.WriteString("Estado: ")
-	switch {
-	case m.dashboard.loading && m.dashboard.status == "" && m.dashboard.statusErr == "":
-		b.WriteString(statusMutedStyle.Render("Cargando…"))
-	case m.dashboard.statusErr != "" || strings.TrimSpace(m.dashboard.status) == "":
-		b.WriteString("sin datos")
-	default:
-		b.WriteString(projectStatusBadge(m.dashboard.status))
-	}
+	// The workspace header shows the project status on wide terminals, but the
+	// compact header drops it; the body keeps one always-visible status line.
+	b.WriteString(detailField("Estado", m.dashboardStatusLabel()))
 	b.WriteString("\n")
 	if m.dashboard.statusErr != "" {
 		b.WriteString(m.errorBlock(m.dashboard.statusErr))
 		b.WriteString("\n")
-	}
-	b.WriteString("\n")
-	if m.dashboard.sprintID != "" {
-		b.WriteString(panelTitleStyle.Render("Métricas del Sprint"))
-		b.WriteString("\n")
-		b.WriteString(hintStyle.Render("Sprint: " + m.dashboard.sprintLabel))
-	} else {
-		b.WriteString(panelTitleStyle.Render("Métricas del proyecto"))
 	}
 	b.WriteString("\n")
 	switch {
@@ -254,6 +244,19 @@ func (m Model) viewDashboard() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// dashboardStatusLabel keeps the status line readable in every state: loading,
+// missing data or the API badge.
+func (m Model) dashboardStatusLabel() string {
+	switch {
+	case m.dashboard.loading && m.dashboard.status == "" && m.dashboard.statusErr == "":
+		return statusMutedStyle.Render("Cargando…")
+	case m.dashboard.statusErr != "" || strings.TrimSpace(m.dashboard.status) == "":
+		return "sin datos"
+	default:
+		return projectStatusBadge(m.dashboard.status)
+	}
+}
+
 func (m Model) dashboardProjectName() string {
 	if strings.TrimSpace(m.activeProjectName) != "" {
 		return m.activeProjectName
@@ -264,26 +267,121 @@ func (m Model) dashboardProjectName() string {
 	return "sin datos"
 }
 
-// viewDashboardMetrics renders one line per metric plus a Unicode bar for each
-// relation available. Values are never calculated here; formatMetric keeps nil
-// as «sin datos».
+// viewDashboardMetrics renders the six metrics as a compact table: one
+// "Label: value" line per metric and, when the API expresses a relation, a
+// styled bar aligned to the right edge. Values are never calculated here.
 func (m Model) viewDashboardMetrics() string {
 	rows := dashboardMetricRows(m.dashboard.metrics)
-	width := m.innerWidth()
-	barWidth := dashboardBarWidth(width)
-	var b strings.Builder
-	for _, row := range rows {
-		line := row.label + ": " + row.value
-		for _, wrapped := range wrapPlain(line, width) {
-			b.WriteString(wrapped)
-			b.WriteString("\n")
+	inner := m.innerWidth()
+	if inner < 60 {
+		for i := range rows {
+			if rows[i].label == "Historias completadas" {
+				rows[i].label = "Historias"
+			}
 		}
-		if row.fraction != nil {
-			b.WriteString(dashboardBar(*row.fraction, barWidth))
+	}
+	// Keep the exact "Label: value" shape of the dashboard contract; the
+	// alignment happens after the value so the bar can use the remaining width.
+	prefixes := make([]string, len(rows))
+	maxPrefix := 0
+	for i, row := range rows {
+		head := "  " + row.label + ": "
+		value := row.value
+		if limit := inner - lipgloss.Width(head) - 5; lipgloss.Width(value) > limit {
+			value = truncate(value, limit)
+		}
+		prefixes[i] = head + value
+		if width := lipgloss.Width(prefixes[i]); width > maxPrefix {
+			maxPrefix = width
+		}
+	}
+	rightWidth := inner - maxPrefix - 1
+	if rightWidth < 4 {
+		rightWidth = 4
+	}
+	if rightWidth > 32 {
+		rightWidth = 32
+	}
+	suffixWidth := 0
+	for _, row := range rows {
+		if row.fraction != nil && !strings.HasSuffix(row.value, "%") {
+			if width := 1 + lipgloss.Width(dashboardPercent(*row.fraction)); width > suffixWidth {
+				suffixWidth = width
+			}
+		}
+	}
+	if rightWidth-suffixWidth < 4 {
+		suffixWidth = 0
+	}
+
+	var b strings.Builder
+	writeSection := func(title string, start, end int) {
+		b.WriteString(sectionLabel(title))
+		b.WriteString("\n")
+		for i := start; i < end; i++ {
+			b.WriteString(dashboardMetricLine(rows[i], prefixes[i], inner, rightWidth, suffixWidth))
 			b.WriteString("\n")
 		}
 	}
+	writeSection("Avance", 0, 4)
+	b.WriteString("\n")
+	writeSection("Ritmo", 4, len(rows))
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// dashboardMetricLine renders one table row. The left side always keeps the
+// "Label: value" shape and the optional bar is right-aligned in the panel.
+func dashboardMetricLine(row dashboardRow, prefix string, inner, rightWidth, suffixWidth int) string {
+	if row.fraction == nil {
+		return prefix
+	}
+	available := inner - lipgloss.Width(prefix) - 1
+	if rightWidth > available {
+		rightWidth = available
+	}
+	if rightWidth < 4 {
+		return prefix
+	}
+	meta := ""
+	if suffixWidth > 0 && !strings.HasSuffix(row.value, "%") && rightWidth >= suffixWidth+4 {
+		rightWidth -= suffixWidth
+		meta = " " + dashboardPercent(*row.fraction)
+	}
+	bar := styledBar(*row.fraction, rightWidth) + metricMetaStyle.Render(meta)
+	gap := inner - lipgloss.Width(prefix) - lipgloss.Width(bar)
+	if gap < 1 {
+		gap = 1
+	}
+	return prefix + strings.Repeat(" ", gap) + bar
+}
+
+// dashboardPercent rounds a relation to the whole percentage shown beside a bar.
+func dashboardPercent(fraction float64) string {
+	if fraction < 0 {
+		fraction = 0
+	}
+	if fraction > 1 {
+		fraction = 1
+	}
+	return fmt.Sprintf("%.0f%%", fraction*100)
+}
+
+// styledBar draws the same Unicode bar as dashboardBar, with the filled cells in
+// the accent color and the track in the hairline color.
+func styledBar(fraction float64, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if fraction < 0 {
+		fraction = 0
+	}
+	if fraction > 1 {
+		fraction = 1
+	}
+	filled := int(math.Round(fraction * float64(width)))
+	fill := lipgloss.NewStyle().Foreground(accent).Render(strings.Repeat("█", filled))
+	track := lipgloss.NewStyle().Foreground(line).Render(strings.Repeat("░", width-filled))
+	return fill + track
 }
 
 // dashboardRow is one metric line. fraction is nil when the API cannot express

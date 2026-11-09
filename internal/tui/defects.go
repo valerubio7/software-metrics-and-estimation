@@ -207,9 +207,60 @@ func (m Model) applyDefectResult(result DefectResultMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
+// toneOfSeverity maps a severity to the tone of its cue, so the list keeps the
+// same color language as the severity badge.
+func toneOfSeverity(severity string) tone {
+	switch strings.ToLower(strings.TrimSpace(severity)) {
+	case "alta", "high", "critical", "critica", "crítica":
+		return toneDanger
+	case "media", "medium", "moderate":
+		return toneWarn
+	case "baja", "low", "minor":
+		return toneInfo
+	default:
+		return toneNeutral
+	}
+}
+
+// toneOfDefectStatus maps a defect status to the tone of its cue.
+func toneOfDefectStatus(status string) tone {
+	switch strings.ToLower(strings.TrimSpace(strings.ReplaceAll(status, "_", " "))) {
+	case "detectado", "open", "abierto":
+		return toneWarn
+	case "en correccion", "en_correccion", "in progress":
+		return toneInfo
+	case "resuelto", "resolved", "closed", "cerrado":
+		return toneOk
+	default:
+		return toneNeutral
+	}
+}
+
+// defectRow renders one defect as a two-line block: the description with its
+// severity and status cues, then the abbreviated references in a quieter line.
+func (m Model) defectRow(selected bool, defect Defect) string {
+	display := func(id string) string {
+		if strings.TrimSpace(id) == "" {
+			return "—"
+		}
+		return shortID(id)
+	}
+	resolution := display(stringValue(defect.ResolutionSprintID))
+	title := titleStyle.Render(defect.Description)
+	if defect.Severity != "" {
+		title += "  " + statusCue(defect.Severity, toneOfSeverity(defect.Severity))
+	}
+	if defect.Status != "" {
+		title += "  " + statusCue(defect.Status, toneOfDefectStatus(defect.Status))
+	}
+	meta := fmt.Sprintf("historia %s  ·  detección %s  ·  resolución %s  ·  %s",
+		display(defect.StoryID), display(defect.SprintID), resolution, display(defect.ID))
+	return m.twoLineRow(selected, title, meta)
+}
+
 func (m Model) viewDefects() string {
 	var b strings.Builder
-	b.WriteString(screenTitleStyle.Render("Defectos del proyecto " + m.projectLabel()))
+	b.WriteString(screenHeader("", "Defectos del proyecto "+m.projectLabel(), "Seguimiento de solo lectura."))
 	b.WriteString("\n")
 	b.WriteString(m.sectionIntroView(m.innerWidth()))
 	b.WriteString("\n\n")
@@ -234,42 +285,44 @@ func (m Model) viewDefects() string {
 	}
 	used := strings.Count(b.String(), "\n")
 	available := m.listAreaHeight() - used - 1
-	if m.listAreaHeight() > 0 && available < 1 {
-		available = 1
+	if m.listAreaHeight() > 0 && available < 2 {
+		available = 2
 	}
-	start, end := windowBounds(m.defectCursor, len(visible), available)
+	// Every defect takes two lines: title with cues and the references.
+	start, end := windowBounds(m.defectCursor, len(visible), available/2)
 	b.WriteString(sectionTitle("Defectos", m.defectCursor, len(visible), start, end) + "\n")
 	for i := start; i < end; i++ {
-		defect := visible[i]
-		resolution := stringValue(defect.ResolutionSprintID)
-		if resolution == "" {
-			resolution = "—"
-		}
-		row := fmt.Sprintf("%s  ·  %s  ·  %s  ·  historia %s  ·  detección %s  ·  resolución %s  ·  %s", defect.Description, defect.Severity, defect.Status, defect.StoryID, defect.SprintID, resolution, defect.ID)
-		b.WriteString(m.row(i == m.defectCursor, row) + "\n")
+		b.WriteString(m.defectRow(i == m.defectCursor, visible[i]) + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
 func (m Model) viewDefectDetail() string {
 	d := m.defectDetail
-	resolution := stringValue(d.ResolutionSprintID)
-	if resolution == "" {
-		resolution = "—"
-	}
-	rows := [][2]string{
-		{"ID", d.ID}, {"Descripción", d.Description}, {"Severidad", d.Severity},
-		{"Estado", d.Status}, {"Historia relacionada", d.StoryID},
-		{"Sprint de detección", d.SprintID}, {"Sprint de resolución", resolution},
+	display := func(id string) string {
+		if strings.TrimSpace(id) == "" {
+			return "—"
+		}
+		return shortID(id)
 	}
 	var b strings.Builder
-	b.WriteString(screenTitleStyle.Render("Detalle del defecto"))
+	b.WriteString(screenHeader("", "Detalle del defecto", "Referencias del defecto seleccionado."))
 	b.WriteString("\n\n")
+	b.WriteString(sectionLabel("Referencias") + "\n")
+	b.WriteString(detailField("ID", display(d.ID)) + "\n")
+	description := d.Description
+	if strings.TrimSpace(description) == "" {
+		description = "—"
+	}
+	// Plain text so the shell wraps a long description instead of clipping it.
+	b.WriteString("Descripción: " + description + "\n")
+	rows := [][2]string{
+		{"Severidad", d.Severity},
+		{"Estado", d.Status}, {"Historia relacionada", display(d.StoryID)},
+		{"Sprint de detección", display(d.SprintID)}, {"Sprint de resolución", display(stringValue(d.ResolutionSprintID))},
+	}
 	for _, row := range rows {
-		b.WriteString(row[0] + ":\n")
-		for _, line := range wrapPlain(row[1], m.innerWidth()) {
-			b.WriteString(line + "\n")
-		}
+		b.WriteString(detailField(row[0], row[1]))
 		b.WriteString("\n")
 	}
 	return strings.TrimRight(b.String(), "\n")

@@ -298,18 +298,23 @@ func (m Model) defectsPane() string {
 	start, end := windowBounds(cursor, total, available)
 	lines = append(lines, sectionTitle("Defectos", cursor, total, start, end))
 	for i := start; i < end; i++ {
-		lines = append(lines, m.row(i == cursor, defectCompactRow(visible[i])))
+		defect := visible[i]
+		lines = append(lines, m.splitRow(i == cursor, defect.Description, defectCompactMeta(defect)))
 	}
 	return strings.Join(lines, "\n")
 }
 
-// defectCompactRow is the narrow list row used by the master pane.
-func defectCompactRow(defect Defect) string {
+// defectCompactMeta is the quiet metadata of the narrow defect list.
+func defectCompactMeta(defect Defect) string {
 	status := strings.ToLower(strings.TrimSpace(defect.Status))
 	if status == "" {
 		status = "sin estado"
 	}
-	return defect.Description + hintStyle.Render("   "+strings.ToLower(defect.Severity)+" · "+status)
+	severity := strings.ToLower(strings.TrimSpace(defect.Severity))
+	if severity == "" {
+		return status
+	}
+	return severity + " · " + status
 }
 
 // defectPreviewPane is the right side of the Defectos tab.

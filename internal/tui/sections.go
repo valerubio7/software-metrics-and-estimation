@@ -258,7 +258,16 @@ func (m Model) viewSelector(s *selector, title, hint, emptyTitle, emptyHint stri
 		b.WriteString(emptyState("⌕", "Sin coincidencias.", "Probá con otro texto o borrá el filtro con Esc."))
 		return strings.TrimRight(b.String(), "\n")
 	}
-	for i, item := range visible {
+	used := strings.Count(b.String(), "\n")
+	available := m.listAreaHeight() - used - 1
+	if m.listAreaHeight() > 0 && available < 1 {
+		available = 1
+	}
+	start, end := windowBounds(s.cursor, len(visible), available)
+	b.WriteString(sectionTitle("Opciones", s.cursor, len(visible), start, end))
+	b.WriteString("\n")
+	for i := start; i < end; i++ {
+		item := visible[i]
 		text := item.Label
 		if item.Meta != "" {
 			text += "  ·  " + item.Meta

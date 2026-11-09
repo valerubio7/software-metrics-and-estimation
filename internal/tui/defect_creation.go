@@ -196,7 +196,7 @@ func (m Model) viewDefectCreateForm() string {
 	}
 	b.WriteString("\n")
 	if f.sprintID != "" {
-		b.WriteString(hintStyle.Render("Borrador sin registrar · Esc cancela."))
+		b.WriteString(hintStyle.Render("Borrador sin registrar."))
 	} else {
 		// The Sprint came from the Sprint detail or is chosen in the next step.
 		b.WriteString(hintStyle.Render("Usá ←/→ para cambiar severidad o estado; Enter en el último campo elige el Sprint de detección."))
