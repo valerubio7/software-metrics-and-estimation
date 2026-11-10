@@ -165,8 +165,12 @@ func (m Model) viewSprintHistory() string {
 	for i := start; i < end; i++ {
 		sprint := sprints[i]
 		completed, total := sprintProgress(sprint)
-		progress := hintStyle.Render(fmt.Sprintf("%d/%d historias completadas", completed, total))
-		right := shortProgressBar(completed, total) + "  " + progress + "  " + hintStyle.Render(shortID(sprint.ID))
+		right := shortProgressBar(completed, total) + "  " + hintStyle.Render(fmt.Sprintf("%d/%d historias completadas", completed, total)) + "  " + hintStyle.Render(shortID(sprint.ID))
+		if m.innerWidth() < 60 {
+			// The narrow layout has no preview pane: keep the progress and
+			// drop the identifier so the goal and the count stay readable.
+			right = shortProgressBar(completed, total) + "  " + hintStyle.Render(fmt.Sprintf("%d/%d", completed, total))
+		}
 		b.WriteString(m.splitRow(i == m.historyCursor, sprintHistoryTitle(sprint.SprintGoal), right) + "\n")
 		if m.historyExpanded == sprint.ID {
 			for _, story := range sprint.Stories {

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Defect is a project-scoped defect as serialized by the defect API.
@@ -247,6 +248,8 @@ func defectStatusLabel(status string) string {
 
 // defectRow renders one defect as a two-line block: the description with its
 // severity and status cues, then the abbreviated references in a quieter line.
+// When the title line cannot hold the cues without clipping, they move to the
+// front of the second line so they are never hidden.
 func (m Model) defectRow(selected bool, defect Defect) string {
 	display := func(id string) string {
 		if strings.TrimSpace(id) == "" {
@@ -254,17 +257,28 @@ func (m Model) defectRow(selected bool, defect Defect) string {
 		}
 		return shortID(id)
 	}
-	resolution := display(stringValue(defect.ResolutionSprintID))
-	title := titleStyle.Render(defect.Description)
+	cues := ""
 	if defect.Severity != "" {
-		title += "  " + statusCue(defect.Severity, toneOfSeverity(defect.Severity))
+		cues = statusCue(defect.Severity, toneOfSeverity(defect.Severity))
 	}
 	if defect.Status != "" {
-		title += "  " + statusCue(defectStatusLabel(defect.Status), toneOfDefectStatus(defect.Status))
+		if cues != "" {
+			cues += "  "
+		}
+		cues += statusCue(defectStatusLabel(defect.Status), toneOfDefectStatus(defect.Status))
 	}
-	meta := fmt.Sprintf("historia %s  ·  detección %s  ·  resolución %s  ·  %s",
-		display(defect.StoryID), display(defect.SprintID), resolution, display(defect.ID))
-	return m.twoLineRow(selected, title, meta)
+	title := titleStyle.Render(defect.Description)
+	if m.innerWidth() < 60 {
+		// The narrow list has no preview pane: the references live in the
+		// detail, so the cues get the whole second line.
+		return m.twoLineRow(selected, title, cues)
+	}
+	refs := fmt.Sprintf("historia %s  ·  detección %s  ·  resolución %s  ·  %s",
+		display(defect.StoryID), display(defect.SprintID), display(stringValue(defect.ResolutionSprintID)), display(defect.ID))
+	if lipgloss.Width(title+cues) <= m.innerWidth()-2 {
+		return m.twoLineRow(selected, title+"  "+cues, refs)
+	}
+	return m.twoLineRow(selected, title, cues+"  ·  "+refs)
 }
 
 func (m Model) viewDefects() string {

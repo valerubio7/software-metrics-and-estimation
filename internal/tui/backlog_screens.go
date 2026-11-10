@@ -485,7 +485,18 @@ func (m Model) viewBacklog() string {
 		return b.String()
 	}
 	for i := start; i < end; i++ {
-		b.WriteString(m.row(i == m.backlogCursor, storyRow(stories[i])) + "\n")
+		story := stories[i]
+		if m.innerWidth() < 60 {
+			// The narrow row keeps the title readable and moves the status to
+			// the right edge, where clipping cannot hide it.
+			right := storyStatusBadge(story.Status)
+			if right == "" {
+				right = hintStyle.Render("sin estado")
+			}
+			b.WriteString(m.splitRow(i == m.backlogCursor, titleStyle.Render(story.Title), right) + "\n")
+			continue
+		}
+		b.WriteString(m.row(i == m.backlogCursor, storyRow(story)) + "\n")
 	}
 	return b.String()
 }
