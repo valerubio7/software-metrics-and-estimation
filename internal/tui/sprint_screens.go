@@ -135,7 +135,7 @@ func (m Model) sprintGoalByID(id string) string {
 // the highlighted Sprint and reveals the stories already present in the response.
 func (m Model) viewSprintHistory() string {
 	var b strings.Builder
-	b.WriteString(screenHeader("", "Historial de Sprints cerrados", "Sprints cerrados del proyecto."))
+	b.WriteString(screenHeader("", "Historial de Sprints cerrados", ""))
 	b.WriteString("\n\n")
 	b.WriteString(m.sprintStatusLines())
 	if m.sprintFiltering || m.sprintFilter != "" {

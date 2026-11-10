@@ -206,7 +206,7 @@ func (m Model) storyPreviewPane() string {
 		{"Horas estimadas", hours},
 		{"Criterios de aceptación", strings.Join(story.AcceptanceCriteria, "; ")},
 	} {
-		b.WriteString(detailField(field.label, field.value))
+		b.WriteString(m.detailFieldWrapped(field.label, field.value))
 		b.WriteString("\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
@@ -306,7 +306,7 @@ func (m Model) defectsPane() string {
 
 // defectCompactMeta is the quiet metadata of the narrow defect list.
 func defectCompactMeta(defect Defect) string {
-	status := strings.ToLower(strings.TrimSpace(defect.Status))
+	status := defectStatusLabel(defect.Status)
 	if status == "" {
 		status = "sin estado"
 	}
@@ -324,23 +324,25 @@ func (m Model) defectPreviewPane() string {
 		return emptyState("◇", "Ningún defecto seleccionado.", "Los defectos aparecen acá al registrarse.")
 	}
 	defect := visible[clampCursor(m.defectCursor, len(visible))]
-	resolution := stringValue(defect.ResolutionSprintID)
-	if resolution == "" {
-		resolution = "—"
+	display := func(id string) string {
+		if strings.TrimSpace(id) == "" {
+			return "—"
+		}
+		return shortID(id)
 	}
 	var b strings.Builder
 	b.WriteString(screenTitleStyle.Render(defect.Description))
 	b.WriteString("\n")
-	b.WriteString(appPaneMeta.Render("Defecto " + shortID(defect.ID) + " · " + strings.ToLower(defect.Status)))
+	b.WriteString(appPaneMeta.Render("Defecto " + shortID(defect.ID) + " · " + defectStatusLabel(defect.Status)))
 	b.WriteString("\n\n")
 	for _, field := range []struct{ label, value string }{
 		{"Severidad", defect.Severity},
-		{"Estado", defect.Status},
-		{"Historia relacionada", defect.StoryID},
-		{"Sprint de detección", defect.SprintID},
-		{"Sprint de resolución", resolution},
+		{"Estado", defectStatusLabel(defect.Status)},
+		{"Historia relacionada", display(defect.StoryID)},
+		{"Sprint de detección", display(defect.SprintID)},
+		{"Sprint de resolución", display(stringValue(defect.ResolutionSprintID))},
 	} {
-		b.WriteString(detailField(field.label, field.value))
+		b.WriteString(m.detailFieldWrapped(field.label, field.value))
 		b.WriteString("\n")
 	}
 	return strings.TrimRight(b.String(), "\n")

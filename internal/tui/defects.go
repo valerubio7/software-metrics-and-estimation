@@ -236,6 +236,15 @@ func toneOfDefectStatus(status string) tone {
 	}
 }
 
+// defectStatusLabel renders the API status without its enum underscores.
+func defectStatusLabel(status string) string {
+	label := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(status, "_", " ")))
+	if label == "en correccion" {
+		return "en corrección"
+	}
+	return label
+}
+
 // defectRow renders one defect as a two-line block: the description with its
 // severity and status cues, then the abbreviated references in a quieter line.
 func (m Model) defectRow(selected bool, defect Defect) string {
@@ -251,7 +260,7 @@ func (m Model) defectRow(selected bool, defect Defect) string {
 		title += "  " + statusCue(defect.Severity, toneOfSeverity(defect.Severity))
 	}
 	if defect.Status != "" {
-		title += "  " + statusCue(defect.Status, toneOfDefectStatus(defect.Status))
+		title += "  " + statusCue(defectStatusLabel(defect.Status), toneOfDefectStatus(defect.Status))
 	}
 	meta := fmt.Sprintf("historia %s  ·  detección %s  ·  resolución %s  ·  %s",
 		display(defect.StoryID), display(defect.SprintID), resolution, display(defect.ID))
@@ -260,7 +269,7 @@ func (m Model) defectRow(selected bool, defect Defect) string {
 
 func (m Model) viewDefects() string {
 	var b strings.Builder
-	b.WriteString(screenHeader("", "Defectos del proyecto "+m.projectLabel(), "Seguimiento de solo lectura."))
+	b.WriteString(screenHeader("", "Defectos del proyecto "+m.projectLabel(), ""))
 	b.WriteString("\n")
 	b.WriteString(m.sectionIntroView(m.innerWidth()))
 	b.WriteString("\n\n")
@@ -306,7 +315,7 @@ func (m Model) viewDefectDetail() string {
 		return shortID(id)
 	}
 	var b strings.Builder
-	b.WriteString(screenHeader("", "Detalle del defecto", "Referencias del defecto seleccionado."))
+	b.WriteString(screenHeader("", "Detalle del defecto", "Datos del defecto seleccionado."))
 	b.WriteString("\n\n")
 	b.WriteString(sectionLabel("Referencias") + "\n")
 	b.WriteString(detailField("ID", display(d.ID)) + "\n")
@@ -314,11 +323,10 @@ func (m Model) viewDefectDetail() string {
 	if strings.TrimSpace(description) == "" {
 		description = "—"
 	}
-	// Plain text so the shell wraps a long description instead of clipping it.
-	b.WriteString("Descripción: " + description + "\n")
+	b.WriteString(m.detailFieldWrapped("Descripción", description) + "\n")
 	rows := [][2]string{
 		{"Severidad", d.Severity},
-		{"Estado", d.Status}, {"Historia relacionada", display(d.StoryID)},
+		{"Estado", defectStatusLabel(d.Status)}, {"Historia relacionada", display(d.StoryID)},
 		{"Sprint de detección", display(d.SprintID)}, {"Sprint de resolución", display(stringValue(d.ResolutionSprintID))},
 	}
 	for _, row := range rows {

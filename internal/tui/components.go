@@ -210,40 +210,6 @@ func priorityBadge(priority string) string {
 	}
 }
 
-// severityBadge maps the known defect severities to the semantic scale.
-func severityBadge(severity string) string {
-	switch strings.ToLower(strings.TrimSpace(severity)) {
-	case "alta", "high", "critical", "critica", "crítica":
-		return badge(severity, toneDanger)
-	case "media", "medium", "moderate":
-		return badge(severity, toneWarn)
-	case "baja", "low", "minor":
-		return badge(severity, toneInfo)
-	default:
-		if strings.TrimSpace(severity) == "" {
-			return ""
-		}
-		return badge(severity, toneNeutral)
-	}
-}
-
-// defectStatusBadge maps the defect lifecycle to a labeled badge.
-func defectStatusBadge(status string) string {
-	switch strings.ToLower(strings.TrimSpace(strings.ReplaceAll(status, "_", " "))) {
-	case "detectado", "open", "abierto":
-		return badge(status, toneWarn)
-	case "en correccion", "en_correccion", "in progress":
-		return badge(status, toneInfo)
-	case "resuelto", "resolved", "closed", "cerrado":
-		return badge(status, toneOk)
-	default:
-		if strings.TrimSpace(status) == "" {
-			return ""
-		}
-		return badge(status, toneNeutral)
-	}
-}
-
 // breadcrumb renders the trail from Proyectos, highlighting the current node.
 func breadcrumb(parts ...string) string {
 	if len(parts) == 0 {
