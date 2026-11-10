@@ -303,7 +303,11 @@ func (m Model) sectionIntro() (what, can string) {
 		return "un problema detectado en una historia. Acá ves todos los del proyecto, incluso los de Sprints cerrados.",
 			"abrir un defecto para ver el detalle y cambiar el estado. Para reportar uno, abrí una historia."
 	case "dashboard":
-		return "el avance del proyecto medido en historias, horas y defectos.",
+		scope := "proyecto"
+		if m.dashboard.sprintID != "" {
+			scope = "Sprint"
+		}
+		return "el avance del " + scope + " medido en historias, horas y defectos.",
 			"cambiar el ámbito, refrescar los datos y descargar el reporte."
 	}
 	return "", ""
