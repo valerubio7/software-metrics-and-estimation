@@ -158,6 +158,10 @@ var (
 	statusMutedStyle = lipgloss.NewStyle().
 				Foreground(muted)
 
+	// metricMetaStyle is the small percentage that follows a dashboard bar.
+	metricMetaStyle = lipgloss.NewStyle().
+			Foreground(inkFaint)
+
 	statusWarnStyle = lipgloss.NewStyle().
 			Foreground(warn)
 

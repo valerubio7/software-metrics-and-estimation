@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // storyDetailOrigin is the list the detail was opened from. It decides where
@@ -346,7 +347,7 @@ func (m Model) viewStoryDetail() string {
 		{"Criterios de aceptación", strings.Join(story.AcceptanceCriteria, "; ")},
 		{"Horas estimadas", hours},
 	} {
-		b.WriteString(detailField(field.label, field.value) + "\n")
+		b.WriteString(m.detailFieldWrapped(field.label, field.value) + "\n")
 	}
 	if m.storyDetail.origin == storyDetailFromSprint {
 		b.WriteString("\n" + panelTitleStyle.Render("Tareas") + "\n")
@@ -386,4 +387,26 @@ func detailField(label, value string) string {
 		value = "—"
 	}
 	return hintStyle.Render(label+": ") + value
+}
+
+// detailFieldWrapped renders one "label: value" field and wraps long values
+// under the label. The card truncates styled lines instead of wrapping them,
+// so the value has to be split here to keep descriptions readable.
+func (m Model) detailFieldWrapped(label, value string) string {
+	if strings.TrimSpace(value) == "" {
+		value = "—"
+	}
+	prefix := label + ": "
+	columns := m.innerWidth() - lipgloss.Width(prefix)
+	if columns < 12 {
+		columns = 12
+	}
+	lines := wrapPlain(value, columns)
+	var b strings.Builder
+	b.WriteString(hintStyle.Render(prefix) + lines[0])
+	indent := strings.Repeat(" ", lipgloss.Width(prefix))
+	for _, line := range lines[1:] {
+		b.WriteString("\n" + indent + line)
+	}
+	return b.String()
 }

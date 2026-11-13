@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 var ansiPattern = regexp.MustCompile("\x1b\\[[0-9;]*m")
@@ -40,6 +41,50 @@ func (m Model) row(selected bool, text string) string {
 	return rowStyle.Render(line)
 }
 
+// splitRow renders a row with the trailing metadata aligned to the right edge,
+// which keeps long lists scannable without wrapping the description. When the
+// terminal is too narrow for a comfortable gap, the row falls back to a single
+// left-aligned line.
+func (m Model) splitRow(selected bool, left, right string) string {
+	width := m.innerWidth()
+	if right == "" {
+		return m.row(selected, left)
+	}
+	available := width - 2 // marker
+	rightWidth := lipgloss.Width(right)
+	if available-rightWidth < 12 {
+		return m.row(selected, left+"  "+right)
+	}
+	if lipgloss.Width(left) > available-rightWidth-2 {
+		left = ansi.Truncate(left, available-rightWidth-2, "…")
+	}
+	gap := available - lipgloss.Width(left) - rightWidth
+	if gap < 2 {
+		gap = 2
+	}
+	return m.row(selected, left+strings.Repeat(" ", gap)+right)
+}
+
+// twoLineRow renders a selectable block of two lines: a title with its badges
+// and a quieter line with the references. It is used where a single line would
+// wrap and break the rhythm of the list.
+func (m Model) twoLineRow(selected bool, title, meta string) string {
+	width := m.innerWidth()
+	if selected {
+		title, meta = stripANSI(title), stripANSI(meta)
+	}
+	title = ansi.Truncate(title, width-2, "…")
+	meta = ansi.Truncate(meta, width-4, "…")
+	if selected {
+		first := padToWidth("▸ "+title, width)
+		second := padToWidth("  "+meta, width)
+		return selectedBarStyle.Render(first) + "\n" + selectedBarStyle.Render(second)
+	}
+	first := padToWidth("  "+title, width)
+	second := padToWidth("    "+meta, width)
+	return rowStyle.Render(first) + "\n" + hintStyle.Render(second)
+}
+
 // searchLine renders the search box shared by every navigable list: the magnifier,
 // the label, the typed filter and a caret while the box owns the keyboard.
 func searchLine(filter string, filtering bool) string {
@@ -61,6 +106,16 @@ const (
 	toneDanger
 	toneInfo
 )
+
+// statusCue renders a colored dot plus the value verbatim. Lists use it
+// instead of a badge so the API text (for example "high") is shown exactly as
+// it comes.
+func statusCue(text string, t tone) string {
+	if strings.TrimSpace(text) == "" {
+		return ""
+	}
+	return lipgloss.NewStyle().Foreground(toneColor(t)).Bold(true).Render("● " + text)
+}
 
 func toneColor(t tone) lipgloss.AdaptiveColor {
 	switch t {
@@ -204,6 +259,22 @@ func (m Model) keyHints(pairs ...string) string {
 	return strings.Join(lines, "\n")
 }
 
+// screenHeader renders the optional eyebrow, the title and the subtitle that
+// open a screen. The subtitle explains context; shortcuts stay in the footer.
+func screenHeader(eyebrow, title, subtitle string) string {
+	var b strings.Builder
+	if eyebrow != "" {
+		b.WriteString(sectionLabel(eyebrow))
+		b.WriteString("\n")
+	}
+	b.WriteString(screenTitleStyle.Render(title))
+	if subtitle != "" {
+		b.WriteString("\n")
+		b.WriteString(hintStyle.Render(subtitle))
+	}
+	return b.String()
+}
+
 // sectionLabel renders an uppercase section heading.
 func sectionLabel(text string) string {
 	return sectionLabelStyle.Render(strings.ToUpper(text))
@@ -218,22 +289,26 @@ func panel(title, body string) string {
 	return panelStyle.Render(content)
 }
 
-// sectionIntro returns the plain-language orientation of a root tab. Screens
-// that are not section roots return empty strings.
+// sectionIntro returns the plain-language orientation of a root tab. It never
+// repeats shortcuts: the footer is the single place that lists them.
 func (m Model) sectionIntro() (what, can string) {
 	switch m.Screen {
 	case "backlog":
 		return "la lista priorizada de todo lo que el proyecto necesita, todavía sin fechas.",
-			"crear con n, editar con e y abrir una historia con Enter."
+			"crear historias nuevas, editarlas y abrir una historia para ver el detalle."
 	case "sprints":
 		return "un período de trabajo con un objetivo que agrupa las historias a completar.",
-			"abrir un Sprint con Enter, asignar con a, cerrar con x y ver el historial con h."
+			"abrir un Sprint, asignarle historias, cerrarlo y consultar el historial."
 	case "defects":
 		return "un problema detectado en una historia. Acá ves todos los del proyecto, incluso los de Sprints cerrados.",
-			"abrir con Enter y cambiar el estado con u. Para reportar uno, abrí una historia."
+			"abrir un defecto para ver el detalle y cambiar el estado. Para reportar uno, abrí una historia."
 	case "dashboard":
-		return "el avance del proyecto medido en historias, horas y defectos.",
-			"cambiar el ámbito con s, refrescar con r y descargar el PDF con d."
+		scope := "proyecto"
+		if m.dashboard.sprintID != "" {
+			scope = "Sprint"
+		}
+		return "el avance del " + scope + " medido en historias, horas y defectos.",
+			"cambiar el ámbito, refrescar los datos y descargar el reporte."
 	}
 	return "", ""
 }
@@ -295,9 +370,10 @@ func truncate(s string, width int) string {
 	return string(runes[:width-1]) + "…"
 }
 
-// shortID abbreviates a UUID-like identifier for inline display.
+// shortID abbreviates a UUID-like identifier for inline display while leaving
+// short human-readable identifiers, such as test fixtures, untouched.
 func shortID(id string) string {
-	if len(id) <= 8 {
+	if len(id) <= 12 {
 		return id
 	}
 	return id[:8]

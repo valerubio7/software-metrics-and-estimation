@@ -85,7 +85,7 @@ func (m Model) viewDefectCreateConfirm() string {
 	f := m.defectCreateForm
 	view := screenTitleStyle.Render("Confirmar defecto") + "\n\n" +
 		fmt.Sprintf("Descripción: %s\nSeveridad: %s\nEstado: %s\nHistoria: %s\nSprint de detección: %s\n\n", f.description, f.severity(), f.status(), f.storyLabel, f.sprintLabel) +
-		hintStyle.Render("s confirma y registra · n cancela · Esc vuelve al borrador.")
+		hintStyle.Render("Revisá los datos antes de registrar el defecto.")
 	if m.defectCreateLoading {
 		view += "\n\n" + statusMutedStyle.Render("Registrando defecto…")
 	}

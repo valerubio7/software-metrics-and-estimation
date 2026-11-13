@@ -54,7 +54,7 @@ func (m Model) updateSprintTaskForm(key tea.KeyMsg) (Model, tea.Cmd) {
 // the secondary keys assign, close, list the history and create.
 func (m Model) viewSprints() string {
 	var b strings.Builder
-	b.WriteString(screenTitleStyle.Render("Sprints de " + m.projectLabel()))
+	b.WriteString(screenHeader("", "Sprints de "+m.projectLabel(), "Sprints abiertos del proyecto."))
 	b.WriteString("\n")
 	b.WriteString(m.sectionIntroView(m.innerWidth()))
 	b.WriteString("\n\n")
@@ -88,18 +88,19 @@ func (m Model) viewSprints() string {
 		return b.String()
 	}
 	for i := start; i < end; i++ {
-		b.WriteString(m.row(i == m.sprintCursor, sprintRow(sprints[i])) + "\n")
+		right := badge("abierto", toneOk) + "  " + hintStyle.Render(shortID(sprints[i].ID))
+		b.WriteString(m.splitRow(i == m.sprintCursor, sprintRow(sprints[i]), right) + "\n")
 	}
 	return b.String()
 }
 
-// sprintRow is the shared row of an open Sprint: goal plus short identifier.
+// sprintRow is the shared row of an open Sprint: its goal.
 func sprintRow(sprint Sprint) string {
 	goal := sprint.SprintGoal
 	if goal == "" {
 		goal = "(sin objetivo)"
 	}
-	return goal + hintStyle.Render("   "+shortID(sprint.ID))
+	return titleStyle.Render(goal)
 }
 
 // viewSprintConfirm asks for confirmation before closing a Sprint.
@@ -134,9 +135,7 @@ func (m Model) sprintGoalByID(id string) string {
 // the highlighted Sprint and reveals the stories already present in the response.
 func (m Model) viewSprintHistory() string {
 	var b strings.Builder
-	b.WriteString(screenTitleStyle.Render("Historial de Sprints cerrados"))
-	b.WriteString("\n")
-	b.WriteString(hintStyle.Render("Proyecto: " + m.projectLabel()))
+	b.WriteString(screenHeader("", "Historial de Sprints cerrados", ""))
 	b.WriteString("\n\n")
 	b.WriteString(m.sprintStatusLines())
 	if m.sprintFiltering || m.sprintFilter != "" {
@@ -156,17 +155,38 @@ func (m Model) viewSprintHistory() string {
 		b.WriteString(emptyState("⌕", "Sin coincidencias.", "Probá con otro objetivo o borrá la búsqueda.") + "\n")
 		return b.String()
 	}
-	for i, sprint := range sprints {
+	used := strings.Count(b.String(), "\n")
+	available := m.listAreaHeight() - used - 1
+	if m.listAreaHeight() > 0 && available < 1 {
+		available = 1
+	}
+	start, end := windowBounds(m.historyCursor, len(sprints), available)
+	b.WriteString(sectionTitle("Cerrados", m.historyCursor, len(sprints), start, end) + "\n")
+	for i := start; i < end; i++ {
+		sprint := sprints[i]
 		completed, total := sprintProgress(sprint)
-		row := sprintHistoryTitle(sprint.SprintGoal, sprint.ID) + hintStyle.Render(fmt.Sprintf("   %d/%d historias completadas", completed, total))
-		b.WriteString(m.row(i == m.historyCursor, row) + "\n")
+		right := shortProgressBar(completed, total) + "  " + hintStyle.Render(fmt.Sprintf("%d/%d historias completadas", completed, total)) + "  " + hintStyle.Render(shortID(sprint.ID))
+		if m.innerWidth() < 60 {
+			// The narrow layout has no preview pane: keep the progress and
+			// drop the identifier so the goal and the count stay readable.
+			right = shortProgressBar(completed, total) + "  " + hintStyle.Render(fmt.Sprintf("%d/%d", completed, total))
+		}
+		b.WriteString(m.splitRow(i == m.historyCursor, sprintHistoryTitle(sprint.SprintGoal), right) + "\n")
 		if m.historyExpanded == sprint.ID {
 			for _, story := range sprint.Stories {
-				b.WriteString("     " + sprintHistoryStoryRow(story) + "\n")
+				b.WriteString("      " + sprintHistoryStoryRow(story) + "\n")
 			}
 		}
 	}
 	return b.String()
+}
+
+// shortProgressBar draws a compact bar for the closed-Sprint progress.
+func shortProgressBar(completed, total int) string {
+	if total <= 0 {
+		return ""
+	}
+	return styledBar(float64(completed)/float64(total), 8)
 }
 
 // sprintProgress counts the completed stories of a closed Sprint.
@@ -180,11 +200,11 @@ func sprintProgress(sprint ClosedSprint) (int, int) {
 	return completed, len(sprint.Stories)
 }
 
-func sprintHistoryTitle(goal, id string) string {
+func sprintHistoryTitle(goal string) string {
 	if goal == "" {
 		goal = "(sin objetivo)"
 	}
-	return titleStyle.Render(goal) + hintStyle.Render("   "+shortID(id))
+	return titleStyle.Render(goal)
 }
 
 func sprintHistoryStoryRow(story SprintStory) string {
@@ -239,16 +259,25 @@ func (m Model) viewSprintStorySelect() string {
 		b.WriteString(emptyState("⌕", "Sin coincidencias.", "Probá con otro título o borrá la búsqueda.") + "\n")
 		return b.String()
 	}
-	for i, story := range stories {
-		mark := "[ ]"
+	used := strings.Count(b.String(), "\n")
+	available := m.listAreaHeight() - used - 1
+	if m.listAreaHeight() > 0 && available < 1 {
+		available = 1
+	}
+	start, end := windowBounds(m.sprintCursor, len(stories), available)
+	b.WriteString(sectionTitle("Backlog", m.sprintCursor, len(stories), start, end) + "\n")
+	for i := start; i < end; i++ {
+		story := stories[i]
+		mark := hintStyle.Render("[ ]")
 		if m.selectedStories[story.ID] {
-			mark = "[x]"
+			mark = cursorStyle.Render("[x]")
 		}
-		row := mark + " " + story.Title
+		left := mark + " " + story.Title
+		right := ""
 		if story.Priority != "" {
-			row += "  " + priorityBadge(story.Priority)
+			right = priorityBadge(story.Priority)
 		}
-		b.WriteString(m.row(i == m.sprintCursor, row) + "\n")
+		b.WriteString(m.splitRow(i == m.sprintCursor, left, right) + "\n")
 	}
 	return b.String()
 }
@@ -277,15 +306,24 @@ func (m Model) viewAssignedStories() string {
 		b.WriteString(emptyState("⌕", "Sin coincidencias.", "Probá con otro título o borrá la búsqueda.") + "\n")
 		return b.String()
 	}
-	for i, story := range stories {
-		row := story.Title
+	used := strings.Count(b.String(), "\n")
+	available := m.listAreaHeight() - used - 1
+	if m.listAreaHeight() > 0 && available < 1 {
+		available = 1
+	}
+	start, end := windowBounds(m.sprintCursor, len(stories), available)
+	b.WriteString(sectionTitle("Historias", m.sprintCursor, len(stories), start, end) + "\n")
+	for i := start; i < end; i++ {
+		story := stories[i]
+		left := titleStyle.Render(story.Title)
+		parts := make([]string, 0, 2)
 		if story.Priority != "" {
-			row += "  " + priorityBadge(story.Priority)
+			parts = append(parts, priorityBadge(story.Priority))
 		}
 		if story.Status != "" {
-			row += "  " + storyStatusBadge(story.Status)
+			parts = append(parts, storyStatusBadge(story.Status))
 		}
-		b.WriteString(m.row(i == m.sprintCursor, row) + "\n")
+		b.WriteString(m.splitRow(i == m.sprintCursor, left, strings.Join(parts, "  ")) + "\n")
 	}
 	return b.String()
 }

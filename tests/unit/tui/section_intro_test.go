@@ -17,7 +17,7 @@ func TestRootTabsExplainTheirPurpose(t *testing.T) {
 	cases := []struct{ name, tab, what, can string }{
 		{"dashboard", tabDashboard, "el avance del proyecto", "cambiar el ámbito"},
 		{"backlog", tabBacklog, "la lista priorizada", "abrir una historia"},
-		{"sprints", tabSprints, "un período de trabajo", "cerrar con x"},
+		{"sprints", tabSprints, "un período de trabajo", "asignarle historias"},
 		{"defects", tabDefects, "un problema detectado", "cambiar el estado"},
 	}
 	for _, tc := range cases {

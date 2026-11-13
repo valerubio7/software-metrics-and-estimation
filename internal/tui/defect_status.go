@@ -222,6 +222,6 @@ func (m Model) viewDefectStatusSelect() string {
 	for i, option := range defectStatusOptions {
 		b.WriteString(m.row(i == m.defectStatusIndex, option.label) + "\n")
 	}
-	b.WriteString("\n" + hintStyle.Render("Elegí uno de los estados admitidos por la API. Esc cancela sin cambios."))
+	b.WriteString("\n" + hintStyle.Render("Elegí uno de los estados admitidos por la API."))
 	return strings.TrimRight(b.String(), "\n") + m.defectStatusLines()
 }

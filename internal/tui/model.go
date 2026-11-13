@@ -698,9 +698,7 @@ func (m Model) viewProjectForm() string {
 		b.WriteString(m.errorBlock(m.formErr))
 	}
 	b.WriteString("\n")
-	b.WriteString(hintStyle.Render("Tab/↑/↓ cambia de campo · ←/→ mueve entre año, mes y día."))
-	b.WriteString("\n")
-	b.WriteString(hintStyle.Render("Enter en el último campo envía · Esc vuelve."))
+	b.WriteString(hintStyle.Render("←/→ mueve entre año, mes y día."))
 	return b.String()
 }
 
@@ -804,29 +802,42 @@ func (m Model) breadcrumbTabsLine() string {
 	return crumbs + strings.Repeat(" ", gap) + tabs
 }
 
-// contextLine shows where the user is and which project is open. The
-// breadcrumb is truncated before the project, so the project never disappears.
+// contextLine shows where the user is and which project is open. It prefers
+// the full breadcrumb over the project badge: when the trail already names the
+// project, the duplicated right-hand block is dropped before cutting the trail.
 func (m Model) contextLine() string {
 	width := m.contentWidth()
 	project := titleStyle.Render("◆ " + m.projectLabel())
+	projectWithStatus := project
 	if m.activeProjectStatus != "" {
-		project += "  " + projectStatusBadge(m.activeProjectStatus)
-	}
-	projectWidth := lipgloss.Width(project)
-	if projectWidth >= width {
-		return ansi.Truncate(project, width, "…")
+		projectWithStatus += "  " + projectStatusBadge(m.activeProjectStatus)
 	}
 	crumbs := breadcrumb(m.crumbParts()...)
+	crumbsWidth := lipgloss.Width(crumbs)
+	for _, right := range []string{projectWithStatus, project} {
+		rightWidth := lipgloss.Width(right)
+		if crumbsWidth+rightWidth+2 <= width {
+			gap := width - crumbsWidth - rightWidth
+			return crumbs + strings.Repeat(" ", gap) + right
+		}
+	}
+	if crumbsWidth <= width {
+		return crumbs
+	}
+	projectWidth := lipgloss.Width(projectWithStatus)
+	if projectWidth >= width {
+		return ansi.Truncate(projectWithStatus, width, "…")
+	}
 	available := width - projectWidth - 2
 	if available < 8 {
-		return project
+		return projectWithStatus
 	}
 	crumbs = ansi.Truncate(crumbs, available, "…")
 	gap := width - lipgloss.Width(crumbs) - projectWidth
 	if gap < 1 {
 		gap = 1
 	}
-	return crumbs + strings.Repeat(" ", gap) + project
+	return crumbs + strings.Repeat(" ", gap) + projectWithStatus
 }
 
 // appBar is the single top line: brand and connection state.
@@ -944,12 +955,40 @@ func (m Model) contextSummary() string {
 			return "Estado y métricas · Sprint " + m.dashboard.sprintLabel
 		}
 		return "Estado y métricas del proyecto"
+	case "dashboard-sprint-select":
+		return "Elegí el ámbito del Dashboard"
+	case "backlog-form":
+		return "Nueva historia"
+	case "sprint-goal":
+		return "Nuevo Sprint"
+	case "sprint-history":
+		return countLabel(len(m.sprintHistory.Sprints), "Sprint cerrado", "Sprints cerrados")
+	case "sprint-confirm":
+		return "Confirmación de cierre"
+	case "sprint-story-select":
+		return countLabel(len(m.visibleSprintStories()), "historia", "historias") + " para asignar"
+	case "sprint-task-form":
+		return "Nueva tarea"
+	case "section", "planning-poker":
+		return "Flujo de la historia"
+	case "effort-form":
+		return "Registro de esfuerzo"
+	case "defect-create-form":
+		return "Borrador de defecto"
+	case "defect-sprint-select":
+		return "Elegí el Sprint de detección"
+	case "defect-resolution-select":
+		return "Elegí el Sprint de resolución"
+	case "defect-status-select":
+		return "Cambiar estado del defecto"
+	case "defect-create-confirm":
+		return "Confirmación de registro"
+	case "create-project":
+		return "Nuevo proyecto"
+	case "edit-project":
+		return "Editar proyecto"
 	}
-	parts := m.crumbParts()
-	if len(parts) == 0 {
-		return ""
-	}
-	return strings.Join(parts, " › ")
+	return ""
 }
 
 // footerView is the shortcut line. It wraps whole key pairs instead of
