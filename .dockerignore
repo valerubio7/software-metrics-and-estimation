@@ -1,0 +1,11 @@
+.git
+.github
+.gitignore
+.atl
+.codegraph
+.pi
+docs
+openspec
+coverage.out
+coverage.html
+README.md
