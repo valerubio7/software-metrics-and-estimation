@@ -32,3 +32,9 @@ jobs:
 
       - name: Resumen de cobertura
         run: go tool cover -func=coverage.out | tail -1
+
+      - name: Instalar govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+
+      - name: Análisis de vulnerabilidades (govulncheck)
+        run: govulncheck ./...
