@@ -1,0 +1,34 @@
+# Integración continua: compila, analiza y corre toda la suite de pruebas
+# en cada push a main y en cada Pull Request.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Instalar Go (versión tomada de go.mod)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Compilar
+        run: go build ./...
+
+      - name: Análisis estático
+        run: go vet ./...
+
+      # Las pruebas de integración levantan PostgreSQL con Testcontainers;
+      # el runner de GitHub ya trae Docker instalado.
+      - name: Pruebas unitarias y de integración
+        run: go test ./... -count=1 -coverpkg=./internal/...,./cmd/... -coverprofile=coverage.out
+
+      - name: Resumen de cobertura
+        run: go tool cover -func=coverage.out | tail -1
