@@ -20,6 +20,11 @@ Manual de usuario: [`docs/user-manual.md`](docs/user-manual.md).
 | `HTTP_ADDR`    | `:8080`                 | Dirección de escucha de la API   |
 | `API_URL`      | `http://localhost:8080` | URL que consume la TUI           |
 
+El proyecto cuenta con integración continua mediante GitHub Actions: en cada
+push a `main` y en cada Pull Request se ejecutan automáticamente la
+compilación (`go build`), el análisis estático (`go vet`) y toda la suite de
+pruebas (`go test`).
+
 ## Ejecutar
 
 API:
