@@ -41,6 +41,29 @@ TUI, en otra terminal:
 API_URL='http://127.0.0.1:8080' go run ./cmd/tui
 ```
 
+## Ejecución con Docker
+
+La API y PostgreSQL se levantan con un solo comando usando Docker Compose. Las
+migraciones se aplican automáticamente antes de que arranque la API (servicio
+`migrate`, con la imagen oficial `migrate/migrate`).
+
+```sh
+docker compose up -d
+```
+
+Esto deja la API escuchando en `http://localhost:8080`. Para correr la TUI
+contra la API del contenedor, en otra terminal (fuera de Docker):
+
+```sh
+API_URL='http://localhost:8080' go run ./cmd/tui
+```
+
+Para bajar todo, incluyendo el volumen de datos de PostgreSQL:
+
+```sh
+docker compose down -v
+```
+
 ## Teclas
 
 La TUI arranca en el navegador de proyectos («Proyectos»). Si la API devuelve un
