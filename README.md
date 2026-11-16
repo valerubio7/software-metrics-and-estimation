@@ -22,8 +22,9 @@ Manual de usuario: [`docs/user-manual.md`](docs/user-manual.md).
 
 El proyecto cuenta con integración continua mediante GitHub Actions: en cada
 push a `main` y en cada Pull Request se ejecutan automáticamente la
-compilación (`go build`), el análisis estático (`go vet`) y toda la suite de
-pruebas (`go test`).
+compilación (`go build`), el análisis estático (`go vet`), toda la suite de
+pruebas (`go test`) y un análisis de vulnerabilidades conocidas en el código y
+sus dependencias con `govulncheck`.
 
 ## Ejecutar
 
